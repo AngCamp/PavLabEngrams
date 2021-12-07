@@ -29,9 +29,11 @@ Rao-Ruiz et al., 2019
 Dillingham et al., 2019
 -unavailable, unpublished
 Author not contacted yet
+
 Shpokayte et al., 2019
 -unavailable
 Author not contacted yet
+
 Chen et al., 2020
 GSE152632
 
@@ -39,9 +41,11 @@ GSE152632
 Marco et al., 2020
 GSE152956
 -bulk
+
 Jeager et al., 2018
 GSE98679
 -reactivated cells
+
 Marco et al., 2020
 Same as before, just reactivated cells
 

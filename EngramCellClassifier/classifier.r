@@ -17,6 +17,8 @@ library(AnnotationDbi)
 #get Chen et al., (2020)
 gds <- getGEO("GSE152632")
 
+C:/Users/angus/Desktop/PavLabEngrams/EngramCellClassifier/GSE152632
+
 #gives error 
 Found 1 file(s)
 GSE152632_series_matrix.txt.gz
