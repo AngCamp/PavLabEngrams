@@ -1,4 +1,5 @@
 #draft ofr the classifier
+setwd("C:/Users/angus/Desktop/PavLabEngrams/EngramCellClassifier")
 
 library(tidyverse)
 library(GEOquery)
@@ -13,9 +14,36 @@ library(sgof)
 library(AnnotationDbi)
 #library(org.Mm.eg.db)
 
+if (!require('devtools')) install.packages('devtools'); require('devtools')
+# make sure you have Rtools installed first! if not, then run:
+#install.packages('installr')
+#install_Rtools()
+devtools::install_github('talgalili/installr')
+
+
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install("GEOquery")
+
 
 #get Chen et al., (2020)
-gds <- getGEO("GSE152632")
+#important before getting the geo use this...
+Sys.setenv(VROOM_CONNECTION_SIZE = 1e6)
+
+gds_chen2020 <- getGEO("GSE152632")
+
+# Jaeger, B. N., Linker, S. B., Parylak, S. L., Barron, J. J., Gallina, I. S., Saavedra, C. D., ... & Gage, F. H. (2018). 
+# A novel environment-evoked transcriptional signature predicts reactivity in single dentate granule neurons.
+# Nature communications, 9(1), 1-15.
+# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6079101/
+gds_jeager2018 <- getGEO("GSE98679")
+jeager2018_counts <- read.table('Jeager2018_GSE98679/GSE98679_count.txt.gz')
+
+test <- read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_tpm.txt.gz')
+
+
+GSE98679
 
 C:/Users/angus/Desktop/PavLabEngrams/EngramCellClassifier/GSE152632
 
