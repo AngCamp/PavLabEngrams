@@ -33,6 +33,9 @@ Sys.setenv(VROOM_CONNECTION_SIZE = 1e6)
 
 gds_chen2020 <- getGEO("GSE152632")
 
+chen2020_counts <- read.table('Chen2020_GSE152632/GSE152632_GEO_mberkchen_TRAP2_counts.csv.gz')
+chen2020_counts <- read.csv('Chen2020_GSE152632/GSE152632_GEO_mberkchen_TRAP2_counts.csv.gz', header = TRUE)
+
 # Jaeger, B. N., Linker, S. B., Parylak, S. L., Barron, J. J., Gallina, I. S., Saavedra, C. D., ... & Gage, F. H. (2018). 
 # A novel environment-evoked transcriptional signature predicts reactivity in single dentate granule neurons.
 # Nature communications, 9(1), 1-15.
@@ -40,7 +43,10 @@ gds_chen2020 <- getGEO("GSE152632")
 gds_jeager2018 <- getGEO("GSE98679")
 jeager2018_counts <- read.table('Jeager2018_GSE98679/GSE98679_count.txt.gz')
 
-test <- read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_tpm.txt.gz')
+jeager2018_v2_tpm <- read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_tpm.txt.gz')
+#Jeagar used Monocle for their analyses: http://cole-trapnell-lab.github.io/monocle-release/
+
+BiocManager::install("monocle")
 
 
 GSE98679
