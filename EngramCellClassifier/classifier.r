@@ -1,6 +1,11 @@
 #draft ofr the classifier
 setwd("C:/Users/angus/Desktop/PavLabEngrams/EngramCellClassifier")
 
+#https://www.youtube.com/watch?v=AHW0FfHDulI&ab_channel=Medeos
+
+#Lets try to train a support vector machine classifier
+#https://www.datacamp.com/community/tutorials/support-vector-machines-r
+
 library(tidyverse)
 library(GEOquery)
 library(edgeR)
@@ -47,11 +52,11 @@ jeager2018_v2_tpm <- read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3
 #Jeagar used Monocle for their analyses: http://cole-trapnell-lab.github.io/monocle-release/
 
 BiocManager::install("monocle")
-
+# we can also use seurat
+# https://satijalab.org/seurat/articles/essential_commands.html
 
 GSE98679
 
-C:/Users/angus/Desktop/PavLabEngrams/EngramCellClassifier/GSE152632
 
 #gives error 
 Found 1 file(s)
