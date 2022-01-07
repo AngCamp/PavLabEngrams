@@ -8,6 +8,12 @@ setwd("C:/Users/angus/Desktop/PavLabEngrams/EngramCellClassifier")
 
 library(tidyverse)
 library(GEOquery)
+library(AnnotationDbi)
+
+#if Data sets are needed pull them from the following excession numbers
+
+
+
 library(edgeR)
 #library(umap)
 library(limma)
@@ -16,7 +22,7 @@ library(knitr)
 library(eulerr)
 library(ermineR)
 library(sgof)
-library(AnnotationDbi)
+
 #library(org.Mm.eg.db)
 
 if (!require('devtools')) install.packages('devtools'); require('devtools')
