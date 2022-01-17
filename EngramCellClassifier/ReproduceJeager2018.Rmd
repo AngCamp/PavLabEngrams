@@ -1,0 +1,85 @@
+---
+title: "Reporducing Jeager et al. (2018)"
+author: "Angus Campbell"
+date: "16/01/2022"
+output: html_document
+---
+
+https://github.com/adam-p/markdown-here/wiki/Markdown-Cheatsheet
+
+```{r message=FALSE, include=FALSE}
+setwd("C:/Users/angus/Desktop/PavLabEngrams/EngramCellClassifier")
+library(tidyverse)
+library(GEOquery)
+library(AnnotationDbi)
+library(randomForest)
+library(data.table)
+```
+
+INTORDUCTION
+---
+  We will attempt to reproduce some of the analyses in [Jeager et al., 2018](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6079101/).  We are of course espescially interested in the classifier in figure 6C with the 
+  
+  
+LOADING THE DATA
+---
+
+```{r}
+# Jeager et al., (2018) meta data and tpm
+
+jeager2018_tpm <- bind_cols(read.table('Jeager2018_GSE98679/GSE98679_tpm.txt.gz', header = TRUE, check.names = FALSE),
+                               read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_tpm.txt.gz', header = TRUE, check.names = FALSE))
+
+#We are using the tpms provided to skip some of the filtering steps, but if desreed here's where they are.
+#There are 2581 genes excluded after filtering.
+#
+# jeager2018_counts <- bind_cols(read.table('Jeager2018_GSE98679/GSE98679_count.txt.gz', header = TRUE, check.names = FALSE),
+#                                read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_count.txt.gz', header = TRUE, check.names = FALSE))
+
+```
+
+```{r}
+
+jeager2018_meta <- read.csv('Jeager2018_GSE98679/SraRunTable.txt', header = TRUE)
+jeager2018_meta = jeager2018_meta[c(1:46,599:912,47:598),] #we need to fix Jeager's files up a bit
+rownames(jeager2018_meta) <- c(1:912)
+
+# blank.to.DG <-function(x){
+#   if(x==""){
+#     x="DG"
+#   }
+# }
+jeager2018_meta$predicted_cell_type <- as.character(lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x}))
+
+jeager2018_meta$predicted_cell_type <- lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x})
+
+#ditch mousingle_number, put it into Mouse_Number
+jeager2018_meta$Mouse_Number[361:912] <- jeager2018_meta$mousingle_number[361:912]
+jeager2018_meta <- jeager2018_meta[,c(1:33,35,36)]
+
+
+
+```
+
+FILTERING AS PER THE METHODS
+---
+
+
+
+
+
+THE CLASSIFIER IN SIGNATURE ESTABLISHED OVER 4H SELECT REACTIVATED NEURONS
+---
+
+From Jeager et al. (2018):  "A receiver-operating characteristics (ROC) curve showed that the model successfully called Reactivated neurons with an area under the curve of 0.93 and 0.96 when compared to either the Newly Activated (model i) or Not Reactivated (model ii) nuclei, respectively (Fig. 6c), and when the model was tasked with distinguishing all three groups simultaneously, classification errors of 13%, 20%, and 20% were calculated for Reactivated, Not Reactivated, and Newly Activated nuclei, respectively."
+
+Notes on which nuclei to include:  "DEGs between Reactivated and Not Reactivated nuclei (FDR < 0.05) were filtered to maintain only those with expression in at least 80% of Reactivated nuclei, for upregulated genes, or at most 40% of Reactivated nuclei for downregulated genes where the cutoff for expression was placed at 1 log2(TPM+1). Genes were further excluded if they contained any association with batch effect or were differentially expressed in the 1-h vs HC comparison. The remaining 191 genes were passed through an initial round of feature elimination. A pairwise classification between Reactivated and either Newly Activated or Not Reactivated nuclei used a random forest classifier with a binomial family and 10,000 trees (R statistical package randomForest78. ROC curves were calculated by training on 15 nuclei per condition and testing on the remaining hold out samples, then calculating sensitivity and specificity using the R statistical package ROCR81. The genes with the top importance (Mean Decrease Gini > 0.4) in each of the pairwise comparisons were then pooled and the random forest procedure was used with a binomial family and 10,000 trees to classify all three conditions together. The classification error rate of this model was reported. This model was then used to predict the presence of a Reactivated gene signature using the 4- and 5-h time points using the base R stats predict function."
+
+-it is not described what an association with batch effect means
+
+
+
+References
+
+Jaeger, B. N., Linker, S. B., Parylak, S. L., Barron, J. J., Gallina, I. S., Saavedra, C. D., ... & Gage, F. H. (2018). A novel environment-evoked transcriptional signature predicts reactivity in single dentate granule neurons. Nature communications, 9(1), 1-15.
+

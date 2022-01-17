@@ -10,6 +10,7 @@ library(tidyverse)
 library(GEOquery)
 library(AnnotationDbi)
 library(randomForest)
+library(data.table)
 
 # Lacar et al., (2016)
 lacar2016_meta <- read.csv('Lacar2016_GSE77067/SraRunTable.txt', header = TRUE)
@@ -35,7 +36,27 @@ jeager2018_meta$predicted_cell_type <- as.character(lapply(jeager2018_meta$predi
 
 jeager2018_meta$predicted_cell_type <- lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x})
 
+#Finding engram cells
+fospos <- which(grepl("_F_DG",  jeager2018_meta$source_name))
+fospos <- c(fospos,361:912) # since we know all the v2 cells from time points and recall testing
+
+neg <- which(grepl("_N_DG",  jeager2018_meta$source_name))
+
+
+
+
+
 #splitting the data, NOT DONE YET
+# 
+# randForest tutorial: https://www.tutorialspoint.com/r/r_random_forest.htm
+# -so basically you will have to transpose the data and then add a column labelling
+# each nucleus as engram or not
+
+#Example RF: https://rstudio-pubs-static.s3.amazonaws.com/71575_4068e2e6dc3d46a785ad7886426c37db.html
+# has a section with cross validation the model is a classifier not a regression which is what we need
+
+# rfcv - randforest functuion for crossvalidation should you want it
+# https://www.rdocumentation.org/packages/randomForest/versions/4.6-14/topics/rfcv
 
 # Set random seed to make results reproducible:
 set.seed(23)
