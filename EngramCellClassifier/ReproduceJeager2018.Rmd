@@ -61,6 +61,58 @@ jeager2018_meta <- jeager2018_meta[,c(1:33,35,36)]
 
 ```
 
+Active DG neurons exhibit a dramatic shift in transcription
+---
+
+The thresholding for this first session is described as "Nuclei were excluded as outliers based on total aligned reads and total gene count, or extreme-outliers, based on clustering (Supplementary Fig 2a–b). An average of 1.17 million reads were aligned per nucleus, with an average of 5637 genes detected above a log2(TPM+1) (TPM) = 1."
+
+```{r}
+
+meangenecounts <- function(tpm.df){
+  test <- log(tpm.df+1, 2)>1 #log base 2 tpm counts +1 over 1
+  return(mean(as.numeric(colSums(test, na.rm = TRUE)))) 
+}
+
+print("Average gene's passing threshold per cell:")
+print(meangenecounts(jeager2018_tpm[,c(1:360)])) 
+print("Total missing entries in first dataset:")
+print(sum(is.na(jeager2018_tpm[,c(1:360)]))) 
+```
+
+I know some of the nuclei in the data set were considered outliers.  Maybe this is part of the discrepancy?  After all 912 nuclei are included in the data but only 868 were used as per the methods section  "The final cutoffs were 100,000 total aligned reads and 4000 total genes detected. Nuclei below these thresholds were detected as outliers and removed from further analysis. A total of 967 nuclei were used for this study, with 868 (89.8%) surviving the filtering thresholds".
+
+I don't have access to the total aligned reads but I can check for genes.  I will look for na values or 0 reads of a gene
+
+```{r}
+test <- sapply(jeager2018_tpm[,c(1:360)], function(y) sum(length(which(is.na(y)))))
+print(summary(test))
+```
+
+SO for the most part missing genes is a pretty minimal problem. We will switch to using counts rather than tpm for the next section to test if there are sufficient genes in each cell.
+
+```{r}
+#testing for cells with genes under 4000
+
+test2 <- sapply(jeager2018_counts[,c(1:360)], function(y) sum(length(which(y>0))))
+
+# which(test2<4000)
+# X151207_E12_N_C_F_EE_2 X151207_H12_N_C_F_EE_2  X151214_F1_P_C_N_EE_3  X151214_H1_P_C_N_EE_3 X151214_H11_P_C_F_EE_3             X160107_07 
+#                     49                     83                    123                    137                    139                    199 
+#             X160107_08             X160107_22             X160107_23             X160107_29             X160118_09             X160118_14 
+#                    200                    214                    215                    221                    249                    254 
+#             X160118_16             X160118_17             X160118_21             X160118_27             X160118_28             X160118_29 
+#                    256                    257                    261                    267                    268                    269 
+#             X160118_30             X160118_31 
+#                    270                    271 
+
+# > length(which(test2>4000))
+# [1] 340
+```
+
+So that leaves us with 340 cells, which is a believebale number cosidering we should be eliminating 44 cells eventually.  Remeber this is only in the first 360 cells, we are not including the v2 dataset (timecourse, reactivation data).  But what is worrying to me is that the whihc seems to be printing names of cells that are in the v2 dataset.
+
+Also minor note but we are looking for counts there greater than 0 itest it with >1 as well see if it makes a difference.
+
 FILTERING AS PER THE METHODS
 ---
 
