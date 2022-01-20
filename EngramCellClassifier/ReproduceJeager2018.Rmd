@@ -168,25 +168,61 @@ p <- ggplot(data = filteredDat, aes(x = pc1, y = pc2, color = batch, shape = fos
 ```{r}
 p
 ```
-Above we have replicated supplemental figure 2b.  I have included the cells that passsed threshold (indexed in filtered.idx) from homecage and 1 hour post novel environment exposure from the first dataset (rows 1-360 of our combined dataframes jeager2018_meta, jeager2018_counts, and jeager2018_tpm).  Many cell types are represented from many hippocampal regions and even a few subiculum and thalamus cells, mostly excitatory cells but there are also some inhibitory cells.  Within this diverse sample the recently active cells, our engram cells are not linearly seperable though in other reports focusing on one particular cell type PCA has been sufficient to separate and cluster engram and non-engram cells.  Rao-Ruiz et al., (2019) did this with dentate gyrus granule cells (DGCs).  How ever here Jeager et al. (2018) used tSNE to find a subspace that separates fos-status across cell types.
+    Above we have replicated supplemental figure 2b.  I have included the cells that passsed threshold (indexed in filtered.idx) from homecage and 1 hour post novel environment exposure from the first dataset (rows 1-360 of our combined dataframes jeager2018_meta, jeager2018_counts, and jeager2018_tpm).  As the authors stated there are minimal batch effects.
+
+  Many cell types are represented from many hippocampal regions and even a few subiculum and thalamus cells, mostly excitatory cells but there are also some inhibitory cells.  Within this diverse sample the recently active cells, our engram cells are not linearly seperable though in other reports focusing on one particular cell type PCA has been sufficient to separate and cluster engram and non-engram cells.  Rao-Ruiz et al., (2019) did this with dentate gyrus granule cells (DGCs).  How ever here Jeager et al. (2018) used tSNE to find a subspace that separates fos-status across cell types.
 
 Then we can use this guide to do it for the tSNE: https://datavizpyr.com/how-to-make-tsne-plot-in-r/
 
 #library(Rtsne)  for tSNE
 ```{r}
-library(dplyr)
-filteredDat$celltype <- as.factor(as.character(jeager2018_meta$predicted_cell_type[filtered.idx]))
-
-set.seed(223)
-tSNE_fit <- filteredDat[, c(1:40223,20226)] %>%
-  as_tibble() %>%
-  select(where(is.numeric)) %>%
-  column_to_rownames("ID") %>%
-  scale() %>% 
-  Rtsne()
+# library(dplyr)
+# filteredDat$celltype <- as.factor(as.character(jeager2018_meta$predicted_cell_type[filtered.idx]))
+# 
+# set.seed(223)
+# tSNE_fit <- filteredDat[, c(1:40223,20226)] %>%
+#   as_tibble() %>%
+#   select(where(is.numeric)) %>%
+#   column_to_rownames("ID") %>%
+#   scale() %>% 
+#   Rtsne()
+# 
+# tSNE_fit <- filteredDat[, c(1:40221)] %>%
+#   scale() %>% 
+#   Rtsne()
 ```
 # move on to the classifier or DGE go to sleep.
 
+ - weird error when I reun the second attempt at tSNE
+#Error in na.fail.default(X) : missing values in object
+-Not really sure how to correct this, filteredDat has already been filtered for 
+0's.  Prehaps I need to transpose the dataframe?
+
+
+DEG for monocle.  Figure 2c shows that within differetn cell types the DG shows the greatest number of fos+ DEGs relative to the VIP neurons and CA1 prinicple neurons.  Fos- but Arc+ CA1 cells were expluced from the analysis, though the threshold for the exclusion is not given.
+```{r}
+arc_expr = which(colnames(filteredDat)=="Arc")
+fos_expr = which(colnames(filteredDat)=="Fos")
+print(paste("Arc expression is on column ",arc_expr))
+print(paste("Fos expression is on column ",fos_expr))
+```
+```{r}
+hist(filteredDat[filteredDat$celltype=="CA1", arc_expr])
+```
+
+```{r}
+ca1fosvarc <- filteredDat[filteredDat$celltype=="CA1", c(arc_expr,fos_expr,40223)]
+
+p <- ggplot(ca1fosvarc, aes(x = Arc, y = Fos, color = fos_status)) +
+  geom_point() +
+  ggtitle("Arc vs Fos expression and status in CA1") +
+  labs(color = 'Fos Status') +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+p
+```
 
 
 FILTERING AS PER THE METHODS
@@ -211,3 +247,4 @@ References
 
 Jaeger, B. N., Linker, S. B., Parylak, S. L., Barron, J. J., Gallina, I. S., Saavedra, C. D., ... & Gage, F. H. (2018). A novel environment-evoked transcriptional signature predicts reactivity in single dentate granule neurons. Nature communications, 9(1), 1-15.
 
+Rao-Ruiz, P., Couey, J. J., Marcelo, I. M., Bouwkamp, C. G., Slump, D. E., Matos, M. R., ... & Kushner, S. A. (2019). Engram-specific transcriptome profiling of contextual memory consolidation. Nature communications, 10(1), 1-14.
