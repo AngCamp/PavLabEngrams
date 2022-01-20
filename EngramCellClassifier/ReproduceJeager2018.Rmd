@@ -39,7 +39,6 @@ jeager2018_counts <- bind_cols(read.table('Jeager2018_GSE98679/GSE98679_count.tx
 ```
 
 ```{r}
-
 jeager2018_meta <- read.csv('Jeager2018_GSE98679/SraRunTable.txt', header = TRUE)
 jeager2018_meta = jeager2018_meta[c(1:46,599:912,47:598),] #we need to fix Jeager's files up a bit
 rownames(jeager2018_meta) <- c(1:912)
@@ -132,11 +131,16 @@ library(FactoMineR)
 library(factoextra)
 
 ```{r}
+fos.status <- function(label){
+  label
+}
+
 filteredDat <- jeager2018_tpm[,filtered.idx]
 filteredDat[is.na(filteredDat)] = 0 
 filteredDat <- t(filteredDat)
 filteredDat <- data.frame(filteredDat)
 filteredDat$batch <- as.factor(jeager2018_meta$Mouse_Number[filtered.idx])
+filteredDat$fos_status <- as.factor(sapply(as.character(jeager2018_meta$source_name[filtered.idx]), function(y) if (grepl("_F_", y, fixed=TRUE)) "Fos+" else "Fos-"  ))
 
 #using FactoMineR PCA function
 pcs <- PCA(filteredDat, 
@@ -151,7 +155,10 @@ filteredDat$pc2 <- pcs$ind$coord[, 2]
 
 ```{r}
 p <- ggplot(data = filteredDat, aes(x = pc1, y = pc2, color = batch)) +
-  geom_point()
+  geom_point()  + 
+  labs(title='First Two PCs ',
+       color='Mouse (Batch)') +
+  theme(plot.title = element_text(hjust = 0.5))
 
 p
 ```
