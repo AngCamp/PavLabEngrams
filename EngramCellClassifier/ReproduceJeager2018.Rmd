@@ -196,7 +196,7 @@ Then we can use this guide to do it for the tSNE: https://datavizpyr.com/how-to-
  - weird error when I reun the second attempt at tSNE
 #Error in na.fail.default(X) : missing values in object
 -Not really sure how to correct this, filteredDat has already been filtered for 
-0's.  Prehaps I need to transpose the dataframe?
+na's and I replaced them to 0's.  Prehaps I need to transpose the dataframe?
 
 
 DEG for monocle.  Figure 2c shows that within differetn cell types the DG shows the greatest number of fos+ DEGs relative to the VIP neurons and CA1 prinicple neurons.  Fos- but Arc+ CA1 cells were expluced from the analysis, though the threshold for the exclusion is not given.
@@ -209,6 +209,9 @@ print(paste("Fos expression is on column ",fos_expr))
 ```{r}
 hist(filteredDat[filteredDat$celltype=="CA1", arc_expr])
 ```
+```{r}
+hist(filteredDat[filteredDat$celltype=="CA1", fos_expr])
+```
 
 ```{r}
 ca1fosvarc <- filteredDat[filteredDat$celltype=="CA1", c(arc_expr,fos_expr,40223)]
@@ -217,13 +220,144 @@ p <- ggplot(ca1fosvarc, aes(x = Arc, y = Fos, color = fos_status)) +
   geom_point() +
   ggtitle("Arc vs Fos expression and status in CA1") +
   labs(color = 'Fos Status') +
+  xlab("Arc (tpm)")+
+  ylab("Fos (tpm)")+
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
 ```{r}
 p
 ```
+It's worth remebering that jeager et al., (2019) is a) using snRNA-seq not scRNA-seq so this reflects transcripts in the nucleus and b) FACS is staining for protien levels so it may not be so surprising to find that expression does not correspond to the stain.  Its a technical question we need to think about, especially if we want to combine different datasets.  In anycase I will continue to check this witht he other populations as well.
 
+
+```{r}
+dgfosvarc <- filteredDat[filteredDat$celltype=="DG", c(arc_expr,fos_expr,40223)]
+
+p <- ggplot(dgfosvarc, aes(x = Arc, y = Fos, color = fos_status)) +
+  geom_point() +
+  ggtitle("Arc vs Fos expression and status in DG") +
+  labs(color = 'Fos Status') +
+  xlab("Arc (tpm)")+
+  ylab("Fos (tpm)")+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+p
+```
+Much cleaner in DG cells.  Ivy cells barely have any fos+ cells in them.  There are only 14 of them anyway, 6 pvalb cells,
+and 20 Ca3 cells.  That leaves VIP neurons which we have an n=80 of.  
+
+```{r}
+VIPfosvarc <- filteredDat[filteredDat$celltype=="VIP", c(arc_expr,fos_expr,40223)]
+
+p <- ggplot(VIPfosvarc, aes(x = Arc, y = Fos, color = fos_status)) +
+  geom_point() +
+  ggtitle("Arc vs Fos expression and status in VIP+ Gabanergic neurons") +
+  labs(color = 'Fos Status') +
+  xlab("Arc (tpm)")+
+  ylab("Fos (tpm)")+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+p
+```
+Again we see that the stain is not working as we would like.  There are some pretty extreme outliers, we need a thresholding method for these.
+
+```{r}
+DGdat <-filteredDat[filteredDat$celltype=="DG", c(1:40221,40223)]
+
+#using FactoMineR PCA function
+pcs <- PCA(DGdat, 
+           quali.sup=c(40222), #to identify fos status
+           graph = FALSE)
+
+#putting pcs into our dataframe
+DGdat$pc1 <- pcs$ind$coord[, 1] 
+
+DGdat$pc2 <- pcs$ind$coord[, 2]
+```
+
+```{r}
+#calls pcs object to get variences rounds them to 2nd digit makes string for axis labels
+axislabs <-c(paste("PC1 (", as.character(round(pcs$eig[1,2],2)),"% of varience)", sep =''),
+             paste("PC2 (", as.character(round(pcs$eig[2,2],2)),"% of varience)", sep =''))
+
+p <- ggplot(data = DGdat, aes(x = pc1, y = pc2, color = fos_status)) +
+  geom_point()  + 
+  labs(title='PCs and Fos Status of DG granule Neurons',
+       color= 'Fos Status') +
+  xlab(axislabs[1]) +
+  ylab(axislabs[2]) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+```{r}
+p
+```
+
+```{r}
+CA1dat <-filteredDat[filteredDat$celltype=="CA1", c(1:40221,40223)]
+
+#using FactoMineR PCA function
+pcs <- PCA(CA1dat, 
+           quali.sup=c(40222), #to identify fos status
+           graph = FALSE)
+
+#putting pcs into our dataframe
+CA1dat$pc1 <- pcs$ind$coord[, 1] 
+
+CA1dat$pc2 <- pcs$ind$coord[, 2]
+```
+
+```{r}
+#calls pcs object to get variences rounds them to 2nd digit makes string for axis labels
+axislabs <-c(paste("PC1 (", as.character(round(pcs$eig[1,2],2)),"% of varience)", sep =''),
+             paste("PC2 (", as.character(round(pcs$eig[2,2],2)),"% of varience)", sep =''))
+
+p <- ggplot(data = CA1dat, aes(x = pc1, y = pc2, color = fos_status)) +
+  geom_point()  + 
+  labs(title='PCs and Fos Status of CA1 Neurons',
+       color= 'Fos Status') +
+  xlab(axislabs[1]) +
+  ylab(axislabs[2]) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+```{r}
+p
+```
+
+```{r}
+VIPdat <-filteredDat[filteredDat$celltype=="VIP", c(1:40221,40223)]
+
+#using FactoMineR PCA function
+pcs <- PCA(VIPdat, 
+           quali.sup=c(40222), #to identify fos status
+           graph = FALSE)
+
+#putting pcs into our dataframe
+VIPdat$pc1 <- pcs$ind$coord[, 1] 
+
+VIPdat$pc2 <- pcs$ind$coord[, 2]
+```
+
+```{r}
+#calls pcs object to get variences rounds them to 2nd digit makes string for axis labels
+axislabs <-c(paste("PC1 (", as.character(round(pcs$eig[1,2],2)),"% of varience)", sep =''),
+             paste("PC2 (", as.character(round(pcs$eig[2,2],2)),"% of varience)", sep =''))
+
+p <- ggplot(data = VIPdat, aes(x = pc1, y = pc2, color = fos_status)) +
+  geom_point()  + 
+  labs(title='PCs and Fos Status of VIP+ Gabanergic neurons',
+       color= 'Fos Status') +
+  xlab(axislabs[1]) +
+  ylab(axislabs[2]) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+```{r}
+p
+```
 
 FILTERING AS PER THE METHODS
 ---
