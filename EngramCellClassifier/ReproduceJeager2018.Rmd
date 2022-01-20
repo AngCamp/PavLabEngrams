@@ -14,6 +14,10 @@ library(GEOquery)
 library(AnnotationDbi)
 library(randomForest)
 library(data.table)
+library(reshape2)
+library(FactoMineR)
+library(factoextra)
+library(Rtsne)
 ```
 
 INTORDUCTION
@@ -126,15 +130,9 @@ Reproducing quick check for batch effects and cell type clustering, supplementar
 
 making PCA plots for batch effects: https://tem11010.github.io/Plotting-PCAs/
 
-library(reshape2)
-library(FactoMineR)
-library(factoextra)
+
 
 ```{r}
-fos.status <- function(label){
-  label
-}
-
 filteredDat <- jeager2018_tpm[,filtered.idx]
 filteredDat[is.na(filteredDat)] = 0 
 filteredDat <- t(filteredDat)
@@ -144,7 +142,7 @@ filteredDat$fos_status <- as.factor(sapply(as.character(jeager2018_meta$source_n
 
 #using FactoMineR PCA function
 pcs <- PCA(filteredDat, 
-           quali.sup=c(40222), #to identify batch as a qualitative variable
+           quali.sup=c(40222, 40223), #to identify batch as a qualitative variable
            graph = FALSE)
 
 #putting pcs into our dataframe
@@ -154,20 +152,42 @@ filteredDat$pc2 <- pcs$ind$coord[, 2]
 ```
 
 ```{r}
-p <- ggplot(data = filteredDat, aes(x = pc1, y = pc2, color = batch)) +
-  geom_point()  + 
-  labs(title='First Two PCs ',
-       color='Mouse (Batch)') +
-  theme(plot.title = element_text(hjust = 0.5))
+#calls pcs object to get variences rounds them to 2nd digit makes string for axis labels
+axislabs <-c(paste("PC1 (", as.character(round(pcs$eig[1,2],2)),"% of varience)", sep =''),
+             paste("PC2 (", as.character(round(pcs$eig[2,2],2)),"% of varience)", sep =''))
 
+p <- ggplot(data = filteredDat, aes(x = pc1, y = pc2, color = batch, shape = fos_status)) +
+  geom_point()  + 
+  labs(title='First Two PCs of HC and NE neurons from Jeager et al., (2018)',
+       color='Batch (Mouse)',
+       shape='Fos Status') +
+  xlab(axislabs[1]) +
+  ylab(axislabs[2]) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+```{r}
 p
 ```
+Above we have replicated supplemental figure 2b.  I have included the cells that passsed threshold (indexed in filtered.idx) from homecage and 1 hour post novel environment exposure from the first dataset (rows 1-360 of our combined dataframes jeager2018_meta, jeager2018_counts, and jeager2018_tpm).  Many cell types are represented from many hippocampal regions and even a few subiculum and thalamus cells, mostly excitatory cells but there are also some inhibitory cells.  Within this diverse sample the recently active cells, our engram cells are not linearly seperable though in other reports focusing on one particular cell type PCA has been sufficient to separate and cluster engram and non-engram cells.  Rao-Ruiz et al., (2019) did this with dentate gyrus granule cells (DGCs).  How ever here Jeager et al. (2018) used tSNE to find a subspace that separates fos-status across cell types.
 
 Then we can use this guide to do it for the tSNE: https://datavizpyr.com/how-to-make-tsne-plot-in-r/
 
-library(Rtsne) # for tSNe
-library(stats) #for pca with prcomp
-library(pheatmap)
+#library(Rtsne)  for tSNE
+```{r}
+library(dplyr)
+filteredDat$celltype <- as.factor(as.character(jeager2018_meta$predicted_cell_type[filtered.idx]))
+
+set.seed(223)
+tSNE_fit <- filteredDat[, c(1:40223,20226)] %>%
+  as_tibble() %>%
+  select(where(is.numeric)) %>%
+  column_to_rownames("ID") %>%
+  scale() %>% 
+  Rtsne()
+```
+# move on to the classifier or DGE go to sleep.
+
+
 
 FILTERING AS PER THE METHODS
 ---
