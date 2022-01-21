@@ -133,6 +133,7 @@ making PCA plots for batch effects: https://tem11010.github.io/Plotting-PCAs/
 
 
 ```{r}
+#not scaled, try scaling this
 filteredDat <- jeager2018_tpm[,filtered.idx]
 filteredDat[is.na(filteredDat)] = 0 
 filteredDat <- t(filteredDat)
@@ -358,6 +359,8 @@ p <- ggplot(data = VIPdat, aes(x = pc1, y = pc2, color = fos_status)) +
 ```{r}
 p
 ```
+
+Think about how to make a negative result interpretable.
 
 FILTERING AS PER THE METHODS
 ---
