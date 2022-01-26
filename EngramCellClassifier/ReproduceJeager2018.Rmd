@@ -18,6 +18,7 @@ library(reshape2)
 library(FactoMineR)
 library(factoextra)
 library(Rtsne)
+#at some point we wil need monocle, it's used by Jeager et al. (2018) a lot
 ```
 
 INTORDUCTION
@@ -377,6 +378,15 @@ From Jeager et al. (2018):  "A receiver-operating characteristics (ROC) curve sh
 Notes on which nuclei to include:  "DEGs between Reactivated and Not Reactivated nuclei (FDR < 0.05) were filtered to maintain only those with expression in at least 80% of Reactivated nuclei, for upregulated genes, or at most 40% of Reactivated nuclei for downregulated genes where the cutoff for expression was placed at 1 log2(TPM+1). Genes were further excluded if they contained any association with batch effect or were differentially expressed in the 1-h vs HC comparison. The remaining 191 genes were passed through an initial round of feature elimination. A pairwise classification between Reactivated and either Newly Activated or Not Reactivated nuclei used a random forest classifier with a binomial family and 10,000 trees (R statistical package randomForest78. ROC curves were calculated by training on 15 nuclei per condition and testing on the remaining hold out samples, then calculating sensitivity and specificity using the R statistical package ROCR81. The genes with the top importance (Mean Decrease Gini > 0.4) in each of the pairwise comparisons were then pooled and the random forest procedure was used with a binomial family and 10,000 trees to classify all three conditions together. The classification error rate of this model was reported. This model was then used to predict the presence of a Reactivated gene signature using the 4- and 5-h time points using the base R stats predict function."
 
 -it is not described what an association with batch effect means
+
+
+Meeting with Paul:
+New objectives
+-find datasets to test classifier on
+-check to see if your data is sufficient 
+Personal objectives:
+-test and clean the Chen data
+
 
 
 
