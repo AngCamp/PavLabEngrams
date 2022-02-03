@@ -53,13 +53,93 @@ Next, the ‘canonical correlation analysis’ function from the Seurat package2
 # Check for some of their filters to see if those have already been done
 # Are there any gene's that appear in fewer than five cells?
 
-underexpressedgenes <- rownames(chen2020_counts)[which(table(which(chen2020_counts==0, arr.ind = TRUE)[,1])>(3530-5))]
+underexpressedgenes <- which(table(which(chen2020_counts == 0, arr.ind = TRUE)[,1])>(3530-5))
 ```
-So above I have identified 141 genes which do not appear in more than 5 cells whihc means we will need to do some filtering.
-They do not provide information
+So above I have identified 141 genes which do not appear in more than 5 cells which means we will need to do some filtering.
+They do not provide information.
 
 ```{r}
+# samples with less than 100 genes to be excluded
+# all pass this filter
+print("Number of cells with more than 100 gene's expressed...")
+print(sum(colSums(chen2020_counts>1)>100))
 
+#samples with less than 50 000 reads to be excluded, all cells pass this threshold
+print("Cells with less than 50 000 reads...")
+print(sum(colSums(chen2020_counts)<50000))
+```
+So all cells pass those filters.  Not sure how to do the ERCC, mitochondrial and ribosomal gene check, presumably this explains the missing cells.
+I am guessing they left in unfiltered gene's but they excluded cells not passing threshold.  
+
+Integrating different experiments with suerat is described [here](https://satijalab.org/seurat/articles/integration_introduction.html).  We will need to do something like this to compare the homecage, fear, and 
+
+Attempt to do the anlysis according to Seurat.  Present paul with some data, also have a look at Fernandez tomorrow.  I will download it overnight.
+```{r}
+# attempting to replicate their description of how they chose gene's to include
+# I'm going to exclude the under expressed gene's
+
+chen2020_counts <- chen2020_counts[!c(1:23355) %in% underexpressedgenes,]
+rownames(chen2020_meta) <- colnames(chen2020_counts)
+
+tdTpos.idx <- which(chen2020_meta$engram_label=="tdT+")
+tdTneg.idx <- which(chen2020_meta$engram_label=="tdT-")
+
+#library(Seurat)
+chen2020 <- CreateSeuratObject(counts = chen2020_counts)
+                               #meta.data = chen2020_meta)
+
+chen2020 <- FindVariableFeatures(chen2020, selection.method = "vst", nfeatures = 3530) #no idea how I chose 3530, 
+# in the tutorial they chose 2000, I just chose to match the number of cells we had
+chen2020nobatch <- ScaleData(chen2020)
+
+chen2020 <- AddMetaData(chen2020, chen2020_meta)
+
+test = RunPCA(chen2020nobatch, features = VariableFeatures(chen2020))
+
+#https://broadinstitute.github.io/2019_scWorkshop/correcting-batch-effects.html
+
+# seurat tutorial
+# https://yu-tong-wang.github.io/talk/sc_st_data_analysis_R.html
+# has spatial transcritomics data as well 
+# the whole github is really great
+
+batch.list <- unique(chen2020_meta$source_name)
+obj.list <- c()
+for (i in batch.list){
+  maus <- which(chen2020_meta$source_name==batch.list[i])
+  obj.list <- c(obj.list, subset(chen2020, cells = colnames(chen2020)[maus]))
+}
+
+gcdata.CCA <- RunMultiCCA(ob.list, genes.use = genes.use, num.ccs = 20) #
+# 
+# ob.list <- list(celseq, celseq2, fluidigmc1, smartseq2)
+# genes.use <- c()
+# for (i in 1:length(ob.list)) {
+#   genes.use <- c(genes.use, head(rownames(ob.list[[i]]@hvg.info), 1000))
+# }
+# genes.use <- names(which(table(genes.use) > 1))
+# for (i in 1:length(ob.list)) {
+#   genes.use <- genes.use[genes.use %in% rownames(ob.list[[i]]@scale.data)]
+# }
+
+# Run multi-set CCA on the 4 pancreatic islet datasets. 
+# Use the variable genes above, and calculate 15 canonical components.
+
+
+
+
+engram.cells <- subset(chen2020, cells = colnames(chen2020)[tdTpos.idx])
+nonengram.cells <- subset(chen2020, cells = colnames(chen2020)[tdTneg.idx])
+engram.cells[["group"]] <- "group1"
+nonengram.cells[["group"]] <- "group2"
+
+
+chenCCA <- RunCCA(object1 = engram.cells, object2 = nonengram.cells,
+                  features = TRUE)
+
+,
+                  compute.gene.loadings = TRUE)
 
 ```
-
+https://satijalab.org/seurat/reference/findintegrationanchors
+-could possibly use this function for all conditions
