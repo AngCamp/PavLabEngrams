@@ -28,6 +28,7 @@ library(factoextra)
 library(Rtsne)
 library(dplyr)
 library(Seurat)
+library(stringr)
 ```
 
 
@@ -39,6 +40,19 @@ chen2020_meta <- read.csv( 'Chen2020_GSE152632/SraRunTable.txt', header = TRUE)
 
 chen2020_meta$engram_label <-  as.factor(sapply(as.character(colnames(chen2020_counts)), function(y) if (grepl("_pos_", y, fixed=TRUE)) "tdT+" else "tdT-"))
 
+condition_label <- chen2020_meta$source_name %>%
+  sapply( function(y) if (grepl("Homecage", y, fixed=TRUE)) "Homecage")
+
+condition_label <- chen2020_meta$source_name
+condition_label[str_detect(condition_label, "Homecage")] = "Homecage"
+condition_label[str_detect(condition_label, "Context-Only")] = "Context-Only"
+condition_label[str_detect(condition_label, "Fear-Only")] = "Fear-Only"
+condition_label[str_detect(condition_label, "Fear-Recall")] = "Fear-Recall"
+chen2020_meta$condition_label <- condition_label
+rm(condition_label)
+
+condition_label <- as.character(sapply(condition_label, function(y) if (grepl("Homecage", y, fixed=TRUE)) "Homecage"))
+condition_label <- sapply(rownames(condition_label), function(y) if (grepl("Context-Only", y, fixed=TRUE)) "Context-Only")
 #one row is missing in the metadata
 ```
 
