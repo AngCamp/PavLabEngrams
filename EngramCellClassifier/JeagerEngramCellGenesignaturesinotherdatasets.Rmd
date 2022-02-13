@@ -1,0 +1,151 @@
+---
+title: "Jeager Engram Cell Gene signatures in other datasets"
+author: "Angus Campbell"
+date: "11/02/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r include = FALSE}
+setwd("C:/Users/angus/Desktop/PavLabEngrams/EngramCellClassifier")
+
+library(tidyverse)
+library(GEOquery)
+library(AnnotationDbi)
+library(randomForest)
+library(data.table)
+library(reshape2)
+library(FactoMineR)
+library(factoextra)
+library(Rtsne)
+library(dplyr)
+library(Seurat)
+library(stringr)
+library(patchwork)
+library(metap)
+library(cqn)
+library(GeoTcgaData)
+BiocManager::install("cqn")
+```
+
+### Jeager et al., (2018) meta data and counts
+
+Load Jeager data.
+
+```{r}
+jeager2018_counts <- bind_cols(read.table('Jeager2018_GSE98679/GSE98679_count.txt.gz', header = TRUE, check.names = FALSE),
+                               read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_count.txt.gz', header = TRUE, check.names = FALSE))
+
+jeager2018_meta <- read.csv('Jeager2018_GSE98679/SraRunTable.txt', header = TRUE)
+jeager2018_meta = jeager2018_meta[c(1:46,599:912,47:598),] #we need to fix Jeager's files up a bit
+rownames(jeager2018_meta) <- c(1:912)
+
+#filtering out cells as per instructions in Jeager et al., 2018)
+under4k <- sapply(jeager2018_counts, function(y) sum(length(which(y>0))))
+
+filtered.idx <- as.numeric(which(under4k>4000))
+filtered.idx <- order(c(filtered.idx,194))
+
+jeager2018_counts <-jeager2018_counts[,filtered.idx]
+jeager2018_meta <- jeager2018_meta[filtered.idx,]
+```
+
+
+
+### Getting a handle on realsitic Fos levels in Jeager
+
+Quick check for HC DGCs with fos labelleing.
+
+```{r}
+which((jeager2018_meta$exposure=="HC")&(jeager2018_meta$fos_status=="Fos+"))
+```
+
+Maybe try plotting them anyway.  After all over time more engram labelled cells do accumulate in TRAP labelling.
+
+```{r}
+hist(as.numeric(jeager2018_counts[which(rownames(jeager2018_counts)=="Fos"),which((jeager2018_meta$exposure=="HC")&(jeager2018_meta$fos_status=="Fos-"))]),
+     main = "Homecage Fos-AntiBd Negative nuclear Fos read distribution")
+```
+
+```{r}
+
+hist(as.numeric(jeager2018_counts[which(rownames(jeager2018_counts)=="Fos"),which((jeager2018_meta$exposure=="1hr")&(jeager2018_meta$fos_status=="Fos-"))]),
+     main = "1Hour post-NE Fos-AntiBd Negative nuclear Fos read distribution")              
+
+```
+
+```{r}
+
+hist(as.numeric(jeager2018_counts[which(rownames(jeager2018_counts)=="Fos"),which((jeager2018_meta$exposure=="1hr")&(jeager2018_meta$fos_status=="Fos+"))]),
+     main = "1Hour post-NE Fos-AntiBd Positive nuclear Fos read distribution") 
+
+```
+
+```{r}
+
+as.numeric(jeager2018_counts[which(rownames(jeager2018_counts)=="Fos"),which((jeager2018_meta$exposure=="1hr")&(jeager2018_meta$fos_status=="Fos+"))]
+# Stacked barplot with multiple groups
+ggplot(data=df2, aes(x=dose, y=len, fill=supp)) +
+  geom_bar(stat="identity")
+# Use position=position_dodge()
+ggplot(data=df2, aes(x=dose, y=len, fill=supp)) +
+geom_bar(stat="identity", position=position_dodge())
+```
+
+
+### Looking for Engram labelling gene's in 
+
+Look for genes in Jeager that are nuclear targeted (so part of a TF) and
+with extremely high cell counts.  Obviously we should also use arc and fos.
+We also may need to normalize them.
+
+See [here](https://www.frontiersin.org/articles/10.3389/fgene.2020.00041/full)
+
+```{r}
+#normalize here?
+```
+
+
+```{r}
+
+
+marker.search <- function(markers, test.count.data){
+  #returns genes which were searched for, remember to filter the cols
+  # for test.count.data for cells of interest [rows(genes), cols(cells)]
+  
+  markers <- c("Fos", "Arc", markers)
+  marker.idx <- c()
+  for(i in markers.idx){
+    marker.idx <-c(marker.idx,(which(rownames(test_habib2016_logTPM)==i)))
+  }
+  
+  gene.counts <- test.count.data[ markers., ]
+  gene.counts <- data.frame(t(gene.counts))
+  
+  return(gene.counts)
+}
+
+sum((persistant_gene$Hes7>0)&(persistant_gene$Arc>0))
+
+#instead of just looking at gene's where this is expressed, try looking at gene's that are clustering in high fos,
+#create a lable based on quantile or decile of fos expression
+  
+
+#Expand it to look for permutations by percentile thresholds across these markers 
+#Need to think of a null model for this case and singificance
+
+#consider limiting these marker lists to TFs
+
+#Probably sufficient to just take a peak at what gene's 
+```
+
+
