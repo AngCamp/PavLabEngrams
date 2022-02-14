@@ -158,6 +158,8 @@ test_habib2016_logTPM <- test_habib2016_logTPM[, 2:925]
 # https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE95752 # 
 # https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE95315 #downloaded 5000 cells
 
+testsetpath <- "C:/Users/angus/Desktop/test_datasets"
+
 hochgerner5k_2018_counts <- read.table(paste(testsetpath,"/Hochgerner2018/GSE95315_10X_expression_data_v2.tab.gz", sep=""))
 hochgerner24k_2018_counts <- read.table(paste(testsetpath,"/Hochgerner2018/GSE104323_10X_expression_data_V2.tab.gz", sep=""))
 colnames(hochgerner24k_2018_counts) <- hochgerner24k_2018_counts[1,]

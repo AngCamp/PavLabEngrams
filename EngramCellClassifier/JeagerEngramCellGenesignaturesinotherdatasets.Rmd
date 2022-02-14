@@ -34,7 +34,8 @@ library(patchwork)
 library(metap)
 library(cqn)
 library(GeoTcgaData)
-BiocManager::install("cqn")
+library(ggplot2)
+library(tictoc)
 ```
 
 ### Jeager et al., (2018) meta data and counts
@@ -48,6 +49,9 @@ jeager2018_counts <- bind_cols(read.table('Jeager2018_GSE98679/GSE98679_count.tx
 jeager2018_meta <- read.csv('Jeager2018_GSE98679/SraRunTable.txt', header = TRUE)
 jeager2018_meta = jeager2018_meta[c(1:46,599:912,47:598),] #we need to fix Jeager's files up a bit
 rownames(jeager2018_meta) <- c(1:912)
+
+jeager2018_meta$fos_status <- as.factor(sapply(as.character(jeager2018_meta$source_name), function(y) if (grepl("_F_", y, fixed=TRUE)) "Fos+" else "Fos-"  ))
+jeager2018_meta$fos_status[361:dim(jeager2018_meta)[1]] <- "Fos+"
 
 #filtering out cells as per instructions in Jeager et al., 2018)
 under4k <- sapply(jeager2018_counts, function(y) sum(length(which(y>0))))
@@ -72,28 +76,42 @@ which((jeager2018_meta$exposure=="HC")&(jeager2018_meta$fos_status=="Fos+"))
 Maybe try plotting them anyway.  After all over time more engram labelled cells do accumulate in TRAP labelling.
 
 ```{r}
-hist(as.numeric(jeager2018_counts[which(rownames(jeager2018_counts)=="Fos"),which((jeager2018_meta$exposure=="HC")&(jeager2018_meta$fos_status=="Fos-"))]),
-     main = "Homecage Fos-AntiBd Negative nuclear Fos read distribution")
+jeager.fos.idx <- which(rownames(jeager2018_counts)=="Fos")
+fosneg.HC <- which((jeager2018_meta$exposure=="HC")&(jeager2018_meta$fos_status=="Fos-"))
+
+hist(as.numeric(jeager2018_counts[jeager.fos.idx, fosneg.HC]), 
+     main = "Homecage Fos-AntiBd Negative nuclear Fos read distribution",
+     xlab = "Fos Read Count")
+```
+
+```{r}
+fosneg.1hr <- which((jeager2018_meta$exposure=="1hr")&(jeager2018_meta$fos_status=="Fos-"))
+
+
+hist(as.numeric(jeager2018_counts[jeager.fos.idx, fosneg.1hr]), 
+     main = "1 Hour pst NE Fos-AntiBd Negative nuclear Fos read distribution",
+     xlab = "Fos Read Count")
+```
+
+```{r}
+fospos.1hr <- which((jeager2018_meta$exposure=="1hr")&(jeager2018_meta$fos_status=="Fos+"))
+
+hist(as.numeric(jeager2018_counts[jeager.fos.idx, fospos.1hr]),
+     main = "1Hour post-NE Fos-AntiBd Positive nuclear Fos read distribution",
+     xlab = "Fos Read Count") 
 ```
 
 ```{r}
 
-hist(as.numeric(jeager2018_counts[which(rownames(jeager2018_counts)=="Fos"),which((jeager2018_meta$exposure=="1hr")&(jeager2018_meta$fos_status=="Fos-"))]),
-     main = "1Hour post-NE Fos-AntiBd Negative nuclear Fos read distribution")              
+#as.numeric(jeager2018_counts[which(rownames(jeager2018_counts)=="Fos"),which((jeager2018_meta$exposure=="1hr")&(jeager2018_meta$fos_status=="Fos+"))]
+# something is busted in teh line above, needs a comma
 
-```
-
-```{r}
-
-hist(as.numeric(jeager2018_counts[which(rownames(jeager2018_counts)=="Fos"),which((jeager2018_meta$exposure=="1hr")&(jeager2018_meta$fos_status=="Fos+"))]),
-     main = "1Hour post-NE Fos-AntiBd Positive nuclear Fos read distribution") 
-
-```
-
-```{r}
-
-as.numeric(jeager2018_counts[which(rownames(jeager2018_counts)=="Fos"),which((jeager2018_meta$exposure=="1hr")&(jeager2018_meta$fos_status=="Fos+"))]
 # Stacked barplot with multiple groups
+df2 <- data.frame(supp=rep(c("VC", "OJ"), each=3),
+                dose=rep(c("D0.5", "D1", "D2"),2),
+                len=c(6.8, 15, 33, 4.2, 10, 29.5))
+
+
 ggplot(data=df2, aes(x=dose, y=len, fill=supp)) +
   geom_bar(stat="identity")
 # Use position=position_dodge()
@@ -111,13 +129,60 @@ We also may need to normalize them.
 See [here](https://www.frontiersin.org/articles/10.3389/fgene.2020.00041/full)
 
 ```{r}
-#normalize here?
+#out them in seurat and normalize, we could also try just limiting our analysiz to the gene's given in Jeager
+
+#Load hochgerner data sets 
+testsetpath <- "C:/Users/angus/Desktop/test_datasets"
+
+tic()
+hochgerner5k_2018_counts <- read.table(paste(testsetpath,"/Hochgerner2018/GSE95315_10X_expression_data_v2.tab.gz", sep=""))
+hochgerner24k_2018_counts <- read.table(paste(testsetpath,"/Hochgerner2018/GSE104323_10X_expression_data_V2.tab.gz", sep=""))
+colnames(hochgerner24k_2018_counts) <- hochgerner24k_2018_counts[1,]
+rownames(hochgerner24k_2018_counts) <- hochgerner24k_2018_counts[,1]
+
+hochgerner24k_2018_counts <- hochgerner24k_2018_counts %>% 
+  dplyr::select(-cellid) %>% 
+  dplyr::slice(-1)
+toc()
+
+hochgerner24k_2018_meta <- read.table(paste(testsetpath,"/Hochgerner2018/GSE104323_metadata_barcodes_24185cells.txt.gz", sep=""), 
+                                      sep ="\t", header = T)
+
+#Load Jeagers DEGs andCheck which gene's are shared
+
+Jeager.DEGs <- read.csv("Jeager2018_GSE98679/jeager_DEGs_grouped.csv", header = T)
+
+colnames(Jeager.DEGs)[1] <- "GeneID"
+
+DEGs.idx <- Jeager.DEGs$GeneID
+
+DEGs.idx <- DEGs.idx[(DEGs.idx %in% rownames(hochgerner24k_2018_counts))& (DEGs.idx %in% rownames(jeager2018_counts))]
+
+Jeager.DEGs <- Jeager.DEGs[Jeager.DEGs$GeneID %in% DEGs.idx,]
+
+#get index locations of these gene's in the other datasets
+Jeager.DEGs$hoch24k.idx <- which(rownames(hochgerner24k_2018_counts) %in%  Jeager.DEGs$GeneID)
+
+
+
+
+
+DEGs.idx <- data.frame(DEGs.idx)
+colnames(DEGs.idx) <- "GeneID"
+
+
+Jeager.DEGs$GeneID <- Jeager.DEGs$GeneID[(Jeager.DEGs$GeneID %in% rownames(hochgerner24k_2018_counts))&
+                                           (Jeager.DEGs$GeneID %in% rownames(jeager2018_counts))]
+
+DEGs.idx$Jeager.idx <- which(rownames(jeager2018_counts) %in%  DEGs.idx$GeneID)
+
+
+
+
 ```
 
 
 ```{r}
-
-
 marker.search <- function(markers, test.count.data){
   #returns genes which were searched for, remember to filter the cols
   # for test.count.data for cells of interest [rows(genes), cols(cells)]
