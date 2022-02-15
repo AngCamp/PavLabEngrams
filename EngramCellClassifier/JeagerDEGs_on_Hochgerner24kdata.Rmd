@@ -1,0 +1,255 @@
+---
+title: "Hochgerner24k"
+author: "Angus Campbell"
+date: "14/02/2022"
+output: html_document
+---
+# Now with the 24k dataset 
+
+
+```{r}
+setwd("C:/Users/angus/Desktop/PavLabEngrams/EngramCellClassifier")
+
+library(tidyverse)
+library(GEOquery)
+library(AnnotationDbi)
+library(randomForest)
+library(data.table)
+library(reshape2)
+library(FactoMineR)
+library(factoextra)
+library(Rtsne)
+library(dplyr)
+library(Seurat)
+library(stringr)
+library(patchwork)
+library(metap)
+library(cqn)
+library(GeoTcgaData)
+library(ggplot2)
+library(tictoc)
+library(pheatmap)
+#reticulate::py_install(packages ='umap-learn')
+```
+
+
+
+
+```{r}
+#out them in seurat and normalize, we could also try just limiting our analysiz to the gene's given in Jeager
+
+#Load hochgerner data sets 
+testsetpath <- "C:/Users/angus/Desktop/test_datasets"
+
+tic()
+hochgerner24k_2018_counts <- read.table(paste(testsetpath,"/Hochgerner2018/GSE104323_10X_expression_data_V2.tab.gz", sep=""))
+colnames(hochgerner24k_2018_counts) <- hochgerner24k_2018_counts[1,]
+rownames(hochgerner24k_2018_counts) <- hochgerner24k_2018_counts[,1]
+
+hochgerner24k_2018_counts <- hochgerner24k_2018_counts %>% 
+  dplyr::select(-cellid) %>% 
+  dplyr::slice(-1)
+
+toc()
+
+hochgerner24k_2018_meta <- read.table(paste(testsetpath,"/Hochgerner2018/GSE104323_metadata_barcodes_24185cells.txt.gz", sep=""), 
+                                      sep ="\t", header = T)
+
+#Load Jeagers DEGs andCheck which genes are shared
+
+Jeager.DEGs <- read.csv("Jeager2018_GSE98679/jeager_DEGs_grouped.csv", header = T)
+
+colnames(Jeager.DEGs)[1] <- "GeneID"
+
+DEGs.idx <- Jeager.DEGs$GeneID
+
+DEGs.idx <- DEGs.idx[(DEGs.idx %in% rownames(hochgerner24k_2018_counts))& (DEGs.idx %in% rownames(jeager2018_counts))]
+
+Jeager.DEGs <- Jeager.DEGs[Jeager.DEGs$GeneID %in% DEGs.idx,]
+
+#get index locations of these gene's in the other datasets
+Jeager.DEGs$hoch24k.idx <- which(rownames(hochgerner24k_2018_counts) %in% Jeager.DEGs$GeneID)
+GCadult.hoch.idx <- which(hochgerner24k_2018_meta$characteristics..cell.cluster == "GC-adult")
+
+#create seurat object jsut for the hoch data
+Hoch24k.GCadult <- CreateSeuratObject( counts = hochgerner24k_2018_counts[ Jeager.DEGs$hoch24k.idx, GCadult.hoch.idx] )
+Hoch24k.GCadult
+```
+
+
+```{r}
+#QC
+Hoch24k.GCadult[["percent.mt"]] <- PercentageFeatureSet(Hoch24k.GCadult, pattern = "^MT-")
+Hoch24k.GCadult <- subset(Hoch24k.GCadult, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+
+
+#note I am going to skip some QC steps here, but we do need to do that in the future
+Hoch24k.GCadult <- NormalizeData(Hoch24k.GCadult)
+Hoch24k.GCadult <- FindVariableFeatures(Hoch24k.GCadult)
+
+```
+
+
+
+```{r}
+#Including all developmental stages from the 24k dataset or we could use the data from the 5k
+# the mice in jeager were between 49-62 days old, in 
+
+# > Hoch5k.GCmature.idx <- which(hochgerner5k_2018_meta$cluster_name=="Granule-mature")
+# > table(hochgerner5k_2018_meta$age.days.[Hoch5k.GCmature.idx])
+# 
+#  12  16  24 24*  35 35* 
+#  58 123 137 380 254 760 
+
+#Not certian what the asterix means, need to look it up but there are ~1000 neurons relatively close in age to the jeager cells.
+```
+```{r}
+Hoch24k.GCimmature.idx <- which(hochgerner24k_2018_meta$characteristics..cell.cluster=="Immature-GC")
+table(hochgerner24k_2018_meta$characteristics..age[Hoch24k.GCimmature.idx])
+```
+
+I would like to stop here to examine the function of the to most variable genes.  
+
+
+
+
+https://db.cngb.org/stomics/mosta/ 
+
+Nanoscale precision slide-seq open dataset.  Seurat is supposed to be able to integrate with this.  Has a brain resource we may be able to use?
+
+```{r}
+top10 <-  head(VariableFeatures(Hoch24k.GCadult), 10)
+plot1 <- VariableFeaturePlot(Hoch24k.GCadult)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot2
+```
+
+
+```{r}
+# > top10 <-  head(VariableFeatures(Hoch24k.GCadult), 10)
+# > top10
+#  [1] "Npy"     "Hbb-bs"  "Meg3"    "Syt4"    "Slc7a1"  "Slc7a11" "Slc16a1" "Tmem2"   "Slc3a2"  "Cst3"   
+# > Jeager.DEGs$group.number[Jeager.DEGs$GeneID %in% top10]
+#  [1] 1 1 1 1 5 5 3 3 2 2
+# > Jeager.DEGs$group[Jeager.DEGs$GeneID %in% top10]
+#  [1] "1hr"    "1hr"    "1hr"      "1hr"   "1hr_4hr_and_5hr"  "1hr_4hr_and_5hr" "4hr"      "4hr"            
+#  [9] "5hr"             "5hr"  
+```
+
+*Npy*, Neuropeptide Y, is a stress response protein and an IEG.  [Other literature](https://pubmed.ncbi.nlm.nih.gov/8985707/) hs revealed it to be involved in seizures (Burazin et al., 1996).  Which is good, its upregulated in active state essentially.   *Hbb-bs* is a hemoglobin subunit, but it also has precedence in literature.  [Brown et al., (2016)](https://www.ncbi.nlm.nih.gov/labs/pmc/articles/PMC4851882/#:~:text=In%20red%20blood%20cells%2C%20hemoglobin,(Rahaman%20and%20Straub%202013).) describes a possible role in nitric oxide (NO) metabolism in neurons, which a known retrograde transmitter involved in synaptic platicity [(Jonston et al., 1996)](https://www.sciencedirect.com/science/article/pii/0169328X9500046U), likely in late stage LTP processes (Carlini et al. 2010).  NO is also known the regulate adult neurogenesis in rats ([Shen et al., 2019](https://www.sciencedirect.com/science/article/pii/S0896627319305215)).  Moving on to *Meg3*, *Meg3* activates p53 and is a tumor suppressor gene (Zhou et al., 2003), it is also intriguingly subject to alternate splicing and searching the [isoform atlas](https://noush-joglekar.shinyapps.io/spatialviz/) created by the BRAIN initiative shows these isoforms appear to have variable expression across the hippocampus (Joglekar et al., 2021).  *Syt4* is a synaptotagmin, which aids in vesicle fusion for exocytosis.  Intriguingly synaptotagmin-4 can act in both a Ca2+ dependent or independent way and may promote dendrite extension (Jia et al. 2020).  Both *Slc7a1* and *Slc7a11* are members of the Slca7 family involved in sodium independent cationic amino-acid transporter which transport glutemate out of the plasma membrane and glutemate in (Nguyen et al., 2022).  Homozygous *Slc7a1*  deletion is lethal after birth (Perkins et al., 1997) and Slc7a11 promotes "kindling" in epilepsy mouse models, increasing intrinsic excitability of neurons following aprior siezure.  *Slc7a11* knockout results in mice which are protected from later siezures following initial siezure induction (Sears et al., 2019). Notably Jeager et al. (2018) listed the times at which these genes tended to be expressed and it is interesting to see that the IEGs, the stress response proteins, are indeed listed as being at 1hr while the other groups come later although *Syt* is listed as having increased expression regardless of time.  We should consider redoing their adhoc method of assigning these genes to particular time groups to expand on this claim.  The top genes however are all IEGs from group 1 associated with elevated expression at 1hr but not after.
+
+
+We could also look at the Hipo-seq data from cembrowski's work may allow me to identify if there is a spatial bias in our data, Cembrowski's group has described a subtype of mature granule cells whihc tend to be present in dorsal dentate gyrus which dominate hippocampal dependent behavioural cell recruitment (Erwin et al. 2021; Cembrowski et al., 2016).  Also please note here I have not tried to control for developmental effects and this dataset involves cells from multipledevelopmental time points.  Though the hochberg dataset contains immature granule cells there are no adult GCs in this data.
+
+```{r}
+# Cell counts for GC-adult by sample age in days
+table(hochgerner24k_2018_meta$characteristics..age[GCadult.hoch.idx])
+```
+
+
+I will pause on the writing here until I have looked at if developmental effects are responsible for these gene's coming up.
+
+
+#Refs
+Burazin, T. C. D., & Gundlach, A. L. (1996). Rapid and transient increases in cellular immediate early gene and neuropeptide mRNAs in cortical and limbic areas after amygdaloid kindling seizures in the rat. Epilepsy research, 26(1), 281-293.
+
+Brown, N., Alkhayer, K., Clements, R., Singhal, N., Gregory, R., Azzam, S., ... & McDonough, J. (2016). Neuronal hemoglobin expression and its relevance to multiple sclerosis neuropathology. Journal of molecular neuroscience, 59(1), 1-17.
+
+Carlini, V. P., Perez, M. F., Salde, E., Schiöth, H. B., Ramirez, O. A., & de Barioglio, S. R. (2010). Ghrelin induced memory facilitation implicates nitric oxide synthase activation and decrease in the threshold to promote LTP in hippocampal dentate gyrus. Physiology & behavior, 101(1), 117-123.
+
+Cembrowski, M. S., Wang, L., Sugino, K., Shields, B. C., & Spruston, N. (2016). Hipposeq: a comprehensive RNA-seq database of gene expression in hippocampal principal neurons. eLife, 5, e14997. https://doi.org/10.7554/eLife.14997
+
+Erwin, S. R., Sun, W., Copeland, M., Lindo, S., Spruston, N., & Cembrowski, M. S. (2020). A sparse, spatially biased subtype of mature granule cell dominates recruitment in hippocampal-associated behaviors. Cell Reports, 31(4), 107551.
+
+Nguyen, Y. T., Ha, H. T., Nguyen, T. H., & Nguyen, L. N. (2022). The role of SLC transporters for brain health and disease. Cellular and Molecular Life Sciences, 79(1), 1-21.
+
+Perkins, C. P., Mar, V., Shutter, J. R., del Castillo, J., Danilenko, D. M., Medlock, E. S., ... & Bosselman, R. A. (1997). Anemia and perinatal death result from loss of the murine ecotropic retrovirus receptor mCAT-1. Genes & development, 11(7), 914-925.
+
+Jia, Q., Hu, S., Jiao, D., Li, X., Qi, S., & Fan, R. (2020). Synaptotagmin‐4 promotes dendrite extension and melanogenesis in alpaca melanocytes by regulating Ca2+ influx via TRPM1 channels. Cell biochemistry and function, 38(3), 275-282.
+
+Joglekar, A., Prjibelski, A., Mahfouz, A., Collier, P., Lin, S., Schlusche, A. K., ... & Tilgner, H. U. (2021). A spatially resolved brain region-and cell type-specific isoform atlas of the postnatal mouse brain. Nature Communications, 12(1), 1-16.
+
+Johnston, Heather M., and Brian J. Morris. "N-methyl-D-aspartate and nitric oxide regulate the expression of calcium/calmodulin-dependent kinase II in the hippocampal dentate gyrus." Molecular brain research 31.1-2 (1995): 141-150.
+
+Sears, S. M., Hewett, J. A., & Hewett, S. J. (2019). Decreased epileptogenesis in mice lacking the System xc− transporter occurs in association with a reduction in AMPA receptor subunit GluA1. Epilepsia Open, 4(1), 133-143.
+
+Shen, J., Wang, D., Wang, X., Gupta, S., Ayloo, B., Wu, S., ... & Ge, S. (2019). Neurovascular coupling in the dentate gyrus regulates adult hippocampal neurogenesis. Neuron, 103(5), 878-890.
+
+Zhou, Y., Zhong, Y., Wang, Y., Zhang, X., Batista, D. L., Gejman, R., ... & Klibanski, A. (2007). Activation of p53 by MEG3 non-coding RNA. Journal of Biological Chemistry, 282(34), 24731-24742.
+
+
+# Examining associations across Hochgerner data with the Jeager data
+
+```{r}
+#scaling for dimnesionality reduction
+all.genes <- rownames(Hoch24k.GCadult)
+Hoch24k.GCadult <- ScaleData(Hoch24k.GCadult, features = all.genes)
+```
+```{r}
+Hoch24k.GCadult <- RunPCA(Hoch24k.GCadult , features = VariableFeatures(object = Hoch24k.GCadult))
+```
+
+```{r}
+DimHeatmap( Hoch24k.GCadult, dims = 1:5, cells = 500, balanced = TRUE)
+```
+
+Fos and Jun are in PC2 which leads me to believe this may be the component which may describe the axis which recently vs inactive cells lie on.  PC1 may be developmental effects though the vast majority of our cells are from P132.
+
+
+```{r}
+#Dsicovering dimensionality of these activity markers
+Hoch24k.GCadult <- JackStraw(Hoch24k.GCadult, num.replicate = 100)
+Hoch24k.GCadult <- ScoreJackStraw(Hoch24k.GCadult, dims = 1:20)
+```
+```{r}
+JackStrawPlot(Hoch24k.GCadult, dims = 1:20)
+```
+
+
+```{r}
+ElbowPlot(Hoch24k.GCadult)
+```
+So up until about PC 15 or 14 we've got some fairly good significance. I need to find the paper that shows this but I know there are engram studies in hippocampus that show "competative" or at least non-overlapping labelling by differnt IEG constructs on the same task.  This could have just been due to cell type differences but if it were occuring within granule cells it may be a means of distinguishing different cell types, if cells with differences in the temporally specific processes of neuroplaticity have stable markers that are lowly expressed genes they may go unnoticed unless one was specifically looking at IEGs.  We would not be able to address this ourselves but it is an interesting experiemtnal question to tackle, and maybe there are things we could do to try to provide more clues for what to look for.
+
+
+# Clustering and exploring what's drivining the activity in the data.
+
+```{r}
+#Adding metadata to identify the 
+Hoch24k.GCadult <- AddMetaData(object = Hoch24k.GCadult, 
+                               metadata = hochgerner24k_2018_meta[ GCadult.hoch.idx, ])
+
+#Clustering, we will visualize in UMP later
+Hoch24k.GCadult <- FindNeighbors(Hoch24k.GCadult, dims = 1:15)
+Hoch24k.GCadult <- FindClusters(Hoch24k.GCadult, resolution = 0.5)
+```
+
+```{r}
+Hoch24k.GCadult <- RunUMAP(Hoch24k.GCadult, dims = 1:13)
+
+DimPlot(Hoch24k.GCadult, reduction ="umap")
+```
+
+
+
+
+```{r}
+Hoch24k.GCadult[["Age"]] <- as.factor(hochgerner24k_2018_meta$characteristics..age[ GCadult.hoch.idx ])
+
+DimPlot(Hoch24k.GCadult, reduction ="umap", group.by = "Age")
+```
+
+To me it looks like there is a fair amount of overlap within the clusters by age.  It suggests that a lot fo the clustering is not just developmental effects.  The small number of cells in each age group outside of P132 is fine, though I should probably follow the data integration tutorial and redo this analysis, it would be interesting to see if there are developmentally independent engram markers.  Developmentally specific engram markers could also serve as a basis for "critical windows" in development, which could help us understand how certain psychiatric drugs work.  For instance Nardou et al. (2019) provided support for MDMA acting to reopen a critical period for social reward learning in nucleus accumbens neurons expressing oxytocin and serotonin receptors.  Stimulation of enterohinal cortex and dnetate gyrus ahs been shown to have antidepressant effects .  As the hippocampus mediates the integration of nearly the entire brain it is prehaps not surprissing there are oxytocin receptive neurons in dentate gyrus which could also serve to mediate social reward learning (Raam et al., 2017).  I want to make these claims cautiously, much more evidence would be needed before I could write about this but it may be an interesting passge in a future directions or discussions section of my thesis or in a paper.
+
+Raam, T., McAvoy, K. M., Besnard, A., Veenema, A. H., & Sahay, A. (2017). Hippocampal oxytocin receptors are necessary for discrimination of social stimuli. Nature communications, 8(1), 1-14.
+
+Nardou, R., Lewis, E. M., Rothhaas, R., Xu, R., Yang, A., Boyden, E., & Dölen, G. (2019). Oxytocin-dependent reopening of a social reward learning critical period with MDMA. Nature, 569(7754), 116-120.
+
+
+```{r}
+#this is going to be a bit messy
+
+#deinately search easch PCA compenents for which jeager group they come from see if any of them show up.
+
+```
+
