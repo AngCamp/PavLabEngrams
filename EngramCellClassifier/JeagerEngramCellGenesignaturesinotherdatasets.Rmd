@@ -2,13 +2,8 @@
 title: "Jeager Engram Cell Gene signatures in other datasets"
 author: "Angus Campbell"
 date: "11/02/2022"
-output: html_document
+output: github_document
 ---
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
 
 ```{r include = FALSE}
 #get libraries
