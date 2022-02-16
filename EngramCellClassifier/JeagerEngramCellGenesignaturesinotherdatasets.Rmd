@@ -111,7 +111,7 @@ hist(as.numeric(jeager2018_counts[jeager.fos.idx, fospos.1hr]),
      xlab = "Fos Read Count") 
 ```
 <br>
-So in general there are a few cells with a low level expression of fos, and then this small group of outliers in with a high fos count.  THis is in line with the sparse coding of events observed in the brain.
+So in general there are a few cells with a low level expression of fos, and then this small group of outliers in with a high fos count.  This is in line with the sparse coding of events observed in the brain.
 <br>
 <br>
 
@@ -120,7 +120,7 @@ Looking for Engram labelling gene's in Hochgerner et al., (2018) at P35
 ---
 <br>
 <br>
-This section is basically just copy pasta from [Seurats tutorials](https://satijalab.org/seurat/articles/pbmc3k_tutorial.html). Here I am using the DEGs published by Jeager et al., (2018).  When I attempted this clustering using all the gene's in the Hochgerner5k dataset nothing came up.  I successfully identify engram cells here with the restricted gene list.  So what we are seing here are not primary drivers of variance relative to most genes, even within the cell type matching the Jeager data at a similar developmental timepoint.  We will need to address this later in the work.  But here what I end up finding is a realtively rare cell type, defined by expression of 1hr markers as well as markers that last from 1hr to 5hrs.
+This section is basically just copy pasta from [Seurats tutorials](https://satijalab.org/seurat/articles/pbmc3k_tutorial.html). Here I am using the DEGs published by Jeager et al., (2018).  When I attempted this clustering using all the gene's in the Hochgerner5k dataset nothing came up.  I successfully identify engram cells here with the restricted gene list.  So what we are seeing here are not primary drivers of variance relative to most genes, even within the cell type matching the Jeager data at a similar developmental timepoint.  But here what I end up finding is a realtively rare cell type, defined by expression of 1hr markers as well as markers that last from 1hr to 5hrs.
 <br>
 <br>
 ```{r}
@@ -170,7 +170,7 @@ Hoch5k.GCadult <- CreateSeuratObject(counts = hochgerner5k_2018_counts[Jeager.DE
 Hoch5k.GCadult
 ```
 <br><br>
-So in the tutorial it also says 0 variable features so I geuss that's ok.
+So in the tutorial it also says 0 variable features so I guess that's OK.
 <br><br>
 ```{r}
 #QC for mitochondrial genes, like them we will remove any thing graeter than 5%
@@ -178,7 +178,7 @@ Hoch5k.GCadult[["percent.mt"]] <- PercentageFeatureSet(Hoch5k.GCadult, pattern =
 
 # This is for the filerting out those with features that 
 # I'm not sure what the appropriate number for us is, in the tutorial there were 13700 nfeatures
-#and the filterd out cells with less then 200 and greater than 2500, so I geuss  cells with more than
+#and the filterd out cells with less then 200 and greater than 2500, so I guess  cells with more than
 # a quarter of nFeatures and less than 10% of that is unacceptable?  
 Hoch5k.GCadult <- subset(Hoch5k.GCadult, subset = nFeature_RNA > 20 & nFeature_RNA < 250 & percent.mt < 5)
 
@@ -345,6 +345,14 @@ clstr3.mrks[clstr3.mrks$p_val_adj<0.05,] %>%
 <br>
 <br>
 When I organized them by adjusted pvalues the most significant are the 1hr gene's which I suppose would indicate these cells are recently active.  But thresholding the adjusted p-value for those that cross, we see that 23 gene's survive this thresholding and the gene's with the greatest fold change are almost all the 1hr_4hr_and_5hr genes.  So does this mean these cells are recently active but the genes with the greatest persistence are the ones which undergo the largest gene change?  Alternatively the transient nature of the 1hr markers could be driving down their fold change.  it will be interesting to compare these results to a non-linear classifier.
+<br>
+<br>
+
+NEXT STEPS
+---
+<br>
+<br>
+All prepossessing was done with respect only to the Jeager DGC Activity DEGs.  So normalization was restricted to these gene's I lowered the QC steps to filter out cells with low gene counts, which I am concerned is not justified.  To be fair the JackStraw Plots gives me hope that we are capturing a real effect.  Nevertheless these lenient QC measures may need to be addressed this later in the work.  As you said people generally do not encounter cell types in data that look like other cell types but with IEGs elevated, so perhaps as one would expect neural activity causes changes in cell state but at least in adult tissue, the cell type will remain static.  I should do some reading on detecting cell state changes, indeed this could be one of the more generally valuable part of this project, exploring various methods to detect cell state changes and define good methods for doing so in RNA-seq data.
 <br>
 <br>
 View this tutorial later:  https://hbctraining.github.io/In-depth-NGS-Data-Analysis-Course/sessionIV/lessons/SC_marker_identification.html

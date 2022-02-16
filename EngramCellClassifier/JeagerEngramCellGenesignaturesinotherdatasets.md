@@ -109,7 +109,7 @@ hist(as.numeric(jeager2018_counts[jeager.fos.idx, fospos.1hr]),
 ![](JeagerEngramCellGenesignaturesinotherdatasets_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
 <br> So in general there are a few cells with a low level expression of
 fos, and then this small group of outliers in with a high fos count.
-THis is in line with the sparse coding of events observed in the brain.
+This is in line with the sparse coding of events observed in the brain.
 <br> <br>
 
 ## Looking for Engram labelling gene’s in Hochgerner et al., (2018) at P35
@@ -119,12 +119,12 @@ tutorials](https://satijalab.org/seurat/articles/pbmc3k_tutorial.html).
 Here I am using the DEGs published by Jeager et al., (2018). When I
 attempted this clustering using all the gene’s in the Hochgerner5k
 dataset nothing came up. I successfully identify engram cells here with
-the restricted gene list. So what we are seing here are not primary
+the restricted gene list. So what we are seeing here are not primary
 drivers of variance relative to most genes, even within the cell type
-matching the Jeager data at a similar developmental timepoint. We will
-need to address this later in the work. But here what I end up finding
-is a realtively rare cell type, defined by expression of 1hr markers as
-well as markers that last from 1hr to 5hrs. <br> <br>
+matching the Jeager data at a similar developmental timepoint. But here
+what I end up finding is a realtively rare cell type, defined by
+expression of 1hr markers as well as markers that last from 1hr to 5hrs.
+<br> <br>
 
 ``` r
 #loading the 5k dataset
@@ -177,8 +177,8 @@ Hoch5k.GCadult
     ## 904 features across 1014 samples within 1 assay 
     ## Active assay: RNA (904 features, 0 variable features)
 
-<br><br> So in the tutorial it also says 0 variable features so I geuss
-that’s ok. <br><br>
+<br><br> So in the tutorial it also says 0 variable features so I guess
+that’s OK. <br><br>
 
 ``` r
 #QC for mitochondrial genes, like them we will remove any thing graeter than 5%
@@ -186,7 +186,7 @@ Hoch5k.GCadult[["percent.mt"]] <- PercentageFeatureSet(Hoch5k.GCadult, pattern =
 
 # This is for the filerting out those with features that 
 # I'm not sure what the appropriate number for us is, in the tutorial there were 13700 nfeatures
-#and the filterd out cells with less then 200 and greater than 2500, so I geuss  cells with more than
+#and the filterd out cells with less then 200 and greater than 2500, so I guess  cells with more than
 # a quarter of nFeatures and less than 10% of that is unacceptable?  
 Hoch5k.GCadult <- subset(Hoch5k.GCadult, subset = nFeature_RNA > 20 & nFeature_RNA < 250 & percent.mt < 5)
 
@@ -369,26 +369,26 @@ Hoch5k.GCadult <- RunUMAP(Hoch5k.GCadult, dims = 1:4)
     ## To use Python UMAP via reticulate, set umap.method to 'umap-learn' and metric to 'correlation'
     ## This message will be shown once per session
 
-    ## 17:34:54 UMAP embedding parameters a = 0.9922 b = 1.112
+    ## 14:45:06 UMAP embedding parameters a = 0.9922 b = 1.112
 
-    ## 17:34:54 Read 1005 rows and found 4 numeric columns
+    ## 14:45:06 Read 1005 rows and found 4 numeric columns
 
-    ## 17:34:54 Using Annoy for neighbor search, n_neighbors = 30
+    ## 14:45:06 Using Annoy for neighbor search, n_neighbors = 30
 
-    ## 17:34:54 Building Annoy index with metric = cosine, n_trees = 50
+    ## 14:45:06 Building Annoy index with metric = cosine, n_trees = 50
 
     ## 0%   10   20   30   40   50   60   70   80   90   100%
 
     ## [----|----|----|----|----|----|----|----|----|----|
 
     ## **************************************************|
-    ## 17:34:54 Writing NN index file to temp file C:\Users\angus\AppData\Local\Temp\Rtmp2RY2G8\file11785c2270a1
-    ## 17:34:54 Searching Annoy index using 1 thread, search_k = 3000
-    ## 17:34:55 Annoy recall = 100%
-    ## 17:34:56 Commencing smooth kNN distance calibration using 1 thread
-    ## 17:34:58 Initializing from normalized Laplacian + noise
-    ## 17:34:58 Commencing optimization for 500 epochs, with 33062 positive edges
-    ## 17:35:05 Optimization finished
+    ## 14:45:06 Writing NN index file to temp file C:\Users\angus\AppData\Local\Temp\RtmpiwDe7y\file43607140138b
+    ## 14:45:06 Searching Annoy index using 1 thread, search_k = 3000
+    ## 14:45:07 Annoy recall = 100%
+    ## 14:45:08 Commencing smooth kNN distance calibration using 1 thread
+    ## 14:45:10 Initializing from normalized Laplacian + noise
+    ## 14:45:10 Commencing optimization for 500 epochs, with 33062 positive edges
+    ## 14:45:15 Optimization finished
 
 ``` r
 DimPlot(Hoch5k.GCadult, reduction ="umap")
@@ -769,8 +769,24 @@ genes. So does this mean these cells are recently active but the genes
 with the greatest persistence are the ones which undergo the largest
 gene change? Alternatively the transient nature of the 1hr markers could
 be driving down their fold change. it will be interesting to compare
-these results to a non-linear classifier. <br> <br> View this tutorial
-later:
+these results to a non-linear classifier. <br> <br>
+
+## NEXT STEPS
+
+<br> <br> All prepossessing was done with respect only to the Jeager DGC
+Activity DEGs. So normalization was restricted to these gene’s I lowered
+the QC steps to filter out cells with low gene counts, which I am
+concerned is not justified. To be fair the JackStraw Plots gives me hope
+that we are capturing a real effect. Nevertheless these lenient QC
+measures may need to be addressed this later in the work. As you said
+people generally do not encounter cell types in data that look like
+other cell types but with IEGs elevated, so perhaps as one would expect
+neural activity causes changes in cell state but at least in adult
+tissue, the cell type will remain static. I should do some reading on
+detecting cell state changes, indeed this could be one of the more
+generally valuable part of this project, exploring various methods to
+detect cell state changes and define good methods for doing so in
+RNA-seq data. <br> <br> View this tutorial later:
 <https://hbctraining.github.io/In-depth-NGS-Data-Analysis-Course/sessionIV/lessons/SC_marker_identification.html>
 
 May have good information for labelling FeaturePlot function in seurat

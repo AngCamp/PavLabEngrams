@@ -9,7 +9,7 @@ INTRODUCTION
 ---
 <br>
 <br>
-
+Using the gene lists of Jeager et al., (2018), I was able to find a cluster of cells within Adult Dentate Gyrus Granule Cells from post natal day 35 with elevated 
 <br>
 <br>
 ```{r}
@@ -47,7 +47,35 @@ LOADING OUR DATA
 ---
 <br>
 <br>
+```{r}
+jeager2018_counts <- bind_cols(read.table('Jeager2018_GSE98679/GSE98679_count.txt.gz', header = TRUE, check.names = FALSE),
+                               read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_count.txt.gz', header = TRUE, check.names = FALSE))
 
+jeager2018_meta <- read.csv('Jeager2018_GSE98679/SraRunTable.txt', header = TRUE)
+jeager2018_meta = jeager2018_meta[c(1:46,599:912,47:598),] #we need to fix Jeager's files up a bit
+rownames(jeager2018_meta) <- c(1:912)
+
+jeager2018_meta$predicted_cell_type <- as.character(lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x}))
+jeager2018_meta$predicted_cell_type <- lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x})
+
+jeager2018_meta$fos_status <- as.factor(sapply(as.character(jeager2018_meta$source_name), function(y) if (grepl("_F_", y, fixed=TRUE)) "Fos+" else "Fos-"  ))
+jeager2018_meta$fos_status[361:dim(jeager2018_meta)[1]] <- "Fos+"
+
+jeager2018_meta$Mouse_Number[c(361:912)] <- jeager2018_meta$mousingle_number[c(361:912)]
+jeager2018_meta <- jeager2018_meta %>% 
+  dplyr::select(-mousingle_number)
+
+#filtering out cells as per instructions in Jeager et al., 2018)
+under4k <- sapply(jeager2018_counts, function(y) sum(length(which(y>0))))
+
+filtered.idx <- as.numeric(which(under4k>4000))
+filtered.idx <- order(c(filtered.idx,194))
+
+jeager2018_counts <-jeager2018_counts[,filtered.idx]
+jeager2018_meta <- jeager2018_meta[filtered.idx,]
+```
+<br>
+<br>
 
 INTEGRATING OUR DATASETS
 ---
@@ -65,12 +93,14 @@ BUILDING THE CLASSIFIER
 
 <br>
 <br>
+
 REPLICATING SOME OF THE RESULTS IN JEAGER
 ---
 
 
 <br>
 <br>
+
 EXPLORING ITS PERFORMANCE ON HOCHGERNER ET AL., (2018) P35-Adult DGCs
 ---
 <br>
@@ -82,5 +112,17 @@ EXPLORING ITS PERFORMANCE ON HOCHGERNER ET AL., (2018) P35-Adult DGCs
 brain2 <- LoadH5Seurat("anterior1.h5Seurat")
 Hoch5k.GCadult.markers <- read.csv("SeuratAnalysesData/HochgernerGDC_Adult_marker.csv")
 ```
+<br>
+<br>
+
+NEXT STEPS
+---
+<br>
+<br>
+The Hochgerner dataset provides the opportunity to study activity across dvelopmental states and in immature DGCs which is particualrily intersting to study neurogenesis.  IEGs are pretty widley expressed across all tissues and in neurons they appear to have been co-opted to drive platicity pathways, so it may be that there are a core set of IEGs that are widely expressed with the cells relying on particular cell type specfic TFs present to open chromatic specific to each cell type.  Going back to Jeager data with CA2 and VIP interneurons and taking another look may be of interest as well.
+
+
+References
+---
 <br>
 <br>
