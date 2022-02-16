@@ -369,26 +369,26 @@ Hoch5k.GCadult <- RunUMAP(Hoch5k.GCadult, dims = 1:4)
     ## To use Python UMAP via reticulate, set umap.method to 'umap-learn' and metric to 'correlation'
     ## This message will be shown once per session
 
-    ## 16:04:05 UMAP embedding parameters a = 0.9922 b = 1.112
+    ## 17:34:54 UMAP embedding parameters a = 0.9922 b = 1.112
 
-    ## 16:04:05 Read 1005 rows and found 4 numeric columns
+    ## 17:34:54 Read 1005 rows and found 4 numeric columns
 
-    ## 16:04:05 Using Annoy for neighbor search, n_neighbors = 30
+    ## 17:34:54 Using Annoy for neighbor search, n_neighbors = 30
 
-    ## 16:04:05 Building Annoy index with metric = cosine, n_trees = 50
+    ## 17:34:54 Building Annoy index with metric = cosine, n_trees = 50
 
     ## 0%   10   20   30   40   50   60   70   80   90   100%
 
     ## [----|----|----|----|----|----|----|----|----|----|
 
     ## **************************************************|
-    ## 16:04:06 Writing NN index file to temp file C:\Users\angus\AppData\Local\Temp\RtmpE7IvAq\file46855595ba6
-    ## 16:04:06 Searching Annoy index using 1 thread, search_k = 3000
-    ## 16:04:07 Annoy recall = 100%
-    ## 16:04:07 Commencing smooth kNN distance calibration using 1 thread
-    ## 16:04:09 Initializing from normalized Laplacian + noise
-    ## 16:04:09 Commencing optimization for 500 epochs, with 33062 positive edges
-    ## 16:04:18 Optimization finished
+    ## 17:34:54 Writing NN index file to temp file C:\Users\angus\AppData\Local\Temp\Rtmp2RY2G8\file11785c2270a1
+    ## 17:34:54 Searching Annoy index using 1 thread, search_k = 3000
+    ## 17:34:55 Annoy recall = 100%
+    ## 17:34:56 Commencing smooth kNN distance calibration using 1 thread
+    ## 17:34:58 Initializing from normalized Laplacian + noise
+    ## 17:34:58 Commencing optimization for 500 epochs, with 33062 positive edges
+    ## 17:35:05 Optimization finished
 
 ``` r
 DimPlot(Hoch5k.GCadult, reduction ="umap")
@@ -774,7 +774,19 @@ later:
 <https://hbctraining.github.io/In-depth-NGS-Data-Analysis-Course/sessionIV/lessons/SC_marker_identification.html>
 
 May have good information for labelling FeaturePlot function in seurat
-with gene expression information. <br> <br>
+with gene expression information.
+
+``` r
+#saving our object and it's data, commented out so its doesn't run everytime
+
+# write.csv(Hoch5k.GCadult.markers, "SeuratAnalysesData/HochgernerGDC_Adult_marker.csv")
+# 
+# remotes::install_github("mojaveazure/seurat-disk")
+# library(SeuratDisk)
+# SaveH5Seurat(Hoch5k.GCadult, filename = "SeuratAnalysesData/HochgernerDGC_Adult_P35.h5Seurat", overwrite = TRUE)
+```
+
+<br> <br>
 
 ## References
 

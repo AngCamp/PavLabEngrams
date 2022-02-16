@@ -19,7 +19,7 @@ library(FactoMineR)
 library(factoextra)
 library(Rtsne)
 library(dplyr)
-library(Seurat)
+library(Seurat) #installed with remotes
 library(stringr)
 library(patchwork)
 library(metap)
@@ -28,6 +28,7 @@ library(GeoTcgaData)
 library(ggplot2)
 library(tictoc)
 library(pheatmap)
+library(SeuratDisk) # installed with remotes
 #reticulate::py_install(packages ='umap-learn')
 ```
 
@@ -349,6 +350,17 @@ When I organized them by adjusted pvalues the most significant are the 1hr gene'
 View this tutorial later:  https://hbctraining.github.io/In-depth-NGS-Data-Analysis-Course/sessionIV/lessons/SC_marker_identification.html
 
 May have good information for labelling FeaturePlot function in seurat with gene expression information.
+
+```{r}
+#saving our object and it's data, commented out so its doesn't run everytime
+
+# write.csv(Hoch5k.GCadult.markers, "SeuratAnalysesData/HochgernerGDC_Adult_marker.csv")
+# 
+# remotes::install_github("mojaveazure/seurat-disk")
+# library(SeuratDisk)
+# SaveH5Seurat(Hoch5k.GCadult, filename = "SeuratAnalysesData/HochgernerDGC_Adult_P35.h5Seurat", overwrite = TRUE)
+```
+
 <br>
 <br>
 

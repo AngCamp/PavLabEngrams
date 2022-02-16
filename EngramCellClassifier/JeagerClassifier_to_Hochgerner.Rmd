@@ -1,0 +1,86 @@
+---
+title: "Classifying Hochgerner P35 DGCs from Jeager data"
+author: "Angus Campbell"
+date: "15/02/2022"
+output: github_document
+---
+
+INTRODUCTION
+---
+<br>
+<br>
+
+<br>
+<br>
+```{r}
+#libraries
+setwd("C:/Users/angus/Desktop/PavLabEngrams/EngramCellClassifier")
+
+library(tidyverse)
+library(GEOquery)
+library(AnnotationDbi)
+library(randomForest)
+library(data.table)
+library(reshape2)
+library(FactoMineR)
+library(factoextra)
+library(Rtsne)
+library(dplyr)
+library(Seurat) #installed with remotes
+library(stringr)
+library(patchwork)
+library(metap)
+library(cqn)
+library(GeoTcgaData)
+library(ggplot2)
+library(tictoc)
+library(pheatmap)
+library(SeuratDisk) # installed with remotes
+#reticulate::py_install(packages ='umap-learn')
+
+```
+
+
+<br>
+<br>
+LOADING OUR DATA
+---
+<br>
+<br>
+
+
+INTEGRATING OUR DATASETS
+---
+<br>
+<br>
+In order to mitigate the batch effects that will inevitably arrise we need to use seurats data integration features.  Described in this tutorial [here](https://satijalab.org/seurat/articles/integration_introduction.html).
+<br>
+<br>
+
+BUILDING THE CLASSIFIER
+---
+<br>
+<br>
+
+
+<br>
+<br>
+REPLICATING SOME OF THE RESULTS IN JEAGER
+---
+
+
+<br>
+<br>
+EXPLORING ITS PERFORMANCE ON HOCHGERNER ET AL., (2018) P35-Adult DGCs
+---
+<br>
+<br>
+```{r}
+#loading the seurat analysis from JeagerEngramCellGenesignaturesinotherdatasets.Rmd
+# totorial here: https://mojaveazure.github.io/seurat-disk/articles/h5Seurat-load.html
+
+brain2 <- LoadH5Seurat("anterior1.h5Seurat")
+Hoch5k.GCadult.markers <- read.csv("SeuratAnalysesData/HochgernerGDC_Adult_marker.csv")
+```
+<br>
+<br>
