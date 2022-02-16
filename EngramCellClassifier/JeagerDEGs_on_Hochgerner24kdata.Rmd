@@ -234,9 +234,10 @@ DimPlot(Hoch24k.GCadult, reduction ="umap")
 
 
 ```{r}
-Hoch24k.GCadult[["Age"]] <- as.factor(hochgerner24k_2018_meta$characteristics..age[ GCadult.hoch.idx ])
 
+Hoch24k.GCadult[["Age"]] <- as.factor(hochgerner24k_2018_meta$characteristics..age[ GCadult.hoch.idx ])
 DimPlot(Hoch24k.GCadult, reduction ="umap", group.by = "Age")
+
 ```
 
 To me it looks like there is a fair amount of overlap within the clusters by age.  It suggests that a lot fo the clustering is not just developmental effects.  The small number of cells in each age group outside of P132 is fine, though I should probably follow the data integration tutorial and redo this analysis, it would be interesting to see if there are developmentally independent engram markers.  Developmentally specific engram markers could also serve as a basis for "critical windows" in development, which could help us understand how certain psychiatric drugs work.  For instance Nardou et al. (2019) provided support for MDMA acting to reopen a critical period for social reward learning in nucleus accumbens neurons expressing oxytocin and serotonin receptors.  Stimulation of enterohinal cortex and dnetate gyrus ahs been shown to have antidepressant effects .  As the hippocampus mediates the integration of nearly the entire brain it is prehaps not surprissing there are oxytocin receptive neurons in dentate gyrus which could also serve to mediate social reward learning (Raam et al., 2017).  I want to make these claims cautiously, much more evidence would be needed before I could write about this but it may be an interesting passge in a future directions or discussions section of my thesis or in a paper.

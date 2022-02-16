@@ -119,9 +119,8 @@ Looking for Engram labelling gene's in Hochgerner et al., (2018) at P35
 ---
 <br>
 <br>
-
-
-This section is basically just copy pasta from [Seurats tutorials](https://satijalab.org/seurat/articles/pbmc3k_tutorial.html).
+This section is basically just copy pasta from [Seurats tutorials](https://satijalab.org/seurat/articles/pbmc3k_tutorial.html). Here I am using the DEGs published by Jeager et al., (2018).  When I attempted this clustering using all the gene's in the Hochgerner5k dataset nothing came up.  I successfully identify engram cells here with the restricted gene list.  So what we are seing here are not primary drivers of variance relative to most genes, even within the cell type matching the Jeager data at a similar developmental timepoint.  We will need to address this later in the work.  But here what I end up finding is a realtively rare cell type, defined by expression of 1hr markers as well as markers that last from 1hr to 5hrs.
+<br>
 <br>
 ```{r}
 #loading the 5k dataset
@@ -245,13 +244,7 @@ ElbowPlot(Hoch5k.GCadult)
 ```
 <br>
 <br>
-Shows more or less the same thing, 4 isn't quite at the elbow but it may as well be.
-<br>
-<br>
-
-<br>
-<br>
-This plot looks better after doing clustering.
+Shows more or less the same thing, 4 isn't quite at the elbow but it may as well be.  I played with the QC thresholds and if you increase the number of max nFeatures to high you will reduce to a single PC.
 <br>
 <br>
 
@@ -271,12 +264,11 @@ Hoch5k.GCadult <- RunUMAP(Hoch5k.GCadult, dims = 1:4)
 
 DimPlot(Hoch5k.GCadult, reduction ="umap")
 ```
-
+<br>
+<br>
 So what we get out of this is some kind of graded expression within the population.  It would be interesting to try to see which cells have more of which gene group in them.  This is similar to what was described by Dr. Cembrowski's group in Erwin et al., (2020) see figure 5 A in particular.  I tried in with 3 dims and I think it looks better with 4 more graded less like swiss cheese.  it would be interesting to see how Jeager's group labels map onto this.
-
-
-
-
+<br>
+<br>
 ```{r}
 #Lets find some markers 
 cluster0.markers <- FindMarkers(Hoch5k.GCadult, ident.1 = 0, min.pct = 0.25)
@@ -296,8 +288,11 @@ head(cluster2.markers, n = 10)
 cluster3.markers <- FindMarkers(Hoch5k.GCadult, ident.1 = 3, min.pct = 0.25)
 head(cluster3.markers, n = 30)
 ```
-
+<br>
+<br>
 The only two clusters with really significant are cluster 0 and cluster 3.  Inhba shows significantly elevated expression.  it is by far the most significant marker in the whole dataset.  Inhba is a expressed for a longer time than Arc or Fos according to Jeager et al., (2018) so it makes sense this would be a marker we detect.  Crucially cluster3 cells are also relatively rare compared to the other clusters, an indication of participation in sparse coding.  Cluster 0 has the Melatonin1 receptor has been described previously as being present in dentate gyrus though it is difficult what to make of this.  I foudn a review which suggests Mlt1 is expressed in molecular layer and hilus (the parts of the dentate dyrus that sandwich the granule cell layer), so prehaps we found either a subset of borderline granule cells or they were misclassified during clustering in Hochgerner et al., (2018).  Inhba also tracked Arc expression in the initial stages of engram formation before taking off on it's own as arc dies down between 4 and 5 hours after activation.  Hochgerner also has Gabanergic neurons we could similarily cluster I will begin reviewing the literature on inhibitory interneuron engrams.  Plotting with PCA actually looks even beter than the UMAP plot.
+<br>
+<br>
 
 ```{r}
 DimPlot(Hoch5k.GCadult, reduction = "pca")
@@ -308,7 +303,56 @@ The other clusters are more or less intermixed while the *Inhba* labelled neuron
 <br>
 <br>
 
-Refernces
+```{r}
+
+Hoch5k.GCadult.markers <- FindAllMarkers(Hoch5k.GCadult, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+Hoch5k.GCadult.markers %>%
+    group_by(cluster) %>%
+    slice_max(n = 2, order_by = avg_log2FC)
+
+```
+```{r}
+Hoch5k.GCadult.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top10
+DoHeatmap(Hoch5k.GCadult, features = top10$gene) + NoLegend()
+```
+<br>
+<br>
+
+
+```{r}
+clstr3.mrks <- Hoch5k.GCadult.markers[Hoch5k.GCadult.markers$cluster=="3",]
+
+clstr3.mrks$JeagerGrouping <- Jeager.DEGs$group[Jeager.DEGs$GeneID %in% clstr3.mrks$gene]
+clstr3.mrks$JeagerGrouping
+```
+<br>
+<br>
+Despite 1hr group having the largest portion of the gene's in the Jeager data the majority of the markers here are from the 1hr_4hr_and_5hr group  and the rest are 4hr or 5hr.  I will check their adjusted p-values and the fold change of gene's which cross significance.
+<br>
+<br>
+
+```{r}
+arrange(clstr3.mrks, p_val_adj)
+```
+
+```{r}
+clstr3.mrks[clstr3.mrks$p_val_adj<0.05,] %>%
+  arrange( avg_log2FC)
+```
+<br>
+<br>
+When I organized them by adjusted pvalues the most significant are the 1hr gene's which I suppose would indicate these cells are recently active.  But thresholding the adjusted p-value for those that cross, we see that 23 gene's survive this thresholding and the gene's with the greatest fold change are almost all the 1hr_4hr_and_5hr genes.  So does this mean these cells are recently active but the genes with the greatest persistence are the ones which undergo the largest gene change?  Alternatively the transient nature of the 1hr markers could be driving down their fold change.  it will be interesting to compare these results to a non-linear classifier.
+<br>
+<br>
+View this tutorial later:  https://hbctraining.github.io/In-depth-NGS-Data-Analysis-Course/sessionIV/lessons/SC_marker_identification.html
+
+May have good information for labelling FeaturePlot function in seurat with gene expression information.
+<br>
+<br>
+
+References
 ---
 <br>
 <br>

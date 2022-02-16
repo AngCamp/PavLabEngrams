@@ -114,11 +114,17 @@ THis is in line with the sparse coding of events observed in the brain.
 
 ## Looking for Engram labelling gene’s in Hochgerner et al., (2018) at P35
 
-<br> <br>
-
-This section is basically just copy pasta from [Seurats
+<br> <br> This section is basically just copy pasta from [Seurats
 tutorials](https://satijalab.org/seurat/articles/pbmc3k_tutorial.html).
-<br>
+Here I am using the DEGs published by Jeager et al., (2018). When I
+attempted this clustering using all the gene’s in the Hochgerner5k
+dataset nothing came up. I successfully identify engram cells here with
+the restricted gene list. So what we are seing here are not primary
+drivers of variance relative to most genes, even within the cell type
+matching the Jeager data at a similar developmental timepoint. We will
+need to address this later in the work. But here what I end up finding
+is a realtively rare cell type, defined by expression of 1hr markers as
+well as markers that last from 1hr to 5hrs. <br> <br>
 
 ``` r
 #loading the 5k dataset
@@ -324,9 +330,9 @@ ElbowPlot(Hoch5k.GCadult)
 
 ![](JeagerEngramCellGenesignaturesinotherdatasets_files/figure-gfm/unnamed-chunk-14-1.png)<!-- -->
 <br> <br> Shows more or less the same thing, 4 isn’t quite at the elbow
-but it may as well be. <br> <br>
-
-<br> <br> This plot looks better after doing clustering. <br> <br>
+but it may as well be. I played with the QC thresholds and if you
+increase the number of max nFeatures to high you will reduce to a single
+PC. <br> <br>
 
 ``` r
 #Adding metadata to identify the 
@@ -363,40 +369,39 @@ Hoch5k.GCadult <- RunUMAP(Hoch5k.GCadult, dims = 1:4)
     ## To use Python UMAP via reticulate, set umap.method to 'umap-learn' and metric to 'correlation'
     ## This message will be shown once per session
 
-    ## 22:23:35 UMAP embedding parameters a = 0.9922 b = 1.112
+    ## 16:04:05 UMAP embedding parameters a = 0.9922 b = 1.112
 
-    ## 22:23:35 Read 1005 rows and found 4 numeric columns
+    ## 16:04:05 Read 1005 rows and found 4 numeric columns
 
-    ## 22:23:35 Using Annoy for neighbor search, n_neighbors = 30
+    ## 16:04:05 Using Annoy for neighbor search, n_neighbors = 30
 
-    ## 22:23:35 Building Annoy index with metric = cosine, n_trees = 50
+    ## 16:04:05 Building Annoy index with metric = cosine, n_trees = 50
 
     ## 0%   10   20   30   40   50   60   70   80   90   100%
 
     ## [----|----|----|----|----|----|----|----|----|----|
 
     ## **************************************************|
-    ## 22:23:35 Writing NN index file to temp file C:\Users\angus\AppData\Local\Temp\Rtmps5D80I\file35b4537b2bb1
-    ## 22:23:35 Searching Annoy index using 1 thread, search_k = 3000
-    ## 22:23:36 Annoy recall = 100%
-    ## 22:23:37 Commencing smooth kNN distance calibration using 1 thread
-    ## 22:23:38 Initializing from normalized Laplacian + noise
-    ## 22:23:38 Commencing optimization for 500 epochs, with 33062 positive edges
-    ## 22:23:41 Optimization finished
+    ## 16:04:06 Writing NN index file to temp file C:\Users\angus\AppData\Local\Temp\RtmpE7IvAq\file46855595ba6
+    ## 16:04:06 Searching Annoy index using 1 thread, search_k = 3000
+    ## 16:04:07 Annoy recall = 100%
+    ## 16:04:07 Commencing smooth kNN distance calibration using 1 thread
+    ## 16:04:09 Initializing from normalized Laplacian + noise
+    ## 16:04:09 Commencing optimization for 500 epochs, with 33062 positive edges
+    ## 16:04:18 Optimization finished
 
 ``` r
 DimPlot(Hoch5k.GCadult, reduction ="umap")
 ```
 
 ![](JeagerEngramCellGenesignaturesinotherdatasets_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
-
-So what we get out of this is some kind of graded expression within the
-population. It would be interesting to try to see which cells have more
-of which gene group in them. This is similar to what was described by
-Dr. Cembrowski’s group in Erwin et al., (2020) see figure 5 A in
-particular. I tried in with 3 dims and I think it looks better with 4
-more graded less like swiss cheese. it would be interesting to see how
-Jeager’s group labels map onto this.
+<br> <br> So what we get out of this is some kind of graded expression
+within the population. It would be interesting to try to see which cells
+have more of which gene group in them. This is similar to what was
+described by Dr. Cembrowski’s group in Erwin et al., (2020) see figure 5
+A in particular. I tried in with 3 dims and I think it looks better with
+4 more graded less like swiss cheese. it would be interesting to see how
+Jeager’s group labels map onto this. <br> <br>
 
 ``` r
 #Lets find some markers 
@@ -487,24 +492,25 @@ head(cluster3.markers, n = 30)
     ## Susd4   1.267041e-04  0.7138460 0.393 0.204 1.145405e-01
     ## Scg2    1.285912e-04  0.6635955 0.640 0.401 1.162465e-01
 
-The only two clusters with really significant are cluster 0 and cluster
-3. Inhba shows significantly elevated expression. it is by far the most
-significant marker in the whole dataset. Inhba is a expressed for a
-longer time than Arc or Fos according to Jeager et al., (2018) so it
-makes sense this would be a marker we detect. Crucially cluster3 cells
-are also relatively rare compared to the other clusters, an indication
-of participation in sparse coding. Cluster 0 has the Melatonin1 receptor
-has been described previously as being present in dentate gyrus though
-it is difficult what to make of this. I foudn a review which suggests
-Mlt1 is expressed in molecular layer and hilus (the parts of the dentate
-dyrus that sandwich the granule cell layer), so prehaps we found either
-a subset of borderline granule cells or they were misclassified during
-clustering in Hochgerner et al., (2018). Inhba also tracked Arc
-expression in the initial stages of engram formation before taking off
-on it’s own as arc dies down between 4 and 5 hours after activation.
-Hochgerner also has Gabanergic neurons we could similarily cluster I
-will begin reviewing the literature on inhibitory interneuron engrams.
-Plotting with PCA actually looks even beter than the UMAP plot.
+<br> <br> The only two clusters with really significant are cluster 0
+and cluster 3. Inhba shows significantly elevated expression. it is by
+far the most significant marker in the whole dataset. Inhba is a
+expressed for a longer time than Arc or Fos according to Jeager et al.,
+(2018) so it makes sense this would be a marker we detect. Crucially
+cluster3 cells are also relatively rare compared to the other clusters,
+an indication of participation in sparse coding. Cluster 0 has the
+Melatonin1 receptor has been described previously as being present in
+dentate gyrus though it is difficult what to make of this. I foudn a
+review which suggests Mlt1 is expressed in molecular layer and hilus
+(the parts of the dentate dyrus that sandwich the granule cell layer),
+so prehaps we found either a subset of borderline granule cells or they
+were misclassified during clustering in Hochgerner et al., (2018). Inhba
+also tracked Arc expression in the initial stages of engram formation
+before taking off on it’s own as arc dies down between 4 and 5 hours
+after activation. Hochgerner also has Gabanergic neurons we could
+similarily cluster I will begin reviewing the literature on inhibitory
+interneuron engrams. Plotting with PCA actually looks even beter than
+the UMAP plot. <br> <br>
 
 ``` r
 DimPlot(Hoch5k.GCadult, reduction = "pca")
@@ -514,7 +520,263 @@ DimPlot(Hoch5k.GCadult, reduction = "pca")
 <br> <br> The other clusters are more or less intermixed while the
 *Inhba* labelled neurons are clearly moving along PC1. <br> <br>
 
-## Refernces
+``` r
+Hoch5k.GCadult.markers <- FindAllMarkers(Hoch5k.GCadult, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+```
+
+    ## Calculating cluster 0
+
+    ## Calculating cluster 1
+
+    ## Calculating cluster 2
+
+    ## Calculating cluster 3
+
+``` r
+Hoch5k.GCadult.markers %>%
+    group_by(cluster) %>%
+    slice_max(n = 2, order_by = avg_log2FC)
+```
+
+    ## # A tibble: 6 x 7
+    ## # Groups:   cluster [3]
+    ##      p_val avg_log2FC pct.1 pct.2 p_val_adj cluster gene  
+    ##      <dbl>      <dbl> <dbl> <dbl>     <dbl> <fct>   <chr> 
+    ## 1 2.24e- 7      0.752 0.255 0.116  2.02e- 4 0       Shank1
+    ## 2 5.07e- 8      0.718 0.316 0.153  4.58e- 5 0       Nrip3 
+    ## 3 7.61e- 6      0.447 0.492 0.358  6.88e- 3 1       Nhp2l1
+    ## 4 1.01e- 3      0.441 0.338 0.241  9.10e- 1 1       Eif3g 
+    ## 5 4.71e-52      3.45  0.281 0.003  4.26e-49 3       Inhba 
+    ## 6 6.21e-44      2.59  0.596 0.078  5.61e-41 3       Rgs4
+
+``` r
+Hoch5k.GCadult.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top10
+DoHeatmap(Hoch5k.GCadult, features = top10$gene) + NoLegend()
+```
+
+![](JeagerEngramCellGenesignaturesinotherdatasets_files/figure-gfm/unnamed-chunk-23-1.png)<!-- -->
+<br> <br>
+
+``` r
+clstr3.mrks <- Hoch5k.GCadult.markers[Hoch5k.GCadult.markers$cluster=="3",]
+
+clstr3.mrks$JeagerGrouping <- Jeager.DEGs$group[Jeager.DEGs$GeneID %in% clstr3.mrks$gene]
+clstr3.mrks$JeagerGrouping
+```
+
+    ##  [1] "1hr"             "1hr"             "1hr"             "1hr"            
+    ##  [5] "1hr_4hr_and_5hr" "1hr_4hr_and_5hr" "1hr_4hr_and_5hr" "1hr_4hr_and_5hr"
+    ##  [9] "1hr_4hr_and_5hr" "1hr_4hr_and_5hr" "1hr_4hr_and_5hr" "1hr_4hr_and_5hr"
+    ## [13] "1hr_4hr_and_5hr" "1hr_4hr_and_5hr" "1hr_4hr_and_5hr" "1hr_4hr_and_5hr"
+    ## [17] "1hr_4hr_and_5hr" "1hr_4hr_and_5hr" "1hr_4hr_and_5hr" "1hr_4hr_and_5hr"
+    ## [21] "1hr_4hr_and_5hr" "1hr_4hr_and_5hr" "1hr_4hr_and_5hr" "1hr_and_4hr"    
+    ## [25] "1hr_and_4hr"     "1hr_and_4hr"     "1hr_and_4hr"     "1hr_and_4hr"    
+    ## [29] "1hr_and_4hr"     "1hr_and_4hr"     "4hr"             "4hr"            
+    ## [33] "4hr"             "4hr"             "4hr"             "4hr"            
+    ## [37] "4hr"             "4hr_and_5hr"     "4hr_and_5hr"     "4hr_and_5hr"    
+    ## [41] "4hr_and_5hr"     "4hr_and_5hr"     "4hr_and_5hr"     "4hr_and_5hr"    
+    ## [45] "4hr_and_5hr"     "4hr_and_5hr"     "4hr_and_5hr"     "4hr_and_5hr"    
+    ## [49] "4hr_and_5hr"     "4hr_and_5hr"     "5hr"             "5hr"            
+    ## [53] "5hr"             "5hr"             "5hr"             "5hr"
+
+<br> <br> Despite 1hr group having the largest portion of the gene’s in
+the Jeager data the majority of the markers here are from the
+1hr\_4hr\_and\_5hr group and the rest are 4hr or 5hr. I will check their
+adjusted p-values and the fold change of gene’s which cross
+significance. <br> <br>
+
+``` r
+arrange(clstr3.mrks, p_val_adj)
+```
+
+    ##                 p_val avg_log2FC pct.1 pct.2    p_val_adj cluster     gene
+    ## Inhba    4.712392e-52  3.4495227 0.281 0.003 4.260002e-49       3    Inhba
+    ## Rgs4     6.205073e-44  2.5945276 0.596 0.078 5.609386e-41       3     Rgs4
+    ## Chgb     1.833500e-25  1.6797812 0.820 0.288 1.657484e-22       3     Chgb
+    ## Lingo1   3.430122e-23  2.1579355 0.517 0.121 3.100830e-20       3   Lingo1
+    ## Ttyh1    1.069700e-13  1.7922629 0.371 0.099 9.670085e-11       3    Ttyh1
+    ## Gsg1l    2.833234e-13  1.8206557 0.258 0.050 2.561243e-10       3    Gsg1l
+    ## Tmod1    1.802125e-12  1.4884617 0.393 0.112 1.629121e-09       3    Tmod1
+    ## Dock3    2.497841e-12  1.1887453 0.506 0.171 2.258048e-09       3    Dock3
+    ## Ptprn    1.038692e-11  1.1953266 0.573 0.228 9.389774e-09       3    Ptprn
+    ## Nefm     2.734467e-11  1.4841502 0.449 0.152 2.471959e-08       3     Nefm
+    ## Kctd1    9.942092e-09  1.3042979 0.281 0.081 8.987651e-06       3    Kctd1
+    ## Tpt1     1.936901e-08  0.6624264 0.899 0.728 1.750959e-05       3     Tpt1
+    ## Syne1    2.269052e-08  0.9212057 0.730 0.439 2.051223e-05       3    Syne1
+    ## Srxn1    3.423944e-08  1.3503151 0.303 0.099 3.095245e-05       3    Srxn1
+    ## Shisa4   6.871901e-08  0.8639132 0.607 0.290 6.212198e-05       3   Shisa4
+    ## Trank1   6.967282e-07  0.9802445 0.303 0.107 6.298423e-04       3   Trank1
+    ## Plk2     8.365739e-07  1.0214312 0.393 0.165 7.562628e-04       3     Plk2
+    ## Cltc     1.470368e-06  0.5985788 0.449 0.189 1.329213e-03       3     Cltc
+    ## Ier5     3.060807e-06  0.8810882 0.449 0.207 2.766969e-03       3     Ier5
+    ## Rtn4rl1  8.701320e-06  0.6661084 0.303 0.116 7.865993e-03       3  Rtn4rl1
+    ## Kcnip3   9.317222e-06  1.4662462 0.281 0.110 8.422769e-03       3   Kcnip3
+    ## Bdnf     1.197240e-05  0.8449293 0.674 0.441 1.082305e-02       3     Bdnf
+    ## Ckb      2.343329e-05  0.6390716 0.697 0.430 2.118369e-02       3      Ckb
+    ## Meg3     5.640951e-05  0.4068507 1.000 0.948 5.099420e-02       3     Meg3
+    ## Nefl     7.676633e-05  0.5070046 0.764 0.492 6.939677e-02       3     Nefl
+    ## Susd4    1.267041e-04  0.7138460 0.393 0.204 1.145405e-01       3    Susd4
+    ## Scg2     1.285912e-04  0.6635955 0.640 0.401 1.162465e-01       3     Scg2
+    ## Smim13   1.766444e-04  0.6814855 0.270 0.117 1.596865e-01       3   Smim13
+    ## Kcnk1    1.884615e-04  0.4749495 0.562 0.308 1.703692e-01       3    Kcnk1
+    ## Hsph1    2.576116e-04  0.6580241 0.539 0.341 2.328809e-01       3    Hsph1
+    ## Aldoa    2.801898e-04  0.2543480 1.000 0.980 2.532916e-01       3    Aldoa
+    ## Kcnj4    3.671836e-04  0.7353779 0.292 0.141 3.319339e-01       3    Kcnj4
+    ## Smap2    5.151530e-04  0.8785592 0.303 0.153 4.656983e-01       3    Smap2
+    ## Plekha2  6.348157e-04  0.6465750 0.337 0.170 5.738734e-01       3  Plekha2
+    ## Jund     7.423134e-04  0.5155210 0.843 0.599 6.710513e-01       3     Jund
+    ## Mgat3    8.104472e-04  0.6643744 0.303 0.148 7.326442e-01       3    Mgat3
+    ## Atp6v1b2 8.917866e-04  0.4336055 0.798 0.580 8.061751e-01       3 Atp6v1b2
+    ## Gpr22    9.177313e-04  0.6177835 0.348 0.183 8.296291e-01       3    Gpr22
+    ## Tacc1    9.252856e-04  0.5564539 0.292 0.140 8.364582e-01       3    Tacc1
+    ## Stxbp5l  1.275956e-03  0.9457315 0.303 0.158 1.000000e+00       3  Stxbp5l
+    ## Eno2     1.290043e-03  0.5291875 0.506 0.311 1.000000e+00       3     Eno2
+    ## Slc30a31 2.138327e-03  0.3991530 0.438 0.252 1.000000e+00       3  Slc30a3
+    ## Stx1b    2.140884e-03  0.5598129 0.348 0.192 1.000000e+00       3    Stx1b
+    ## Hpcal4   2.311686e-03  0.4804416 0.562 0.366 1.000000e+00       3   Hpcal4
+    ## Pi4ka    2.521067e-03  0.5286807 0.303 0.158 1.000000e+00       3    Pi4ka
+    ## Brinp1   2.883511e-03  0.4335927 0.438 0.258 1.000000e+00       3   Brinp1
+    ## Hsp90b1  3.528873e-03  0.4624451 0.393 0.230 1.000000e+00       3  Hsp90b1
+    ## Pcdh8    4.072517e-03  0.5163197 0.393 0.237 1.000000e+00       3    Pcdh8
+    ## Txndc9   4.185719e-03  0.6053082 0.382 0.226 1.000000e+00       3   Txndc9
+    ## Gpbp1    4.867732e-03  0.3075200 0.416 0.249 1.000000e+00       3    Gpbp1
+    ## Pde4dip  5.318607e-03  0.5916891 0.281 0.153 1.000000e+00       3  Pde4dip
+    ## Efhd2    6.190302e-03  0.7067258 0.270 0.147 1.000000e+00       3    Efhd2
+    ## Slc7a14  6.635113e-03  0.4085057 0.438 0.265 1.000000e+00       3  Slc7a14
+    ## Fam126b  8.103425e-03  0.4351962 0.292 0.166 1.000000e+00       3  Fam126b
+    ## Dmtn     8.418058e-03  0.4718485 0.562 0.395 1.000000e+00       3     Dmtn
+    ## Synpo1   9.461940e-03  0.5243114 0.303 0.186 1.000000e+00       3    Synpo
+    ##           JeagerGrouping
+    ## Inhba                1hr
+    ## Rgs4                 1hr
+    ## Chgb                 1hr
+    ## Lingo1               1hr
+    ## Ttyh1    1hr_4hr_and_5hr
+    ## Gsg1l    1hr_4hr_and_5hr
+    ## Tmod1    1hr_4hr_and_5hr
+    ## Dock3    1hr_4hr_and_5hr
+    ## Ptprn    1hr_4hr_and_5hr
+    ## Nefm     1hr_4hr_and_5hr
+    ## Kctd1    1hr_4hr_and_5hr
+    ## Tpt1     1hr_4hr_and_5hr
+    ## Syne1    1hr_4hr_and_5hr
+    ## Srxn1    1hr_4hr_and_5hr
+    ## Shisa4   1hr_4hr_and_5hr
+    ## Trank1   1hr_4hr_and_5hr
+    ## Plk2     1hr_4hr_and_5hr
+    ## Cltc     1hr_4hr_and_5hr
+    ## Ier5     1hr_4hr_and_5hr
+    ## Rtn4rl1  1hr_4hr_and_5hr
+    ## Kcnip3   1hr_4hr_and_5hr
+    ## Bdnf     1hr_4hr_and_5hr
+    ## Ckb      1hr_4hr_and_5hr
+    ## Meg3         1hr_and_4hr
+    ## Nefl         1hr_and_4hr
+    ## Susd4        1hr_and_4hr
+    ## Scg2         1hr_and_4hr
+    ## Smim13       1hr_and_4hr
+    ## Kcnk1        1hr_and_4hr
+    ## Hsph1        1hr_and_4hr
+    ## Aldoa                4hr
+    ## Kcnj4                4hr
+    ## Smap2                4hr
+    ## Plekha2              4hr
+    ## Jund                 4hr
+    ## Mgat3                4hr
+    ## Atp6v1b2             4hr
+    ## Gpr22        4hr_and_5hr
+    ## Tacc1        4hr_and_5hr
+    ## Stxbp5l      4hr_and_5hr
+    ## Eno2         4hr_and_5hr
+    ## Slc30a31     4hr_and_5hr
+    ## Stx1b        4hr_and_5hr
+    ## Hpcal4       4hr_and_5hr
+    ## Pi4ka        4hr_and_5hr
+    ## Brinp1       4hr_and_5hr
+    ## Hsp90b1      4hr_and_5hr
+    ## Pcdh8        4hr_and_5hr
+    ## Txndc9       4hr_and_5hr
+    ## Gpbp1        4hr_and_5hr
+    ## Pde4dip              5hr
+    ## Efhd2                5hr
+    ## Slc7a14              5hr
+    ## Fam126b              5hr
+    ## Dmtn                 5hr
+    ## Synpo1               5hr
+
+``` r
+clstr3.mrks[clstr3.mrks$p_val_adj<0.05,] %>%
+  arrange( avg_log2FC)
+```
+
+    ##                p_val avg_log2FC pct.1 pct.2    p_val_adj cluster    gene
+    ## Cltc    1.470368e-06  0.5985788 0.449 0.189 1.329213e-03       3    Cltc
+    ## Ckb     2.343329e-05  0.6390716 0.697 0.430 2.118369e-02       3     Ckb
+    ## Tpt1    1.936901e-08  0.6624264 0.899 0.728 1.750959e-05       3    Tpt1
+    ## Rtn4rl1 8.701320e-06  0.6661084 0.303 0.116 7.865993e-03       3 Rtn4rl1
+    ## Bdnf    1.197240e-05  0.8449293 0.674 0.441 1.082305e-02       3    Bdnf
+    ## Shisa4  6.871901e-08  0.8639132 0.607 0.290 6.212198e-05       3  Shisa4
+    ## Ier5    3.060807e-06  0.8810882 0.449 0.207 2.766969e-03       3    Ier5
+    ## Syne1   2.269052e-08  0.9212057 0.730 0.439 2.051223e-05       3   Syne1
+    ## Trank1  6.967282e-07  0.9802445 0.303 0.107 6.298423e-04       3  Trank1
+    ## Plk2    8.365739e-07  1.0214312 0.393 0.165 7.562628e-04       3    Plk2
+    ## Dock3   2.497841e-12  1.1887453 0.506 0.171 2.258048e-09       3   Dock3
+    ## Ptprn   1.038692e-11  1.1953266 0.573 0.228 9.389774e-09       3   Ptprn
+    ## Kctd1   9.942092e-09  1.3042979 0.281 0.081 8.987651e-06       3   Kctd1
+    ## Srxn1   3.423944e-08  1.3503151 0.303 0.099 3.095245e-05       3   Srxn1
+    ## Kcnip3  9.317222e-06  1.4662462 0.281 0.110 8.422769e-03       3  Kcnip3
+    ## Nefm    2.734467e-11  1.4841502 0.449 0.152 2.471959e-08       3    Nefm
+    ## Tmod1   1.802125e-12  1.4884617 0.393 0.112 1.629121e-09       3   Tmod1
+    ## Chgb    1.833500e-25  1.6797812 0.820 0.288 1.657484e-22       3    Chgb
+    ## Ttyh1   1.069700e-13  1.7922629 0.371 0.099 9.670085e-11       3   Ttyh1
+    ## Gsg1l   2.833234e-13  1.8206557 0.258 0.050 2.561243e-10       3   Gsg1l
+    ## Lingo1  3.430122e-23  2.1579355 0.517 0.121 3.100830e-20       3  Lingo1
+    ## Rgs4    6.205073e-44  2.5945276 0.596 0.078 5.609386e-41       3    Rgs4
+    ## Inhba   4.712392e-52  3.4495227 0.281 0.003 4.260002e-49       3   Inhba
+    ##          JeagerGrouping
+    ## Cltc    1hr_4hr_and_5hr
+    ## Ckb     1hr_4hr_and_5hr
+    ## Tpt1    1hr_4hr_and_5hr
+    ## Rtn4rl1 1hr_4hr_and_5hr
+    ## Bdnf    1hr_4hr_and_5hr
+    ## Shisa4  1hr_4hr_and_5hr
+    ## Ier5    1hr_4hr_and_5hr
+    ## Syne1   1hr_4hr_and_5hr
+    ## Trank1  1hr_4hr_and_5hr
+    ## Plk2    1hr_4hr_and_5hr
+    ## Dock3   1hr_4hr_and_5hr
+    ## Ptprn   1hr_4hr_and_5hr
+    ## Kctd1   1hr_4hr_and_5hr
+    ## Srxn1   1hr_4hr_and_5hr
+    ## Kcnip3  1hr_4hr_and_5hr
+    ## Nefm    1hr_4hr_and_5hr
+    ## Tmod1   1hr_4hr_and_5hr
+    ## Chgb                1hr
+    ## Ttyh1   1hr_4hr_and_5hr
+    ## Gsg1l   1hr_4hr_and_5hr
+    ## Lingo1              1hr
+    ## Rgs4                1hr
+    ## Inhba               1hr
+
+<br> <br> When I organized them by adjusted pvalues the most significant
+are the 1hr gene’s which I suppose would indicate these cells are
+recently active. But thresholding the adjusted p-value for those that
+cross, we see that 23 gene’s survive this thresholding and the gene’s
+with the greatest fold change are almost all the 1hr\_4hr\_and\_5hr
+genes. So does this mean these cells are recently active but the genes
+with the greatest persistence are the ones which undergo the largest
+gene change? Alternatively the transient nature of the 1hr markers could
+be driving down their fold change. it will be interesting to compare
+these results to a non-linear classifier. <br> <br> View this tutorial
+later:
+<https://hbctraining.github.io/In-depth-NGS-Data-Analysis-Course/sessionIV/lessons/SC_marker_identification.html>
+
+May have good information for labelling FeaturePlot function in seurat
+with gene expression information. <br> <br>
+
+## References
 
 <br> <br> Erwin, S. R., Sun, W., Copeland, M., Lindo, S., Spruston, N.,
 & Cembrowski, M. S. (2020). A sparse, spatially biased subtype of mature
