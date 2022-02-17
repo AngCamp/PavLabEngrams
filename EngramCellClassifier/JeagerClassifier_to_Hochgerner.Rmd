@@ -12,7 +12,7 @@ INTRODUCTION
 Using the gene lists of Jeager et al., (2018), I was able to find a cluster of cells within Adult Dentate Gyrus Granule Cells from post natal day 35 with elevated 
 <br>
 <br>
-```{r}
+```{r include = FALSE}
 #libraries
 setwd("C:/Users/angus/Desktop/PavLabEngrams/EngramCellClassifier")
 
@@ -47,7 +47,7 @@ LOADING OUR DATA
 ---
 <br>
 <br>
-```{r}
+```{r include = FALSE}
 jeager2018_counts <- bind_cols(read.table('Jeager2018_GSE98679/GSE98679_count.txt.gz', header = TRUE, check.names = FALSE),
                                read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_count.txt.gz', header = TRUE, check.names = FALSE))
 
@@ -73,7 +73,69 @@ filtered.idx <- order(c(filtered.idx,194))
 
 jeager2018_counts <-jeager2018_counts[,filtered.idx]
 jeager2018_meta <- jeager2018_meta[filtered.idx,]
+rownames(jeager2018_meta) <- colnames(jeager2018_counts)
+jeager2018_meta$dataset <- "Jeager2018"
+
+#Loading Hochgerner5k
+testsetpath <- "C:/Users/angus/Desktop/test_datasets"
+
+hochgerner5k_2018_counts <- read.table(paste(testsetpath,"/Hochgerner2018/GSE95315_10X_expression_data_v2.tab.gz", sep=""))
+
+colnames(hochgerner5k_2018_counts) <- hochgerner5k_2018_counts[1,]
+rownames(hochgerner5k_2018_counts) <- hochgerner5k_2018_counts[,1]
+
+hochgerner5k_2018_meta <- hochgerner5k_2018_counts %>% 
+  dplyr::slice(c(1:3)) %>%
+  t() %>%
+  data.frame %>%
+  dplyr::slice(-1) %>% 
+  dplyr::select(-cellid)
+
+hochgerner5k_2018_counts <- hochgerner5k_2018_counts %>% 
+  dplyr::select(-cellid) %>% 
+  dplyr::slice(-c(1:3))
+
+
+### Merging the count data
+combined_counts <- merge(hochgerner5k_2018_counts, jeager2018_counts, by = "row.names") %>%
+  `rownames<-`(.[,1]) %>%
+  dplyr::select(-Row.names)
+
+combined_counts <- as.data.frame(combined_counts)
+combined_counts[is.na(combined_counts)] = 0
+  
+
+#### Merging the metadata
+#adding rows for cimbining the metadata
+hochgerner5k_2018_meta$dataset <- "Hochgerner5k2018"
+hochgerner5k_2018_meta$exposure <- "HC-Hochgerner"
+hochgerner5k_2018_meta$fos_status <- "unstained"
+hochgerner5k_2018_meta$predicted_cell_type <- hochgerner5k_2018_meta$cluster_name
+jeager2018_meta$age.days. <- ceiling(jeager2018_meta$AGE*7)
+
+#merge metadata
+combined_meta <- data.frame(t(merge(t(hochgerner5k_2018_meta), t(jeager2018_meta), by = "row.names")))
+colnames(combined_meta) <- c("Age", "dataset", "exposure", "fos_status", "predicted_cell_type")
+combined_meta <- combined_meta %>%
+    dplyr::slice(-1)
+combined_meta <- as.data.frame(lapply(combined_meta, unlist)) #this needs to happen
+combined_meta$dataset <- as.factor(combined_meta$dataset) #prevents error later when splitting object
+combined_meta$exposure <- as.factor(combined_meta$exposure) #otherwise all these columns stay as lists
+combined_meta$fos_status <- as.factor(combined_meta$fos_status)
+combined_meta$predicted_cell_type <- as.factor(combined_meta$predicted_cell_type)
+
 ```
+```{r}
+#filter for granule cells 
+dgc.idx <- combined_meta$predicted_cell_type=="DG"
+dgc.idx <- dgc.idx|(combined_meta$predicted_cell_type=="Granule-mature")
+dgc.idx <- dgc.idx|(combined_meta$predicted_cell_type=="Granule-immature")
+
+#throw them into seurat and move onto integration
+combinedObject <- CreateSeuratObject(counts = combined_counts[,dgc.idx],
+                   meta.data = combined_meta[dgc.idx,])
+```
+
 <br>
 <br>
 
@@ -81,9 +143,53 @@ INTEGRATING OUR DATASETS
 ---
 <br>
 <br>
-In order to mitigate the batch effects that will inevitably arrise we need to use seurats data integration features.  Described in this tutorial [here](https://satijalab.org/seurat/articles/integration_introduction.html).
+In order to mitigate the batch effects that will inevitably arise we need to use seurats data integration features.  Described in this tutorial [here](https://satijalab.org/seurat/articles/integration_introduction.html).
 <br>
 <br>
+
+```{r}
+DG.list <- SplitObject(combinedObject, split.by = "dataset") 
+
+# normalize and identify variable features for each dataset independently
+DG.list <- lapply(X = DG.list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = DG.list)
+```
+
+
+```{r}
+# this command creates an 'integrated' data assay
+
+DG.anchors <- FindIntegrationAnchors(object.list = DG.list, anchor.features = features)
+DG.combined <- IntegrateData(anchorset = DG.anchors)
+```
+```{r}
+DefaultAssay(DG.combined) <- "integrated" #the object still has OG data but now we set
+#the modified data to be the default we works with
+
+# Run the standard workflow for visualization and clustering
+DG.combined <- ScaleData(DG.combined, verbose = FALSE)
+DG.combined <- RunPCA(DG.combined, npcs = 30, verbose = FALSE)
+DG.combined <- RunUMAP(DG.combined, reduction = "pca", dims = 1:30)
+DG.combined <- FindNeighbors(DG.combined, reduction = "pca", dims = 1:30)
+DG.combined <- FindClusters(DG.combined, resolution = 0.5)
+```
+
+
+```{r}
+p1 <- DimPlot(DG.combined, reduction = "umap", group.by = "dataset")
+p2 <- DimPlot(DG.combined, reduction = "umap", label = TRUE, repel = TRUE)
+p3 <- DimPlot(DG.combined, reduction = "umap", group.by = "predicted_cell_type")
+p1 + p2
+```
+```{r}
+p3
+```
+
 
 BUILDING THE CLASSIFIER
 ---
@@ -119,10 +225,14 @@ NEXT STEPS
 ---
 <br>
 <br>
-The Hochgerner dataset provides the opportunity to study activity across dvelopmental states and in immature DGCs which is particualrily intersting to study neurogenesis.  IEGs are pretty widley expressed across all tissues and in neurons they appear to have been co-opted to drive platicity pathways, so it may be that there are a core set of IEGs that are widely expressed with the cells relying on particular cell type specfic TFs present to open chromatic specific to each cell type.  Going back to Jeager data with CA2 and VIP interneurons and taking another look may be of interest as well.
+The Hochgerner dataset provides the opportunity to study activity across developmental states and in immature DGCs which is particularly interesting to study neurogenesis.  IEGs are pretty widely expressed across all tissues and in neurons they appear to have been co-opted to drive platicity pathways, so it may be that there are a core set of IEGs that are widely expressed with the cells relying on particular cell type specfic TFs present to open chromatic specific to each cell type.  Going back to Jeager data with CA2 and VIP interneurons and taking another look may be of interest as well.
+
+Review of IEG and psychiatric ocnditons may be worht reading see Gallo et al., (2018)
 
 
 References
 ---
 <br>
 <br>
+
+Gallo, F. T., Katche, C., Morici, J. F., Medina, J. H., & Weisstaub, N. V. (2018). Immediate early genes, memory and psychiatric disorders: focus on c-Fos, Egr1 and Arc. Frontiers in behavioral neuroscience, 12, 79.
