@@ -188,8 +188,26 @@ p1 + p2
 ```
 ```{r}
 p3
+p4 <- DimPlot(DG.combined, reduction = "umap", group.by = "fos_status")
+p4
 ```
+```{r}
 
+p4 <- DimPlot(DG.combined, reduction = "umap", group.by = "Inhba")
+
+
+```
+Notes from meeting with Paul on Fed17th:
+  1) In both datasets stratify by fos or other IEG markers expression then compare them
+  to the metadata labels fos+/- and reactivated as well as maturity status.  
+  2) Look at what p-value adjustment is being used by seurat, change it to benjammini-hochberg if possible
+  3) cells should be filtered before using some kind of restricted gene list.  So should be based on full gene lists.
+  Solution:  put them into a seuat object, use the functions that are useful like the step for filtering mitochondrial genes,
+  then pull those out of the metadata and store them.  delete the object, filter the cells and gene's then make a new
+  object based on that.
+  
+  Still working on how to get gene expression by gene out of the seurat obejcts.
+  4) Run the classifier anyway, just try to see what it labels and use the above analyses to get a good idea of what its doing.
 
 BUILDING THE CLASSIFIER
 ---
