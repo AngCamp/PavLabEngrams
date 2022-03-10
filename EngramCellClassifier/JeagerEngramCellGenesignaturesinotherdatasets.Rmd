@@ -30,12 +30,18 @@ library(tictoc)
 library(pheatmap)
 library(SeuratDisk) # installed with remotes
 #reticulate::py_install(packages ='umap-learn')
+
+#Seurat reference manual: https://cloud.r-project.org/web/packages/Seurat/Seurat.pdf
 ```
+
+NOTES: Line 168 needs fixing, we need to filter cells out with all the gene's before restricting to just the Jeager DEGs,
+then you need to change the stats as well, make sure they are being corrected by Benjamini-Hochberg
+
 
 Introduction
 ---
 
-Here I have used supplemental data 4 from Jeager et al., (2018) which is a list of the DEGs from Fos+ dentate granule cells (DGCs) at various time points vs Fos- DGCs at various time points.  They assignmened these DEGs to qualitatively similar time courses.  While not rigorous it is interesting to look at and perhaps gives us an opportunity to do a more rigorous analysis ourselves and generate a better time course annotation for these IEGs.  I use this DEG list to cluster DGCs from the first expeirment of Hochgerner et al., (2018).  This second dataset of ~5k cells was sampled from mlae and female mice across development.  The sample of interest for me were samples from post natal day 37 which is relatively close to the 7-8.75 week old mice (in days they are ~P49-P62) in Jeager.  Though not an ideal match it is better than the other dataset which contains 24k cells but range from emryonic mice to post natal day 120 and 132.  Jeager et al. (2018) was done entirely using female mice while Hochgerner was done with a mixture of males and females.
+Here I have used supplemental data 4 from Jeager et al., (2018) which is a list of the DEGs from Fos+ dentate granule cells (DGCs) at various time points vs Fos- DGCs at various time points.  They assigned these DEGs to qualitatively similar time courses.  While not rigorous it is interesting to look at and perhaps gives us an opportunity to do a more rigorous analysis ourselves and generate a better time course annotation for these IEGs.  I use this DEG list to cluster DGCs from the first expeirment of Hochgerner et al., (2018).  This second dataset of ~5k cells was sampled from mlae and female mice across development.  The sample of interest for me were samples from post natal day 37 which is relatively close to the 7-8.75 week old mice (in days they are ~P49-P62) in Jeager.  Though not an ideal match it is better than the other dataset which contains 24k cells but range from embryonic mice to post natal day 120 and 132.  Jeager et al. (2018) was done entirely using female mice while Hochgerner was done with a mixture of males and females.
 
 The Hochgerner dataset contains some peculiarities.  They have pooled cells between males and females to reduce batch effects, but its difficult to guess which cells came from which.  Hochgerner et al., (2018)  assigned sex to cells based on number of male vs female genes in each cell.  They provide metadata about the number fo males and females pooled for the batch each cell was drawn from but in the post natal days 24 and 35 in the Hoch5k data there are some that simply cannot be known.
 
@@ -158,17 +164,78 @@ DEGs.idx <- DEGs.idx[(DEGs.idx %in% rownames(hochgerner5k_2018_counts))& (DEGs.i
 
 Jeager.DEGs <- Jeager.DEGs[Jeager.DEGs$GeneID %in% DEGs.idx,]
 
-#get index locations of these gene's in the other datasets
 Jeager.DEGs$hoch5k.idx <- which(rownames(hochgerner5k_2018_counts) %in% Jeager.DEGs$GeneID)
+
+#get index locations of these gene's in the other datasets
 hoch5k.GC_Adult.p35.idx <- (hochgerner5k_2018_meta$age.days.=="35") | (hochgerner5k_2018_meta$age.days.=="35*")
 hoch5k.GC_Adult.p35.idx <- (hoch5k.GC_Adult.p35.idx) & (hochgerner5k_2018_meta$cluster_name == "Granule-mature")
 hoch5k.GC_Adult.p35.idx <- which(hoch5k.GC_Adult.p35.idx)
 
 
-#create seurat object jsut for the Hoch 5k data
+#create seurat object just for the Hoch 5k data, with only the JEager DEG counts
 Hoch5k.GCadult <- CreateSeuratObject(counts = hochgerner5k_2018_counts[Jeager.DEGs$hoch5k.idx, hoch5k.GC_Adult.p35.idx])
 Hoch5k.GCadult
 ```
+
+
+QUALITY CONTROL
+---
+
+Cells and Gene counts
+  The dataset provided has already been filtered for cells which, the dataset I refer to as hochgerner 5k is here called dataset A.  It's accession number is GSE95315.  Of the original 6090 cells collected in dataset A they were wilted  down to the 5454 cells in the dataset according to the following measures: "10x Chromium Dataset A (Dataset C) data files were loaded and merged to one dataset. For more uniform representation of timepoints, Dataset C data files were downsampled as indicated in Supplementary Table 5 (‘Cells_analysed’). Valid cells were defined as having >600 (C:>800) total genes, between 800 and 20,000 (C: 1,000–30,000) molecules, and a ratio of molecules to genes >1.2. This resulted in 6,090 (C: 25,546) cells. Next, we removed 46 (C: 732) doublet cells based on coexpression (>1 molecule) of any pair of the following marker genes: Stmn2 (neurons), Mog (oligodendrocytes), Aldoc (astrocytes), C1qc (microglia), and Cldn5 (endothelial). "
+ 
+We can check this by plotting the gene counts and the mitochondria RNA, it is clear they have undergone some quality control
+
+```{r}
+#make a seurat object of the adult granule cells
+full.hoch5k.adultDG.data <-CreateSeuratObject(counts = hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx])
+full.hoch5k.adultDG.data[["percent.mt"]] <- PercentageFeatureSet(full.hoch5k.adultDG.data, pattern = "^MT-")
+```
+
+
+```{r}
+VlnPlot(full.hoch5k.adultDG.data, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+
+```{r}
+plot1 <- FeatureScatter(full.hoch5k.adultDG.data, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(full.hoch5k.adultDG.data, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+
+```{r}
+# Let's try this with the whole dataset, not jsut the day 35 DG adult cells
+full.hoch5k <-CreateSeuratObject(counts = hochgerner5k_2018_counts)
+full.hoch5k[["percent.mt"]] <- PercentageFeatureSet(full.hoch5k, pattern = "^MT-")
+```
+```{r}
+#looking at various QC metrics
+VlnPlot(full.hoch5k, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+```{r}
+plot1 <- FeatureScatter(full.hoch5k, feature1 = "nCount_RNA", feature2 = "percent.mt") + ggtitle("RNA count vs Percentage of Mitochondrial Genes") + theme_classic() + geom_hline(yintercept = 0) + xlab("RNA read count") + ylab("Mitochondria Gene Expression (% per cell)") + theme(plot.title = element_text(hjust = 0.5))
+plot2 <- FeatureScatter(full.hoch5k, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 #+ plot2
+```
+
+```{r}
+#check the gene filtering
+
+```
+
+```{r}
+
+# This is for the filerting out those with features that 
+# I'm not sure what the appropriate number for us is, in the tutorial there were 13700 nfeatures
+#and the filterd out cells with less then 200 and greater than 2500, so I guess  cells with more than
+# a quarter of nFeatures and less than 10% of that is unacceptable?  
+full.hoch5k.adultDG.data <- subset(full.hoch5k.adultDG.data,
+                                   subset = nFeature_RNA > 20 & nFeature_RNA < 250 & percent.mt < 5)
+```
+
+
+
 <br><br>
 So in the tutorial it also says 0 variable features so I guess that's OK.
 <br><br>
@@ -183,8 +250,9 @@ Hoch5k.GCadult[["percent.mt"]] <- PercentageFeatureSet(Hoch5k.GCadult, pattern =
 Hoch5k.GCadult <- subset(Hoch5k.GCadult, subset = nFeature_RNA > 20 & nFeature_RNA < 250 & percent.mt < 5)
 
 #note I am going to skip some QC steps here, but we do need to do that in the future
-Hoch5k.GCadult <- NormalizeData(Hoch5k.GCadult)
-Hoch5k.GCadult <- FindVariableFeatures(Hoch5k.GCadult)
+Hoch5k.GCadult <- NormalizeData(Hoch5k.GCadult) # Seurat normalization has many steps see publication
+# https://www.frontiersin.org/articles/10.3389/fgene.2020.00041/full describes and compares it to others
+Hoch5k.GCadult <- FindVariableFeatures(Hoch5k.GCadult) # Identifies features that are outliers on a ’mean variability plot’.
 
 ```
 
@@ -347,17 +415,25 @@ clstr3.mrks[clstr3.mrks$p_val_adj<0.05,] %>%
 When I organized them by adjusted pvalues the most significant are the 1hr gene's which I suppose would indicate these cells are recently active.  But thresholding the adjusted p-value for those that cross, we see that 23 gene's survive this thresholding and the gene's with the greatest fold change are almost all the 1hr_4hr_and_5hr genes.  So does this mean these cells are recently active but the genes with the greatest persistence are the ones which undergo the largest gene change?  Alternatively the transient nature of the 1hr markers could be driving down their fold change.  it will be interesting to compare these results to a non-linear classifier.
 <br>
 <br>
+A note on the adjusted p-values from the Seurat reference manual page 74 for the function FindAllMarkers: "p-value adjustment is performed using bonferroni correction based on the total number of genes in
+the dataset. Other correction methods are not recommended, as Seurat pre-filters genes using the
+arguments above, reducing the number of tests performed. Lastly, as Aaron Lun has pointed out,
+p-values should be interpreted cautiously, as the genes used for clustering are the same genes tested
+for differential expression."
+<br>
+<br>
 
 NEXT STEPS
 ---
 <br>
 <br>
-All prepossessing was done with respect only to the Jeager DGC Activity DEGs.  So normalization was restricted to these gene's I lowered the QC steps to filter out cells with low gene counts, which I am concerned is not justified.  To be fair the JackStraw Plots gives me hope that we are capturing a real effect.  Nevertheless these lenient QC measures may need to be addressed this later in the work.  As you said people generally do not encounter cell types in data that look like other cell types but with IEGs elevated, so perhaps as one would expect neural activity causes changes in cell state but at least in adult tissue, the cell type will remain static.  I should do some reading on detecting cell state changes, indeed this could be one of the more generally valuable part of this project, exploring various methods to detect cell state changes and define good methods for doing so in RNA-seq data.
+Cells from Hochgerner et al., (2018) have all passed theri quality controls, I may need to include DGC markers as a sort of control to see if they drive any clustering differently or if Jeager markers are over represented in a particular cell type.
+Should also perform this analysis on immature granule cells as well and see if the same markers show up or slightly different ones.rm
 <br>
 <br>
 View this tutorial later:  https://hbctraining.github.io/In-depth-NGS-Data-Analysis-Course/sessionIV/lessons/SC_marker_identification.html
 
-May have good information for labelling FeaturePlot function in seurat with gene expression information.
+May have good information for labeling FeaturePlot function in seurat with gene expression information.
 
 ```{r}
 #saving our object and it's data, commented out so its doesn't run everytime
