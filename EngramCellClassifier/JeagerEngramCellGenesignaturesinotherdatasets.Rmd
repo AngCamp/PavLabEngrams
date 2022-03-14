@@ -357,16 +357,21 @@ seurat_clusters.3dims <- Hoch5k.GCadult@meta.data$seurat_clusters
 ```{r}
 for (i in c(0:3)){
   print(paste("Cluster ", as.character(i)))
-  mrks <- Hoch5k.GCadult.markers.3dims $gene[Hoch5k.GCadult.markers.3dims$cluster==i & Hoch5k.GCadult.markers.3dims$p_val_adj>0.05]
+  mrks <- Hoch5k.GCadult.markers.3dims $gene[Hoch5k.GCadult.markers.3dims$cluster==i & Hoch5k.GCadult.markers.3dims$p_val_adj<0.05]
   print(mrks)
   print("Gene in the Jeager DEGs are....")
-  print(mrks[which(mrks %in% Jeager.DEGs$GeneID)])
+  print(Jeager.DEGs$GeneID[which(Jeager.DEGs$GeneID %in% mrks)])
   print("And their respective jeager goupings are...")
   print(Jeager.DEGs$group[which(Jeager.DEGs$GeneID %in% mrks)])
   print("")
   print("")
 }
 
+```
+```{r}
+Hoch5k.GCadult.markers.3dims %>%
+    group_by(cluster) %>%
+    slice_max(n = 2, order_by = avg_log2FC)
 ```
 
 
@@ -400,15 +405,24 @@ seurat_clusters.7dims <- Hoch5k.GCadult@meta.data$seurat_clusters
 ```{r}
 for (i in c(0:1)){
   print(paste("Cluster ", as.character(i)))
-  mrks <- Hoch5k.GCadult.markers.7dims$gene[Hoch5k.GCadult.markers.7dims$cluster==i & Hoch5k.GCadult.markers.7dims$p_val_adj>0.05]
+  mrks <- Hoch5k.GCadult.markers.7dims$gene[Hoch5k.GCadult.markers.7dims$cluster==i & Hoch5k.GCadult.markers.7dims$p_val_adj<0.05]
   print(mrks)
   print("Gene in the Jeager DEGs are....")
-  print(mrks[which(mrks %in% Jeager.DEGs$GeneID)])
+  print(Jeager.DEGs$GeneID[which(Jeager.DEGs$GeneID %in% mrks)])
+  print("And their respective jeager goupings are...")
+  print(Jeager.DEGs$group[which(Jeager.DEGs$GeneID %in% mrks)])
   print("")
   print("")
 }
 
 ```
+```{r}
+Hoch5k.GCadult.markers.7dims %>%
+    group_by(cluster) %>%
+    slice_max(n = 2, order_by = avg_log2FC)
+```
+
+
 
 ```{r}
 FeaturePlot(Hoch5k.GCadult, features = c("Fos", "Inhba"))
@@ -421,11 +435,31 @@ FeaturePlot(Hoch5k.GCadult, features = c("Npas4", "Arc"))
 FeaturePlot(Hoch5k.GCadult, features = c("Egr1", "Nrp1"))
 ```
 
+
+So I am observing the Penk and Cck seperation that has been described previously (Erwin et al., 2020).  Overall I am not too sure what to make of this analysis.  As it is within a single cell type it may not make sense to try to cluster it further as continuous variation within these cells may be more accurate (Cembrowski & Mannon, 2018). Because there was a sharp and sudden drop in explained variance between PC3 and PC4 so I reduced the clustering to run using only the top 3 PCs as well as the clustering using up to PC7.  If you include up to PC4 you will find the same seperation of the population into 2 clusters, but neither group really has a remarkably higher presence of Jeager DEGs in it.  I thought that prehaps the other dimesnions may be obscuring some more important processes represented by the top 3 PCs.  Running it including only 3 dimensions gives 4 clusters though I question the validity of the first 2.  
+
+It is worth noting the components of PC3 however.
+
+```{r}
+VizDimLoadings(Hoch5k.GCadult, dims = 3, reduction = "pca")
+```
+I would like to point to the presence of Cck as a positive loading and Penk as a negative loading. In Erwin et al., (2020) they
+describe a population of mature dentate gyrus cells that are Penk expressing and over represented in the activity labelled cells across a wide variety of hippocampal dependent behaviours during initial training.  Critically in the negative componenets several other Jeager DEGs including Rgs4 and Inhba, in fact Rgs4 is a marker for cluster 1 in the 7 dimensional clustering.  Cck and Penk cells did not overlap, nor do they here as shown in the figure below.  Penk expressing cells are also rare as would be expected.
+
 ```{r}
 #according to Erwin et al., (2020) Cck and Penk should be mutually exclusively expressed
 FeaturePlot(Hoch5k.GCadult, features = c("Penk", "Cck"))
 ```
-So I am observing the Penk and Cck seperation that has been described previously (Erwin et al., 2020) and it is happening 
+
+Cembroskiw and Mannon (2018) notes that within a single cell type discrete clusters may not always be the best way to think about distiguishing cells.  Continuous cell states such as those underlying neuroplasticity may be at play and confused for distinct cells states.  In this cases it may be useful to just look at the compoenents of PCA and see which ones are most loaded with Jeager DEGs.  As 200 out of 900 of the Jeager DEGs were in the genes included by seurat we can assume 
+
+```{r}
+print(Hoch5k.GCadult[["pca"]], dims = 1:7, nfeatures = 50)
+```
+It may make sense to remove these JeagerDEG genes from the list entirely and try to see how it affects the clustering and cluster just using the DEGs.
+
+
+* get the cembrowski and mannon  iitation its the one on continuous variation within cell types
 
 
 Clustering just within the Jeager DEGs
