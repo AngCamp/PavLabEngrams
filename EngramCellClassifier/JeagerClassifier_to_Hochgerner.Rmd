@@ -125,6 +125,7 @@ combined_meta$fos_status <- as.factor(combined_meta$fos_status)
 combined_meta$predicted_cell_type <- as.factor(combined_meta$predicted_cell_type)
 
 ```
+
 ```{r}
 #filter for granule cells 
 dgc.idx <- combined_meta$predicted_cell_type=="DG"
@@ -186,6 +187,11 @@ p2 <- DimPlot(DG.combined, reduction = "umap", label = TRUE, repel = TRUE)
 p3 <- DimPlot(DG.combined, reduction = "umap", group.by = "predicted_cell_type")
 p1 + p3
 ```
+```{r}
+
+```
+
+
 
 ```{r}
 
@@ -358,7 +364,7 @@ top10 <-  head(VariableFeatures(Hoch5k.GCimmature), 10)
 plot1 <- VariableFeaturePlot(Hoch5k.GCimmature)
 plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
 plot2
-print(top10)
+
 ```
 
 
@@ -373,7 +379,7 @@ Jeager.DEGs$group[Jeager.DEGs$GeneID %in% top10]
 all.genes <- rownames(Hoch5k.GCimmature) # just realized I could use this feature ratehr than trying to filter gene's before hand
 Hoch5k.GCimmature <- ScaleData(Hoch5k.GCimmature, features = all.genes)
 
-Hoch5k.GCimmature <- RunPCA(Hoch5k.GCimmature , features = VariableFeatures(object = Hoch5k.GCadult),
+Hoch5k.GCimmature <- RunPCA(Hoch5k.GCimmature , features = VariableFeatures(object = Hoch5k.GCimmature),
                          npcs = 20) 
 ```
 
@@ -431,6 +437,8 @@ Almost no significant gene's in any of the clusters at all.  This jives well wit
 We still need some kind of control for both these claims.  But I feel confident in them.  One analysis I could do is to check the clusters in Hoch5k.GCadult for expression of the same markers as described in Erwin et al., (2020) which also used novelty exploration.  Several other studies have pin pointed a regionally specific subset of these neurons in the supra pyramidal blade of the dentate gyrus, the layer resting closer ot CA1 than CA3 (Chawla et al., 2005, Chawla et al., 2018, Guenthner et al., 2013, Penke et al., 2011).  This regions activation appears to occur in a wide range of hippocampal associated behaviours, "In total, preferential suprapyramidal blade activation occurred in behaviors evoking memory, spatial navigation, socialization, and stress" (Erwin et al., 2020), so it would make sense that this is what we are detecting as well.
 
 (consider inlcuding figure 1A from Erwin, )
+
+They identified higher expression of Penk in active neurons relative to non active neurons and replicated this in another dataset (Habib et al., 2016).  
 
 
 BUILDING THE CLASSIFIER
@@ -521,3 +529,5 @@ Guenthner, C. J., Miyamichi, K., Yang, H. H., Heller, H. C., & Luo, L. (2013). P
 
 <br>
 <br>
+
+Habib, N., Li, Y., Heidenreich, M., Swiech, L., Avraham-Davidi, I., Trombetta, J. J., ... & Regev, A. (2016). Div-Seq: Single-nucleus RNA-Seq reveals dynamics of rare adult newborn neurons. Science, 353(6302), 925-928.

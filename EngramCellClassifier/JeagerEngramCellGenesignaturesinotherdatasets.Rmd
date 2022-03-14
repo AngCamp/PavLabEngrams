@@ -41,7 +41,7 @@ then you need to change the stats as well, make sure they are being corrected by
 Introduction
 ---
 
-Here I have used supplemental data 4 from Jeager et al., (2018) which is a list of the DEGs from Fos+ dentate granule cells (DGCs) at various time points vs Fos- DGCs at various time points.  They assigned these DEGs to qualitatively similar time courses.  While not rigorous it is interesting to look at and perhaps gives us an opportunity to do a more rigorous analysis ourselves and generate a better time course annotation for these IEGs.  I use this DEG list to cluster DGCs from the first expeirment of Hochgerner et al., (2018).  This second dataset of ~5k cells was sampled from mlae and female mice across development.  The sample of interest for me were samples from post natal day 37 which is relatively close to the 7-8.75 week old mice (in days they are ~P49-P62) in Jeager.  Though not an ideal match it is better than the other dataset which contains 24k cells but range from embryonic mice to post natal day 120 and 132.  Jeager et al. (2018) was done entirely using female mice while Hochgerner was done with a mixture of males and females.
+Here I have used supplemental data 4 from Jeager et al., (2018) which is a list of the DEGs from Fos+ dentate granule cells (DGCs) at various time points vs Fos- DGCs at various time points.  They assigned these DEGs to qualitatively similar time courses.  While not rigorous this manual sissignment is still interesting to use, perhaps later we can redo this with a more rigorous exploration of the time course data.  Regardless I use this DEG list to cluster DGCs from the first experiment of Hochgerner et al., (2018).  This second dataset of ~5k cells was sampled from mlae and female mice across development.  The sample of interest for me were samples from post natal day 37 which is relatively close to the 7-8.75 week old mice (in days they are ~P49-P62) in Jeager.  Though not an ideal match it is better than the other dataset which contains 24k cells but range from embryonic mice to post natal day 120 and 132.  Jeager et al. (2018) was done entirely using female mice while Hochgerner was done with a mixture of males and females.
 
 The Hochgerner dataset contains some peculiarities.  They have pooled cells between males and females to reduce batch effects, but its difficult to guess which cells came from which.  Hochgerner et al., (2018)  assigned sex to cells based on number of male vs female genes in each cell.  They provide metadata about the number fo males and females pooled for the batch each cell was drawn from but in the post natal days 24 and 35 in the Hoch5k data there are some that simply cannot be known.
 
@@ -98,6 +98,8 @@ fosneg.HC <- which((jeager2018_meta$exposure=="HC")&(jeager2018_meta$fos_status=
 hist(as.numeric(jeager2018_counts[jeager.fos.idx, fosneg.HC]), 
      main = "Homecage Fos-AntiBd Negative nuclear Fos read distribution",
      xlab = "Fos Read Count")
+
+
 ```
 <br>
 ```{r}
@@ -116,8 +118,43 @@ hist(as.numeric(jeager2018_counts[jeager.fos.idx, fospos.1hr]),
      main = "1Hour post-NE Fos-AntiBd Positive nuclear Fos read distribution",
      xlab = "Fos Read Count") 
 ```
+```{r}
+#making ggplot histpgram 
+fnHC <- as.numeric(jeager2018_counts[jeager.fos.idx, fosneg.HC ])
+fn1hr <- as.numeric(jeager2018_counts[jeager.fos.idx, fosneg.1hr])
+fp1hr <- as.numeric(jeager2018_counts[jeager.fos.idx, fospos.1hr])
+
+df <- data.frame( fos = as.numeric(fnHC), 
+                  cond = factor(rep("Fos- HC", length(fnHC)))
+                  )
+
+df2 <- data.frame( fos = as.numeric(fn1hr), 
+                  cond = factor(rep("Fos- 1hr", length(fn1hr)))
+                  )
+
+df3 <-  data.frame( fos = as.numeric(fp1hr), 
+                  cond = factor(rep("Fos+ 1hr", length(fp1hr)))
+                  )
+
+df <- rbind(df,df2,df3)
+
+p <- ggplot(df, aes(x=fos, color = cond)) + 
+  geom_histogram(fill =  "white") +
+  xlab("Fos Reads (seq. depth of 1.5 milion reads per cell)") +
+  ylab("Frequency") +
+  theme_classic() + 
+  theme(legend.title = element_blank()) +
+  ggtitle("Freqency of Fos Counts in Jeager Groups")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(axis.text = element_text(face = "bold")) +
+  scale_x_discrete(limits = c(0, 6000)) +
+  scale_y_continuous(limits = c(0, 350))
+
+p
+```
+
 <br>
-So in general there are a few cells with a low level expression of fos, and then this small group of outliers in with a high fos count.  This is in line with the sparse coding of events observed in the brain.
+So in general there are a few cells with a low level expression of fos, and then this small group of outliers in with a high fos count.  This is in line with the sparse coding of events observed in the brain.  It is notable that within the group that was deemed to be an "engram cell" via antibody staining for fos that there is a not insignificant franction of the fos positive cells which are not expressing fos.  This could be due to off target effects, the authors themselves make note that in CA1 cells they had stained for fos or arc did not express those markers.  It would be better to have a true engram label dataset to work with like Chen et al., (2018) but this si what we had for hippocampus so it will have to do.
 <br>
 <br>
 
@@ -126,7 +163,7 @@ Looking for Engram labelling gene's in Hochgerner et al., (2018) at P35
 ---
 <br>
 <br>
-This section is basically just copy pasta from [Seurats tutorials](https://satijalab.org/seurat/articles/pbmc3k_tutorial.html). Here I am using the DEGs published by Jeager et al., (2018).  When I attempted this clustering using all the gene's in the Hochgerner5k dataset nothing came up.  I successfully identify engram cells here with the restricted gene list.  So what we are seeing here are not primary drivers of variance relative to most genes, even within the cell type matching the Jeager data at a similar developmental timepoint.  But here what I end up finding is a realtively rare cell type, defined by expression of 1hr markers as well as markers that last from 1hr to 5hrs.
+This section is basically just copy pasta from [Seurats tutorials](https://satijalab.org/seurat/articles/pbmc3k_tutorial.html). Here I am using the DEGs published by Jeager et al., (2018).  First we will load the data and the engram cell DEG list, refered to as Jeager DEGs or Jeager Engram DEGs hereafter.  We will stick to the adult DGCs 
 <br>
 <br>
 ```{r}
@@ -165,7 +202,16 @@ DEGs.idx <- DEGs.idx[(DEGs.idx %in% rownames(hochgerner5k_2018_counts))& (DEGs.i
 Jeager.DEGs <- Jeager.DEGs[Jeager.DEGs$GeneID %in% DEGs.idx,]
 
 Jeager.DEGs$hoch5k.idx <- which(rownames(hochgerner5k_2018_counts) %in% Jeager.DEGs$GeneID)
+```
 
+
+###  Full gene set in hochgerner
+<br>
+<br>
+First we will cluster within the adult DGCs at post natal day 35 to see if engram cells are aparent just from that.  Although one would expect that some previous group would have noted their existance just from looking for simple cell types.  Previous work on another dataset of DGCs reports no such cell type distinguished by high IEG expression (Erwin et al., 2020; Habib et al., 2016).
+
+
+```{r}
 #get index locations of these gene's in the other datasets
 hoch5k.GC_Adult.p35.idx <- (hochgerner5k_2018_meta$age.days.=="35") | (hochgerner5k_2018_meta$age.days.=="35*")
 hoch5k.GC_Adult.p35.idx <- (hoch5k.GC_Adult.p35.idx) & (hochgerner5k_2018_meta$cluster_name == "Granule-mature")
@@ -173,81 +219,47 @@ hoch5k.GC_Adult.p35.idx <- which(hoch5k.GC_Adult.p35.idx)
 
 
 #create seurat object just for the Hoch 5k data, with only the JEager DEG counts
-Hoch5k.GCadult <- CreateSeuratObject(counts = hochgerner5k_2018_counts[Jeager.DEGs$hoch5k.idx, hoch5k.GC_Adult.p35.idx])
+#Hoch5k.GCadult <- CreateSeuratObject(counts = hochgerner5k_2018_counts[Jeager.DEGs$hoch5k.idx, hoch5k.GC_Adult.p35.idx]) 
+
+Hoch5k.GCadult <- CreateSeuratObject(counts = hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx])
+#this is unesscesary we can do this by changing the, 
+#well on second thoguth may be we do need to do this because noramlization may be important to be constrained to just the IEGs
+#I think seurat borrows information from other genes. test this
 Hoch5k.GCadult
 ```
 
 
-QUALITY CONTROL
----
+### QUALITY CONTROL
 
 Cells and Gene counts
   The dataset provided has already been filtered for cells which, the dataset I refer to as hochgerner 5k is here called dataset A.  It's accession number is GSE95315.  Of the original 6090 cells collected in dataset A they were wilted  down to the 5454 cells in the dataset according to the following measures: "10x Chromium Dataset A (Dataset C) data files were loaded and merged to one dataset. For more uniform representation of timepoints, Dataset C data files were downsampled as indicated in Supplementary Table 5 (‘Cells_analysed’). Valid cells were defined as having >600 (C:>800) total genes, between 800 and 20,000 (C: 1,000–30,000) molecules, and a ratio of molecules to genes >1.2. This resulted in 6,090 (C: 25,546) cells. Next, we removed 46 (C: 732) doublet cells based on coexpression (>1 molecule) of any pair of the following marker genes: Stmn2 (neurons), Mog (oligodendrocytes), Aldoc (astrocytes), C1qc (microglia), and Cldn5 (endothelial). "
  
-We can check this by plotting the gene counts and the mitochondria RNA, it is clear they have undergone some quality control
+We can check this by plotting the gene counts and the mitochondria RNA, it is clear that the cells in the dataset have already been subject to the above selection process.  Additionally we will check for over expression of mitochondrial genes as is suggested by the seurate documentation.
 
 ```{r}
 #make a seurat object of the adult granule cells
-full.hoch5k.adultDG.data <-CreateSeuratObject(counts = hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx])
-full.hoch5k.adultDG.data[["percent.mt"]] <- PercentageFeatureSet(full.hoch5k.adultDG.data, pattern = "^MT-")
+Hoch5k.GCadult[["percent.mt"]] <- PercentageFeatureSet(Hoch5k.GCadult, pattern = "^MT-")
 ```
 
 
 ```{r}
-VlnPlot(full.hoch5k.adultDG.data, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+VlnPlot(Hoch5k.GCadult, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
 ```
 
 
 ```{r}
-plot1 <- FeatureScatter(full.hoch5k.adultDG.data, feature1 = "nCount_RNA", feature2 = "percent.mt")
-plot2 <- FeatureScatter(full.hoch5k.adultDG.data, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 <- FeatureScatter(Hoch5k.GCadult, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(Hoch5k.GCadult, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
 plot1 + plot2
 ```
 
 ```{r}
-# Let's try this with the whole dataset, not jsut the day 35 DG adult cells
-full.hoch5k <-CreateSeuratObject(counts = hochgerner5k_2018_counts)
-full.hoch5k[["percent.mt"]] <- PercentageFeatureSet(full.hoch5k, pattern = "^MT-")
-```
-```{r}
-#looking at various QC metrics
-VlnPlot(full.hoch5k, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
-```
-```{r}
-plot1 <- FeatureScatter(full.hoch5k, feature1 = "nCount_RNA", feature2 = "percent.mt") + ggtitle("RNA count vs Percentage of Mitochondrial Genes") + theme_classic() + geom_hline(yintercept = 0) + xlab("RNA read count") + ylab("Mitochondria Gene Expression (% per cell)") + theme(plot.title = element_text(hjust = 0.5))
-plot2 <- FeatureScatter(full.hoch5k, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
-plot1 #+ plot2
-```
-
-```{r}
-#check the gene filtering
-
-```
-
-```{r}
 
 # This is for the filerting out those with features that 
 # I'm not sure what the appropriate number for us is, in the tutorial there were 13700 nfeatures
 #and the filterd out cells with less then 200 and greater than 2500, so I guess  cells with more than
 # a quarter of nFeatures and less than 10% of that is unacceptable?  
-full.hoch5k.adultDG.data <- subset(full.hoch5k.adultDG.data,
-                                   subset = nFeature_RNA > 20 & nFeature_RNA < 250 & percent.mt < 5)
-```
-
-
-
-<br><br>
-So in the tutorial it also says 0 variable features so I guess that's OK.
-<br><br>
-```{r}
-#QC for mitochondrial genes, like them we will remove any thing graeter than 5%
-Hoch5k.GCadult[["percent.mt"]] <- PercentageFeatureSet(Hoch5k.GCadult, pattern = "^MT-")
-
-# This is for the filerting out those with features that 
-# I'm not sure what the appropriate number for us is, in the tutorial there were 13700 nfeatures
-#and the filterd out cells with less then 200 and greater than 2500, so I guess  cells with more than
-# a quarter of nFeatures and less than 10% of that is unacceptable?  
-Hoch5k.GCadult <- subset(Hoch5k.GCadult, subset = nFeature_RNA > 20 & nFeature_RNA < 250 & percent.mt < 5)
+Hoch5k.GCadult <- subset(Hoch5k.GCadult, subset = nFeature_RNA > 600 & nFeature_RNA < 20000 & percent.mt < 5)
 
 #note I am going to skip some QC steps here, but we do need to do that in the future
 Hoch5k.GCadult <- NormalizeData(Hoch5k.GCadult) # Seurat normalization has many steps see publication
@@ -256,7 +268,7 @@ Hoch5k.GCadult <- FindVariableFeatures(Hoch5k.GCadult) # Identifies features tha
 
 ```
 
-
+Now we can check the most variable genes which seurat will restrict further analyses to.  Two of the top 10 most variable genes are in the Jeager DEGs, Inhba and Tax1bp1.  
 
 ```{r}
 top10 <-  head(VariableFeatures(Hoch5k.GCadult), 10)
@@ -265,29 +277,20 @@ plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
 plot2
 ```
 
-
+Lets look at the top 100 of the 2000 genes seurat will use and check the timepoint(s) Jeager et al., (2018) assigned them to.  For the most part these DEGs are positively expressed.
 ```{r}
-top10
-Jeager.DEGs$group.number[Jeager.DEGs$GeneID %in% top10]
-Jeager.DEGs$group[Jeager.DEGs$GeneID %in% top10]
+top100 <-  head(VariableFeatures(Hoch5k.GCadult), 100)
+top100[which(top100 %in% Jeager.DEGs$GeneID)]
+Jeager.DEGs$group.number[Jeager.DEGs$GeneID %in% top100]
+Jeager.DEGs$group[Jeager.DEGs$GeneID %in% top100]
 ```
-
-<br>
-<br>
-
-The top most variable gene's here are gene's that are expressed later in the timecourse of Jeager, this would make sense as they are all in groups which express later.  This is promissing as you would expect more persistent IEGs and secondary response gene's to be what we find rather than gene's like *Fos* that track moment to moment changes in activity.  I don't want to make too much of this but these gene's make sense to be invovled in LTP, *Junb* forms part of the AP-1 trnascription factor complex (Raivich et al. 2004).  Meg3* activates p53 and is a tumor suppressor gene (Zhou et al., 2003), it is also intriguingly subject to alternate splicing and searching the [isoform atlas](https://noush-joglekar.shinyapps.io/spatialviz/) created by the BRAIN initiative shows these isoforms appear to have variable expression across the hippocampus (Joglekar et al., 2021).  *Sipa1l1* is invovled in [chemical synapse transmission](https://www.genecards.org/cgi-bin/carddisp.pl?gene=SIPA1L1).
-
-
-
-<br>
-<br>
 
 ```{r}
 #scaling for dimnesionality reduction
 all.genes <- rownames(Hoch5k.GCadult)
-Hoch5k.GCadult <- ScaleData(Hoch5k.GCadult, features = all.genes)
+Hoch5k.GCadult <- ScaleData(Hoch5k.GCadult, features = all.genes) 
 
-Hoch5k.GCadult <- RunPCA(Hoch5k.GCadult , features = VariableFeatures(object = Hoch5k.GCadult),
+Hoch5k.GCadult <- RunPCA(Hoch5k.GCadult , features = all.genes,
                          npcs = 20) 
 ```
 <br>
@@ -317,6 +320,13 @@ Shows more or less the same thing, 4 isn't quite at the elbow but it may as well
 <br>
 <br>
 
+
+### Number of Dimensions affects results
+
+<br>
+<br>
+I would say that the best cut off would be to go up to dimensions 8, but when this is chosen (by setting dims = 1:8 in FindNeighbors) that doesn't 
+
 ```{r}
 #Adding metadata to identify the 
 Hoch5k.GCadult <- AddMetaData(object = Hoch5k.GCadult, 
@@ -333,6 +343,120 @@ Hoch5k.GCadult <- RunUMAP(Hoch5k.GCadult, dims = 1:4)
 
 DimPlot(Hoch5k.GCadult, reduction ="umap")
 ```
+
+```{r}
+DimPlot(Hoch5k.GCadult, reduction ="pca")
+```
+
+
+
+```{r}
+Hoch5k.GCadult.markers.3dims <- FindAllMarkers(Hoch5k.GCadult, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+seurat_clusters.3dims <- Hoch5k.GCadult@meta.data$seurat_clusters
+```
+```{r}
+for (i in c(0:3)){
+  print(paste("Cluster ", as.character(i)))
+  mrks <- Hoch5k.GCadult.markers.3dims $gene[Hoch5k.GCadult.markers.3dims$cluster==i & Hoch5k.GCadult.markers.3dims$p_val_adj>0.05]
+  print(mrks)
+  print("Gene in the Jeager DEGs are....")
+  print(mrks[which(mrks %in% Jeager.DEGs$GeneID)])
+  print("And their respective jeager goupings are...")
+  print(Jeager.DEGs$group[which(Jeager.DEGs$GeneID %in% mrks)])
+  print("")
+  print("")
+}
+
+```
+
+
+
+
+
+```{r}
+# trying again with more dimensions
+#Clustering, we will visualize in UMP later
+Hoch5k.GCadult <- FindNeighbors(Hoch5k.GCadult, dims = 1:7)
+Hoch5k.GCadult <- FindClusters(Hoch5k.GCadult, resolution = 0.2)
+```
+
+
+```{r}
+Hoch5k.GCadult <- RunUMAP(Hoch5k.GCadult, dims = 1:4)
+
+DimPlot(Hoch5k.GCadult, reduction ="umap")
+```
+
+```{r}
+DimPlot(Hoch5k.GCadult, reduction ="pca")
+```
+
+
+
+```{r}
+Hoch5k.GCadult.markers.7dims <- FindAllMarkers(Hoch5k.GCadult, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+seurat_clusters.7dims <- Hoch5k.GCadult@meta.data$seurat_clusters
+```
+```{r}
+for (i in c(0:1)){
+  print(paste("Cluster ", as.character(i)))
+  mrks <- Hoch5k.GCadult.markers.7dims$gene[Hoch5k.GCadult.markers.7dims$cluster==i & Hoch5k.GCadult.markers.7dims$p_val_adj>0.05]
+  print(mrks)
+  print("Gene in the Jeager DEGs are....")
+  print(mrks[which(mrks %in% Jeager.DEGs$GeneID)])
+  print("")
+  print("")
+}
+
+```
+
+```{r}
+FeaturePlot(Hoch5k.GCadult, features = c("Fos", "Inhba"))
+```
+```{r}
+FeaturePlot(Hoch5k.GCadult, features = c("Npas4", "Arc"))
+```
+
+```{r}
+FeaturePlot(Hoch5k.GCadult, features = c("Egr1", "Nrp1"))
+```
+
+```{r}
+#according to Erwin et al., (2020) Cck and Penk should be mutually exclusively expressed
+FeaturePlot(Hoch5k.GCadult, features = c("Penk", "Cck"))
+```
+So I am observing the Penk and Cck seperation that has been described previously (Erwin et al., 2020) and it is happening 
+
+
+Clustering just within the Jeager DEGs
+---
+
+
+
+```{r}
+p <- DimPlot(Hoch5k.GCadult, reduction ="umap")
+
+p <- p + ggtitle("Adult DGCs clustered with Engram DEGs (UMAP)") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Dim 1") +
+  ylab("Dim 2")
+  
+  
+p
+# FOR REFERENCE: 
+# ggplot(df, aes(x=fos, color = cond)) + 
+#   geom_histogram(fill =  "white") +
+#   xlab("Fos Reads") +
+#   ylab("Frequency") +
+#   theme_classic() + 
+#   theme(legend.title = element_blank()) +
+#   ggtitle("Freqency of Fos Counts in Jeager Groups")+
+#   theme(plot.title = element_text(hjust = 0.5))+
+#   theme(axis.text = element_text(face = "bold"))
+  
+```
+
+
 <br>
 <br>
 So what we get out of this is some kind of graded expression within the population.  It would be interesting to try to see which cells have more of which gene group in them.  This is similar to what was described by Dr. Cembrowski's group in Erwin et al., (2020) see figure 5 A in particular.  I tried in with 3 dims and I think it looks better with 4 more graded less like swiss cheese.  it would be interesting to see how Jeager's group labels map onto this.
@@ -357,6 +481,27 @@ head(cluster2.markers, n = 10)
 cluster3.markers <- FindMarkers(Hoch5k.GCadult, ident.1 = 3, min.pct = 0.25)
 head(cluster3.markers, n = 30)
 ```
+```{r}
+sum(cluster0.markers$p_val_adj<0.05)
+sum(cluster1.markers$p_val_adj<0.05)
+sum(cluster2.markers$p_val_adj<0.05)
+sum(cluster3.markers$p_val_adj<0.05)
+
+```
+```{r}
+sd(abs(cluster0.markers$avg_log2FC[cluster0.markers$p_val_adj<0.005]))
+sd(abs(cluster1.markers$avg_log2FC[cluster1.markers$p_val_adj<0.005]))
+sd(abs(cluster2.markers$avg_log2FC[cluster2.markers$p_val_adj<0.005]))
+sd(abs(cluster3.markers$avg_log2FC[cluster3.markers$p_val_adj<0.005]))
+```
+```{r}
+cluster3.markers$avg_log2FC[cluster3.markers$p_val_adj<0.05]
+
+rownames(cluster3.markers)[cluster3.markers$p_val_adj<0.01]
+cluster3.markers$avg_log2FC[cluster3.markers$p_val_adj<0.01]
+```
+
+
 <br>
 <br>
 The only two clusters with really significant are cluster 0 and cluster 3.  Inhba shows significantly elevated expression.  it is by far the most significant marker in the whole dataset.  Inhba is a expressed for a longer time than Arc or Fos according to Jeager et al., (2018) so it makes sense this would be a marker we detect.  Crucially cluster3 cells are also relatively rare compared to the other clusters, an indication of participation in sparse coding.  Cluster 0 has the Melatonin1 receptor has been described previously as being present in dentate gyrus though it is difficult what to make of this.  I foudn a review which suggests Mlt1 is expressed in molecular layer and hilus (the parts of the dentate dyrus that sandwich the granule cell layer), so prehaps we found either a subset of borderline granule cells or they were misclassified during clustering in Hochgerner et al., (2018).  Inhba also tracked Arc expression in the initial stages of engram formation before taking off on it's own as arc dies down between 4 and 5 hours after activation.  Hochgerner also has Gabanergic neurons we could similarily cluster I will begin reviewing the literature on inhibitory interneuron engrams.  Plotting with PCA actually looks even beter than the UMAP plot.
@@ -366,6 +511,32 @@ The only two clusters with really significant are cluster 0 and cluster 3.  Inhb
 ```{r}
 DimPlot(Hoch5k.GCadult, reduction = "pca")
 ```
+```{r}
+p <- DimPlot(Hoch5k.GCadult, reduction = "pca") +
+  ggtitle("Hochgerner Adult DGCs clustered with Jeager DEGs") +
+  scale_color_discrete(name = "Cluster") + #not scale_fill
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("PC1") +
+  ylab("PC2") 
+  
+
+p
+```
+
+```{r}
+#meh kinda pointless PCA still look the best for illustrating my point
+Hoch5k.GCadult <- RunTSNE(Hoch5k.GCadult)
+
+p <- DimPlot(Hoch5k.GCadult, reduction = "tsne") +
+  ggtitle("Adult DGCs clustered with Engram DEGs (tSNE)") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+p
+```
+
+
+
 <br>
 <br>
 The other clusters are more or less intermixed while the *Inhba* labelled neurons are clearly moving along PC1.
@@ -373,18 +544,21 @@ The other clusters are more or less intermixed while the *Inhba* labelled neuron
 <br>
 
 ```{r}
-
 Hoch5k.GCadult.markers <- FindAllMarkers(Hoch5k.GCadult, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
 Hoch5k.GCadult.markers %>%
     group_by(cluster) %>%
     slice_max(n = 2, order_by = avg_log2FC)
-
 ```
 ```{r}
 Hoch5k.GCadult.markers %>%
     group_by(cluster) %>%
     top_n(n = 10, wt = avg_log2FC) -> top10
-DoHeatmap(Hoch5k.GCadult, features = top10$gene) + NoLegend()
+
+DoHeatmap(Hoch5k.GCadult, features = top10$gene, label = FALSE) + 
+  theme(axis.text.y = element_text(face = "bold")) +
+  theme(legend.title = element_text(face = "bold")) + 
+  ggtitle("Hochgerner P35 Mature DCGs Clustered with Jeager Engram DEGs")
+
 ```
 <br>
 <br>
@@ -407,9 +581,26 @@ arrange(clstr3.mrks, p_val_adj)
 ```
 
 ```{r}
+
+clstr3.mrks <- Hoch5k.GCadult.markers[Hoch5k.GCadult.markers$cluster=="3",]
+
+clstr3.mrks$JeagerGrouping <- Jeager.DEGs$group[Jeager.DEGs$GeneID %in% clstr3.mrks$gene]
+
 clstr3.mrks[clstr3.mrks$p_val_adj<0.05,] %>%
   arrange( avg_log2FC)
 ```
+```{r}
+clstr0.mrks <- Hoch5k.GCadult.markers[Hoch5k.GCadult.markers$cluster=="0",]
+
+clstr0.mrks$JeagerGrouping <- Jeager.DEGs$group[Jeager.DEGs$GeneID %in% clstr0.mrks$gene]
+
+clstr0.mrks[clstr0.mrks$p_val_adj<0.05,] %>%
+  arrange( avg_log2FC)
+
+```
+
+
+
 <br>
 <br>
 When I organized them by adjusted pvalues the most significant are the 1hr gene's which I suppose would indicate these cells are recently active.  But thresholding the adjusted p-value for those that cross, we see that 23 gene's survive this thresholding and the gene's with the greatest fold change are almost all the 1hr_4hr_and_5hr genes.  So does this mean these cells are recently active but the genes with the greatest persistence are the ones which undergo the largest gene change?  Alternatively the transient nature of the 1hr markers could be driving down their fold change.  it will be interesting to compare these results to a non-linear classifier.
@@ -462,6 +653,9 @@ Jaeger, B. N., Linker, S. B., Parylak, S. L., Barron, J. J., Gallina, I. S., Saa
 <br>
 <br>
 Joglekar, A., Prjibelski, A., Mahfouz, A., Collier, P., Lin, S., Schlusche, A. K., ... & Tilgner, H. U. (2021). A spatially resolved brain region-and cell type-specific isoform atlas of the postnatal mouse brain. Nature Communications, 12(1), 1-16.
+<br>
+<br>
+Habib, N., Li, Y., Heidenreich, M., Swiech, L., Avraham-Davidi, I., Trombetta, J. J., ... & Regev, A. (2016). Div-Seq: Single-nucleus RNA-Seq reveals dynamics of rare adult newborn neurons. Science, 353(6302), 925-928.
 <br>
 <br>
 Hochgerner, H., Zeisel, A., Lönnerberg, P., & Linnarsson, S. (2018). Conserved properties of dentate gyrus neurogenesis across postnatal development revealed by single-cell RNA sequencing. Nature neuroscience, 21(2), 290-299.
