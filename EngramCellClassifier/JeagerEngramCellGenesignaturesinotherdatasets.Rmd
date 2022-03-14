@@ -451,13 +451,65 @@ describe a population of mature dentate gyrus cells that are Penk expressing and
 FeaturePlot(Hoch5k.GCadult, features = c("Penk", "Cck"))
 ```
 
-Cembroskiw and Mannon (2018) notes that within a single cell type discrete clusters may not always be the best way to think about distiguishing cells.  Continuous cell states such as those underlying neuroplasticity may be at play and confused for distinct cells states.  In this cases it may be useful to just look at the compoenents of PCA and see which ones are most loaded with Jeager DEGs.  As 200 out of 900 of the Jeager DEGs were in the genes included by seurat we can assume 
+Cembroskiw and Mannon (2018) notes that within a single cell type discrete clusters may not always be the best way to think about distiguishing cells.  Continuous cell states such as those underlying neuroplasticity may be at play and confused for distinct cells states.  In this cases it may be useful to just look at the compoenents of PCA and see which ones are most loaded with Jeager DEGs.  As 200 out of 900 of the Jeager DEGs were in the genes included by seurat one or two of these PCs may be significant sources of variation.
+
+Please read the documentation of the dimensitonality reduction slots in Seurat objects: https://satijalab.org/seurat/archive/v3.0/dim_reduction_vignette.html
+
+```{r}
+
+testPC <- Hoch5k.GCadult[['pca']][,1]
+testPC <-data.frame(testPC)
+testPC$gene <- rownames(testPC)
+testPC$abs <- abs(testPC$PC_1)
+testPC$sign <- testPC$PC_1 > 0
+
+N = 20
+topN <- testPC %>%
+  slice_max(n = N, order_by = abs) %>%
+  group_by(sign)
+
+topN
+    
+```
+
+Alternatively Seurat does posses means to detect cell state, should read the following publication: 
+Hao, Y., Hao, S., Andersen-Nissen, E., Mauck III, W. M., Zheng, S., Butler, A., ... & Satija, R. (2021). Integrated analysis of multimodal single-cell data. Cell, 184(13), 3573-3587.
+
+It may simply be the case that transcriptomically identifying these states will always be a challenge
+
+And see if it may hold some answers.
+
+
 
 ```{r}
 print(Hoch5k.GCadult[["pca"]], dims = 1:7, nfeatures = 50)
 ```
-It may make sense to remove these JeagerDEG genes from the list entirely and try to see how it affects the clustering and cluster just using the DEGs.
+It may make sense to remove these JeagerDEG genes from the list entirely and try to see how it affects the clustering and cluster just using the DEGs.  Most Jeager DEGs were upregulated but some were downregulated so it may be useful to check their loading sign as well.
 
+
+```{r}
+VizDimLoadings(Hoch5k.GCadult, dims = 1, reduction = "pca")
+```
+```{r}
+VizDimLoadings(Hoch5k.GCadult, dims = 2, reduction = "pca")
+```
+
+```{r}
+VizDimLoadings(Hoch5k.GCadult, dims = 4, reduction = "pca")
+```
+
+```{r}
+VizDimLoadings(Hoch5k.GCadult, dims = 5, reduction = "pca")
+```
+
+```{r}
+VizDimLoadings(Hoch5k.GCadult, dims = 6, reduction = "pca")
+```
+
+
+```{r}
+VizDimLoadings(Hoch5k.GCadult, dims = 3, reduction = "pca")
+```
 
 * get the cembrowski and mannon  iitation its the one on continuous variation within cell types
 
