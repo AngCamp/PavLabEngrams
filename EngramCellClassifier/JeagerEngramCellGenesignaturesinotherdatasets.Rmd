@@ -451,12 +451,100 @@ describe a population of mature dentate gyrus cells that are Penk expressing and
 FeaturePlot(Hoch5k.GCadult, features = c("Penk", "Cck"))
 ```
 
-Cembroskiw and Mannon (2018) notes that within a single cell type discrete clusters may not always be the best way to think about distiguishing cells.  Continuous cell states such as those underlying neuroplasticity may be at play and confused for distinct cells states.  In this cases it may be useful to just look at the compoenents of PCA and see which ones are most loaded with Jeager DEGs.  As 200 out of 900 of the Jeager DEGs were in the genes included by seurat one or two of these PCs may be significant sources of variation.
+```{r}
+FeaturePlot(Hoch5k.GCadult, features = c("Malat1", "Cck"))
+```
+It appears that this long non-coding RNA Malat1 which is known to be involved in synapse formation is also expressed in opposition to Cck, in fact it determines one poll of the first principle component.  Should try controlling for spatial gradient as well ask mark how to do this.
 
-Please read the documentation of the dimensitonality reduction slots in Seurat objects: https://satijalab.org/seurat/archive/v3.0/dim_reduction_vignette.html
+
+
+```{r}
+# > which(rownames(hochgerner5k_2018_counts)=="Penk")
+# [1] 9198
+# 
+# > which(rownames(hochgerner5k_2018_counts)=="Cck")
+# [1] 2249
+# > sum(hochgerner5k_2018_counts[9198,]>1)
+# [1] 22
+# > sum(hochgerner5k_2018_counts[2249,]>1)
+# [1] 1054
+# > sum((hochgerner5k_2018_counts[2249,]>1) & (hochgerner5k_2018_counts[9198,]>1) )
+# [1] 1
+```
+
+#visualize PC3 on the feature plot
+
+
+If you look at the commented code above you can see that only 1 cell expresses both Penk and Cck so it is a very strong marker.
+
+
+Cembroskiw and Mannon (2018) notes that within a single cell type discrete clusters may not always be the best way to think about distiguishing cells.  Continuous cell states such as those underlying neuroplasticity may be at play and confused for distinct cells states.  In this cases it may be useful to just look at the compoenents of PCA and see which ones are most loaded with Jeager DEGs.  As 200 out of 900 of the Jeager DEGs were in the genes included by seurat one or two of these PCs may be significant sources of variation.  Seperating "static" or slower transcriptomic processes from faster acting IEG activity is a big challenge for this project and may be beyond the scope of a masters thesis.  But basically if certain cell types are
+more responsive than others to certian stimulations their particular response will get picked up, but seperating this from 
+the time course of their cell type specific activity may be challenging.  Without good time course data it is simply not
+possible to make claims about these processes.  There are certian computational methods that proport to be able to detect
+these processes and some reasources may be worth following up on have been provided here.
+
+
+In particular it may be worht stuyding manifold learning methods.  
+
+Moon, K. R., Stanley III, J. S., Burkhardt, D., van Dijk, D., Wolf, G., & Krishnaswamy, S. (2018). Manifold learning-based methods for analyzing single-cell RNA-sequencing data. Current Opinion in Systems Biology, 7, 36-46.
+-very relevant
+
+Moon et al. (2018) cites the following paper seems relevant to what you want to know:
+Nadler, B., Lafon, S., Coifman, R. R., & Kevrekidis, I. G. (2006). Diffusion maps, spectral 
+clustering and reaction coordinates of dynamical systems. Applied and Computational Harmonic Analysis, 21(1), 113-127.
+
+and this cites a ton of other authors on this subject:  
+3] D. Givon, R. Kupferman, A. Stuart, Extracting macroscopic dynamics: Model problems and algorithms, Nonlinearity 17 (2004) R55–R127.
+[4] W. Huisinga, C. Best, R. Roitzsch, Ch. Schütte, F. Cordes, From simulation data to conformational ensembles: Structure and dynamics based
+methods, J. Comput. Chem. 20 (1999) 1760–1774.
+[5] W. Huisinga, Ch. Schütte, A.M. Stuart, Extracting macroscopic stochastic dynamics: Model problems, Comm. Pure Appl. Math. 56 (2003)
+234–269.
+
+https://www.sciencedirect.com/science/article/pii/S2452310017301877
+
+Buettner, F., Natarajan, K. N., Casale, F. P., Proserpio, V., Scialdone, A., Theis, F. J., ... & Stegle, O. (2015). Computational analysis of cell-to-cell heterogeneity in single-cell RNA-sequencing data reveals hidden subpopulations of cells. Nature biotechnology, 33(2), 155-160.
+
+https://www.nature.com/articles/nbt.3102?report=reader
+
+Kharchenko, P. V. (2021). The triumphs and limitations of computational methods for scRNA-seq. Nature Methods, 18(7), 723-732.
+https://www.nature.com/articles/s41592-021-01171-x
+
+In particular this tool CellChat may be interesting, it would be espescially interesting to use on the
+Chen data as there may be connectivity data available to benchmark its observations
+
+https://www.nature.com/articles/s41467-021-21246-9
+Jin, S., Guerrero-Juarez, C. F., Zhang, L., Chang, I., Ramos, R., Kuan, C. H., ... & Nie, Q. (2021). Inference and analysis of cell-cell communication using CellChat. Nature communications, 12(1), 1-20.
+
+https://github.com/sqjin/CellChat
+
+Cressie, N., & Wikle, C. K. (2015). Statistics for spatio-temporal data. John Wiley & Sons.
+
+Wikle, C. K. (2015). Modern perspectives on statistics for spatio‐temporal data. Wiley Interdisciplinary Reviews: Computational Statistics, 7(1), 86-98.
+
+
+Please read the documentation of the dimensitonality reduction slots in Seurat objects:
+https://satijalab.org/seurat/archive/v3.0/dim_reduction_vignette.html
+-this page also described how to add custom dimensionality reductions to the seurat object which is something I may want to do as well
+run ICA:
+https://satijalab.org/seurat/reference/runica
 
 ```{r}
 
+Hoch5k.GCadult <- RunICA(Hoch5k.GCadult, nics = 7)
+
+
+```
+
+
+```{r}
+DimHeatmap(Hoch5k.GCadult, reduction = "ica")
+
+```
+
+
+
+```{r}
 testPC <- Hoch5k.GCadult[['pca']][,1]
 testPC <-data.frame(testPC)
 testPC$gene <- rownames(testPC)
@@ -511,16 +599,117 @@ VizDimLoadings(Hoch5k.GCadult, dims = 6, reduction = "pca")
 VizDimLoadings(Hoch5k.GCadult, dims = 3, reduction = "pca")
 ```
 
-* get the cembrowski and mannon  iitation its the one on continuous variation within cell types
+* get the cembrowski and mannon  citation its the one on continuous variation within cell types
 
 
 Clustering just within the Jeager DEGs
 ---
 
 
+Only 200 of the ~900 JeagerDEGs were included in the most variable gene's
 
 ```{r}
-p <- DimPlot(Hoch5k.GCadult, reduction ="umap")
+Hoch5k.GCadult.onlyJeagerDEGs <- CreateSeuratObject(
+  counts = hochgerner5k_2018_counts[Jeager.DEGs$hoch5k.idx, hoch5k.GC_Adult.p35.idx],
+  meta.data = hochgerner5k_2018_meta[ hoch5k.GC_Adult.p35.idx, ])
+
+Hoch5k.GCadult.onlyJeagerDEGs
+```
+
+
+
+```{r}
+Hoch5k.GCadult.onlyJeagerDEGs <- NormalizeData(Hoch5k.GCadult.onlyJeagerDEGs) # Seurat normalization has many steps see publication
+# https://www.frontiersin.org/articles/10.3389/fgene.2020.00041/full describes and compares it to others
+Hoch5k.GCadult.onlyJeagerDEGs <- FindVariableFeatures(Hoch5k.GCadult.onlyJeagerDEGs)
+Hoch5k.GCadult.onlyJeagerDEGs
+```
+So now when we exclude the non Jeager IEGs we get more signal from our desired gene's.
+
+
+```{r}
+top10 <-  head(VariableFeatures(Hoch5k.GCadult.onlyJeagerDEGs), 10)
+plot1 <- VariableFeaturePlot(Hoch5k.GCadult.onlyJeagerDEGs)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot2
+```
+
+
+```{r}
+all.genes <- rownames(Hoch5k.GCadult.onlyJeagerDEGs)
+Hoch5k.GCadult.onlyJeagerDEGs <- ScaleData(Hoch5k.GCadult.onlyJeagerDEGs, features = all.genes) 
+
+Hoch5k.GCadult.onlyJeagerDEGs <- RunPCA(Hoch5k.GCadult.onlyJeagerDEGs, features = all.genes,
+                         npcs = 20) 
+```
+So here we can see several gradients of IEGs and engram associated genes from across the time course data.  Whether or not these reflect cell type specific processes or a particular point in a time course of one cell type, or a mix of these possibilities is difficult to assess.  Possibly include a figure showing these three possibilities, time courses as color gradients, cell types as shapes and behavioral exposures as letters.
+
+
+```{r}
+#Dsicovering dimensionality of these activity markers
+Hoch5k.GCadult.onlyJeagerDEGs <- JackStraw(Hoch5k.GCadult.onlyJeagerDEGs, num.replicate = 100)
+Hoch5k.GCadult.onlyJeagerDEGs <- ScoreJackStraw(Hoch5k.GCadult.onlyJeagerDEGs, dims = 1:20)
+
+```
+
+
+```{r}
+JackStrawPlot(Hoch5k.GCadult.onlyJeagerDEGs, dims = 1:20)
+```
+
+
+
+```{r}
+
+ElbowPlot(Hoch5k.GCadult.onlyJeagerDEGs)
+
+```
+
+
+```{r}
+#Clustering, we will visualize in UMP later
+Hoch5k.GCadult.onlyJeagerDEGs <- FindNeighbors(Hoch5k.GCadult.onlyJeagerDEGs, dims = 1:3)
+Hoch5k.GCadult.onlyJeagerDEGs <- FindClusters(Hoch5k.GCadult.onlyJeagerDEGs, resolution = 0.2)
+
+```
+
+
+```{r}
+Hoch5k.GCadult.onlyJeagerDEGs <- RunUMAP(Hoch5k.GCadult.onlyJeagerDEGs, dims = 1:4)
+
+DimPlot(Hoch5k.GCadult.onlyJeagerDEGs, reduction ="umap")
+```
+
+
+```{r}
+DimPlot(Hoch5k.GCadult.onlyJeagerDEGs, reduction ="pca")
+```
+
+Definately worth talking about this with regard to the DEG expression across hippocampus: https://pubmed.ncbi.nlm.nih.gov/29875406/
+
+Shows lack of stability in CA1 and Ca2 representation in calcium imaging data.
+
+```{r}
+# trying again with more dimensions
+#Clustering, we will visualize in UMP later
+Hoch5k.GCadult.onlyJeagerDEGs <- FindNeighbors(Hoch5k.GCadult.onlyJeagerDEGs, dims = 1:7)
+Hoch5k.GCadult.onlyJeagerDEGs <- FindClusters(Hoch5k.GCadult.onlyJeagerDEGs, resolution = 0.2)
+```
+
+
+
+```{r}
+Hoch5k.GCadult.onlyJeagerDEGs %>%
+    group_by(cluster) %>%
+    slice_max(n = 2, order_by = avg_log2FC)
+
+
+```
+
+
+
+```{r}
+p <- DimPlot(Hoch5k.GCadult.onlyJeagerDEGs, reduction ="umap")
 
 p <- p + ggtitle("Adult DGCs clustered with Engram DEGs (UMAP)") +
   theme(plot.title = element_text(hjust = 0.5)) +
@@ -550,21 +739,21 @@ So what we get out of this is some kind of graded expression within the populati
 <br>
 ```{r}
 #Lets find some markers 
-cluster0.markers <- FindMarkers(Hoch5k.GCadult, ident.1 = 0, min.pct = 0.25)
+cluster0.markers <- FindMarkers(Hoch5k.GCadult.onlyJeagerDEGs, ident.1 = 0, min.pct = 0.25)
 head(cluster0.markers, n = 10)
 ```
 ```{r}
-cluster1.markers <- FindMarkers(Hoch5k.GCadult, ident.1 = 1, min.pct = 0.25)
+cluster1.markers <- FindMarkers(Hoch5k.GCadult.onlyJeagerDEGs, ident.1 = 1, min.pct = 0.25)
 head(cluster1.markers, n = 10)
 ```
 
 ```{r}
-cluster2.markers <- FindMarkers(Hoch5k.GCadult, ident.1 = 2, min.pct = 0.25)
+cluster2.markers <- FindMarkers(Hoch5k.GCadult.onlyJeagerDEGs, ident.1 = 2, min.pct = 0.25)
 head(cluster2.markers, n = 10)
 ```
 
 ```{r}
-cluster3.markers <- FindMarkers(Hoch5k.GCadult, ident.1 = 3, min.pct = 0.25)
+cluster3.markers <- FindMarkers(Hoch5k.GCadult.onlyJeagerDEGs, ident.1 = 3, min.pct = 0.25)
 head(cluster3.markers, n = 30)
 ```
 ```{r}
@@ -620,8 +809,6 @@ p <- DimPlot(Hoch5k.GCadult, reduction = "tsne") +
 
 p
 ```
-
-
 
 <br>
 <br>
