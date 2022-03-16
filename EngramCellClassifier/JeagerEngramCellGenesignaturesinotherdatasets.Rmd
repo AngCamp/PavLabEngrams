@@ -34,14 +34,11 @@ library(SeuratDisk) # installed with remotes
 #Seurat reference manual: https://cloud.r-project.org/web/packages/Seurat/Seurat.pdf
 ```
 
-NOTES: Line 168 needs fixing, we need to filter cells out with all the gene's before restricting to just the Jeager DEGs,
-then you need to change the stats as well, make sure they are being corrected by Benjamini-Hochberg
-
 
 Introduction
 ---
 
-Here I have used supplemental data 4 from Jeager et al., (2018) which is a list of the DEGs from Fos+ dentate granule cells (DGCs) at various time points vs Fos- DGCs at various time points.  They assigned these DEGs to qualitatively similar time courses.  While not rigorous this manual sissignment is still interesting to use, perhaps later we can redo this with a more rigorous exploration of the time course data.  Regardless I use this DEG list to cluster DGCs from the first experiment of Hochgerner et al., (2018).  This second dataset of ~5k cells was sampled from mlae and female mice across development.  The sample of interest for me were samples from post natal day 37 which is relatively close to the 7-8.75 week old mice (in days they are ~P49-P62) in Jeager.  Though not an ideal match it is better than the other dataset which contains 24k cells but range from embryonic mice to post natal day 120 and 132.  Jeager et al. (2018) was done entirely using female mice while Hochgerner was done with a mixture of males and females.
+Here I have used supplemental data 4 from Jeager et al., (2018) which is a list of the DEGs from Fos+ dentate granule cells (DGCs) at various time points vs Fos- DGCs at various time points.  The authors assigned these DEGs to qualitatively similar time courses based on thier status as DEGs across 3 different time points (1hr, 4hrs, and 5hrs).  While not rigorous this manual assissignment is still interesting to use, perhaps later we can redo this with a more rigorous exploration of the time course data.  This first experiemnt was all female mice.  Regardless I use this DEG list to cluster DGCs from the first experiment of Hochgerner et al., (2018).  This second dataset of ~5k cells was sampled from male and female mice across development.  The sample of interest for me were samples from post natal day 37 which is relatively close to the 7-8.75 week old mice (in days they are ~P49-P62) in Jeager.  Though not an ideal match it is better than the other dataset which contains 24k cells but range from embryonic mice to post natal day 120 and 132.  Jeager et al. (2018) was done entirely using female mice while Hochgerner was done with a mixture of males and females.
 
 The Hochgerner dataset contains some peculiarities.  They have pooled cells between males and females to reduce batch effects, but its difficult to guess which cells came from which.  Hochgerner et al., (2018)  assigned sex to cells based on number of male vs female genes in each cell.  They provide metadata about the number fo males and females pooled for the batch each cell was drawn from but in the post natal days 24 and 35 in the Hoch5k data there are some that simply cannot be known.
 
@@ -89,7 +86,7 @@ Quick check for HC DGCs with fos labelleing.
 which((jeager2018_meta$exposure=="HC")&(jeager2018_meta$fos_status=="Fos+"))
 ```
 <br><br>
-So no data on that but let's get an idea for what the IEG distribution was like in Jeager's experiments.
+Just to illustrate what we should expect to see in a population of engram cells we will look at the fos expression across the cells in Jeager based on their labelling strategy.  They used both Fos and Arc as labels as Fos expression is quite transient where as Arc can be stained for with anitibodies for up to 5 hours after the expossure.  Not all the cells antibody labelled are actively transcribing the gene.
 <br><br>
 ```{r}
 jeager.fos.idx <- which(rownames(jeager2018_counts)=="Fos")
@@ -154,9 +151,14 @@ p
 ```
 
 <br>
-So in general there are a few cells with a low level expression of fos, and then this small group of outliers in with a high fos count.  This is in line with the sparse coding of events observed in the brain.  It is notable that within the group that was deemed to be an "engram cell" via antibody staining for fos that there is a not insignificant franction of the fos positive cells which are not expressing fos.  This could be due to off target effects, the authors themselves make note that in CA1 cells they had stained for fos or arc did not express those markers.  It would be better to have a true engram label dataset to work with like Chen et al., (2018) but this si what we had for hippocampus so it will have to do.
+So in general there are a few cells with a low level expression of fos, and then this small group of outliers in with a high fos count.  In general there are less Fos+ (by antibody staining) cells than FOs- and they are not all transcribing Fos, though a greater proportion of cells in the Fos+ group are actively transcribing it.  This is in line with the sparse coding of events observed in the brain.  It is notable that within the group that was deemed to be an "engram cell" via antibody staining for fos that there is a not insignificant fraction of the fos positive cells which are not expressing fos.  This could be due to off target effects, the authors themselves make note that in CA1 cells they had stained for fos or arc did not express those markers.  It would be better to have a true engram label dataset to work with like Chen et al., (2018) but this is what we had for hippocampus so it will have to do.  Jeager's sequencing was much deeper than Hochgerner's (1.5 million avg reads per cell to ~43k avg reads per cell) and Arc is quite lowly expressed so its difficult to detect in the Hochgerner data.
 <br>
 <br>
+For our purposes of computationally identify engram cells we want to identify gene's that are robustly expressed for long periods of time as well as gene's that are robustly expressed within particular contexts like at certain time points.  This is why it's better to use a set of DEGs from a confirmed engram experiment rather than looking individually for Erg1 or Inhba or Arc or Fos etc etc.  But in general at least for recently active cells you would expect them to be rare cells, over expressing DEGs.
+<br>
+<br>
+
+Here we could also discuss the issues arrising from what kind of cells we are looking for.  Add images of the possible sources of IEGs you are seeing.
 
 
 Looking for Engram labelling gene's in Hochgerner et al., (2018) at P35
@@ -290,11 +292,13 @@ Jeager.DEGs$group[Jeager.DEGs$GeneID %in% top100]
 all.genes <- rownames(Hoch5k.GCadult)
 Hoch5k.GCadult <- ScaleData(Hoch5k.GCadult, features = all.genes) 
 
-Hoch5k.GCadult <- RunPCA(Hoch5k.GCadult , features = all.genes,
+Hoch5k.GCadult <- RunPCA(Hoch5k.GCadult , features = VariableFeatures(object = Hoch5k.GCadult),
                          npcs = 20) 
 ```
 <br>
 <br>
+
+Now we will compute and plot the JackStraw score.  
 ```{r}
 #Dsicovering dimensionality of these activity markers
 Hoch5k.GCadult <- JackStraw(Hoch5k.GCadult, num.replicate = 100)
@@ -302,6 +306,15 @@ Hoch5k.GCadult <- ScoreJackStraw(Hoch5k.GCadult, dims = 1:20)
 ```
 <br>
 <br>
+From Seurat's documentation 
+https://satijalab.org/seurat/reference/scorejackstraw
+"Plots the results of the JackStraw analysis for PCA significance. For each PC, plots a QQ-plot comparing the distribution of p-values for all genes across each PC, compared with a uniform distribution. Also determines a p-value for the overall significance of each PC (see Details)."
+<br>
+https://satijalab.org/seurat/reference/jackstrawplot#details
+"Significant PCs should show a p-value distribution (black curve) that is strongly skewed to the left compared to the null distribution (dashed line) The p-value for each PC is based on a proportion test comparing the number of genes with a p-value below a particular threshold (score.thresh), compared with the proportion of genes expected under a uniform distribution of p-values"
+<br>
+<br>
+
 ```{r}
 JackStrawPlot(Hoch5k.GCadult, dims = 1:20)
 ```
@@ -334,7 +347,7 @@ Hoch5k.GCadult <- AddMetaData(object = Hoch5k.GCadult,
 
 #Clustering, we will visualize in UMP later
 Hoch5k.GCadult <- FindNeighbors(Hoch5k.GCadult, dims = 1:3)
-Hoch5k.GCadult <- FindClusters(Hoch5k.GCadult, resolution = 0.2)
+Hoch5k.GCadult <- FindClusters(Hoch5k.GCadult, resolution = 0.2, algorithm = 1)
 ```
 
 
@@ -355,9 +368,9 @@ Hoch5k.GCadult.markers.3dims <- FindAllMarkers(Hoch5k.GCadult, only.pos = TRUE, 
 seurat_clusters.3dims <- Hoch5k.GCadult@meta.data$seurat_clusters
 ```
 ```{r}
-for (i in c(0:3)){
+for (i in c(0:2)){
   print(paste("Cluster ", as.character(i)))
-  mrks <- Hoch5k.GCadult.markers.3dims $gene[Hoch5k.GCadult.markers.3dims$cluster==i & Hoch5k.GCadult.markers.3dims$p_val_adj<0.05]
+  mrks <- Hoch5k.GCadult.markers.3dims$gene[Hoch5k.GCadult.markers.3dims$cluster==i & Hoch5k.GCadult.markers.3dims$p_val_adj<0.05]
   print(mrks)
   print("Gene in the Jeager DEGs are....")
   print(Jeager.DEGs$GeneID[which(Jeager.DEGs$GeneID %in% mrks)])
@@ -371,18 +384,45 @@ for (i in c(0:3)){
 ```{r}
 Hoch5k.GCadult.markers.3dims %>%
     group_by(cluster) %>%
-    slice_max(n = 2, order_by = avg_log2FC)
+    slice_max(n = 5, order_by = avg_log2FC)
 ```
 
 
+Looking for any non Jeager DEGs markers.
+
+```{r}
+Hoch5k.GCadult.markers.3dims %>%
+  filter(!(gene %in% Jeager.DEGs$GeneID)&(p_val_adj<0.05))  %>%
+  group_by(cluster)  %>%
+  slice_max(n = 5, order_by = avg_log2FC)
+
+```
+```{r}
+#according to Erwin et al., (2020) Cck and Penk should be mutually exclusively expressed
+FeaturePlot(Hoch5k.GCadult, features = c("Penk", "Cck"), blend =TRUE)
+```
+
+```{r}
+FeaturePlot(Hoch5k.GCadult, features = c("Penk", "Malat1"), blend =TRUE)
+```
 
 
+```{r}
+FeaturePlot(Hoch5k.GCadult, features = c("Cck", "Malat1"), blend =TRUE)
+```
+
+```{r}
+seurat_clusters.3dims
+seurat_clusters.7dims
+```
+
+### Run it again with 7 dims
 
 ```{r}
 # trying again with more dimensions
 #Clustering, we will visualize in UMP later
-Hoch5k.GCadult <- FindNeighbors(Hoch5k.GCadult, dims = 1:7)
-Hoch5k.GCadult <- FindClusters(Hoch5k.GCadult, resolution = 0.2)
+Hoch5k.GCadult <- FindNeighbors(Hoch5k.GCadult, dims = 1:6)
+Hoch5k.GCadult <- FindClusters(Hoch5k.GCadult, resolution = 0.2, algorithm = 1)
 ```
 
 
@@ -399,8 +439,8 @@ DimPlot(Hoch5k.GCadult, reduction ="pca")
 
 
 ```{r}
-Hoch5k.GCadult.markers.7dims <- FindAllMarkers(Hoch5k.GCadult, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-seurat_clusters.7dims <- Hoch5k.GCadult@meta.data$seurat_clusters
+Hoch5k.GCadult.markers.6dims <- FindAllMarkers(Hoch5k.GCadult, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+seurat_clusters.6dims <- Hoch5k.GCadult@meta.data$seurat_clusters
 ```
 ```{r}
 for (i in c(0:1)){
@@ -417,9 +457,18 @@ for (i in c(0:1)){
 
 ```
 ```{r}
-Hoch5k.GCadult.markers.7dims %>%
+Hoch5k.GCadult.markers.6dims %>%
     group_by(cluster) %>%
-    slice_max(n = 2, order_by = avg_log2FC)
+    slice_max(n = 5, order_by = avg_log2FC)
+```
+
+
+```{r}
+Hoch5k.GCadult.markers.6dims %>%
+  filter(!(gene %in% Jeager.DEGs$GeneID)&(p_val_adj<0.05))  %>%
+  group_by(cluster)  %>%
+  slice_max(n = 5, order_by = avg_log2FC)
+
 ```
 
 
@@ -441,10 +490,10 @@ So I am observing the Penk and Cck seperation that has been described previously
 It is worth noting the components of PC3 however.
 
 ```{r}
-VizDimLoadings(Hoch5k.GCadult, dims = 3, reduction = "pca")
+VizDimLoadings(Hoch5k.GCadult, dims = 1, reduction = "pca")
 ```
 I would like to point to the presence of Cck as a positive loading and Penk as a negative loading. In Erwin et al., (2020) they
-describe a population of mature dentate gyrus cells that are Penk expressing and over represented in the activity labelled cells across a wide variety of hippocampal dependent behaviours during initial training.  Critically in the negative componenets several other Jeager DEGs including Rgs4 and Inhba, in fact Rgs4 is a marker for cluster 1 in the 7 dimensional clustering.  Cck and Penk cells did not overlap, nor do they here as shown in the figure below.  Penk expressing cells are also rare as would be expected.
+describe a population of mature dentate gyrus cells that are Penk expressing and over represented in the activity labelled cells across a wide variety of hippocampal dependent behaviours during initial training.  Critically in the negative components several other Jeager DEGs including Rgs4 and Inhba, in fact Rgs4 is a marker for cluster 1 in the 7 dimensional clustering.  Cck and Penk cells did not overlap, nor do they here as shown in the figure below.  Penk expressing cells are also rare as would be expected.
 
 ```{r}
 #according to Erwin et al., (2020) Cck and Penk should be mutually exclusively expressed
@@ -454,8 +503,15 @@ FeaturePlot(Hoch5k.GCadult, features = c("Penk", "Cck"))
 ```{r}
 FeaturePlot(Hoch5k.GCadult, features = c("Malat1", "Cck"))
 ```
-It appears that this long non-coding RNA Malat1 which is known to be involved in synapse formation is also expressed in opposition to Cck, in fact it determines one poll of the first principle component.  Should try controlling for spatial gradient as well ask mark how to do this.
+It appears that this long non-coding RNA Malat1 which is known to be involved in synapse formation is also expressed in opposition to Cck, in fact it determines one poll of the first principle component.  Should try controlling for spatial gradient as well ask mark how to do this.  
 
+```{r}
+FeaturePlot(Hoch5k.GCadult, features = c("Malat1", "Penk"), blend = TRUE)
+```
+```{r}
+FeaturePlot(Hoch5k.GCadult, features = c("Malat1", "Cck"), blend = TRUE)
+```
+So even though Penk does not show up as a marker, and Malat1 is lowly expressed throughout, very high Malat1 expressing is uncommon, and does not overlap with Cck nor Penk.  Likewise Penk does not overlap with CcK.  Even though our clustering algirthms do not turn these up I believe these may be cases of stable gene expression.
 
 
 ```{r}
@@ -530,10 +586,7 @@ run ICA:
 https://satijalab.org/seurat/reference/runica
 
 ```{r}
-
 Hoch5k.GCadult <- RunICA(Hoch5k.GCadult, nics = 7)
-
-
 ```
 
 
@@ -583,6 +636,10 @@ VizDimLoadings(Hoch5k.GCadult, dims = 2, reduction = "pca")
 ```
 
 ```{r}
+VizDimLoadings(Hoch5k.GCadult, dims = 3, reduction = "pca")
+```
+
+```{r}
 VizDimLoadings(Hoch5k.GCadult, dims = 4, reduction = "pca")
 ```
 
@@ -590,23 +647,28 @@ VizDimLoadings(Hoch5k.GCadult, dims = 4, reduction = "pca")
 VizDimLoadings(Hoch5k.GCadult, dims = 5, reduction = "pca")
 ```
 
+
 ```{r}
 VizDimLoadings(Hoch5k.GCadult, dims = 6, reduction = "pca")
 ```
 
-
-```{r}
-VizDimLoadings(Hoch5k.GCadult, dims = 3, reduction = "pca")
-```
-
 * get the cembrowski and mannon  citation its the one on continuous variation within cell types
+
+
+So overall while the Jeager DEGs that are included in the analysis are present in many of the most important PCs they are not clearly marking some cells as engram cells with the rest of the gene's present.  We could consider withholding the genes that
+are Jeager DEGs from the initial clustering as well and see how they interact, or alternatively perform CCA on the two data 
+sets then cluster over two processes and get cell state markers and cell subtype markers.  Alternatively look into use the graph laplacian to look for "reaction coordinates" (Moon et al., 2018; Nadler et al., 2006).  There are also non-linear generalizations of CCA we could try as well.
+
+
 
 
 Clustering just within the Jeager DEGs
 ---
 
 
-Only 200 of the ~900 JeagerDEGs were included in the most variable gene's
+Only 200 of the ~900 JeagerDEGs were included in the most variable gene's and seurats filtering of features, while good
+for large data sets to identufy specific processes may be obscuring gene's we know to be important in cell state transitions.
+As for the clustering in the data above I woul like to take a note from Cembrowski & Mannon et al. (2020)  about cell state transitions being more subtle than clustering and that prehaps clustering into discrete classes is not a good way to understand a more homogenous population.  We can alos try including cells from across different ages but we will need to control for age effects.
 
 ```{r}
 Hoch5k.GCadult.onlyJeagerDEGs <- CreateSeuratObject(
@@ -634,13 +696,21 @@ plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
 plot2
 ```
 
+```{r}
+top10 <-  head(VariableFeatures(Hoch5k.GCadult.onlyJeagerDEGs), 10)
+```
+
+
+
 
 ```{r}
 all.genes <- rownames(Hoch5k.GCadult.onlyJeagerDEGs)
 Hoch5k.GCadult.onlyJeagerDEGs <- ScaleData(Hoch5k.GCadult.onlyJeagerDEGs, features = all.genes) 
 
-Hoch5k.GCadult.onlyJeagerDEGs <- RunPCA(Hoch5k.GCadult.onlyJeagerDEGs, features = all.genes,
-                         npcs = 20) 
+Hoch5k.GCadult.onlyJeagerDEGs <- RunPCA(Hoch5k.GCadult.onlyJeagerDEGs, 
+                                        features = all.genes,
+                                        npcs = 20) 
+#note that excluding genes using variable features meant that inhba did not show up in the markers, to me that was unacceptbale
 ```
 So here we can see several gradients of IEGs and engram associated genes from across the time course data.  Whether or not these reflect cell type specific processes or a particular point in a time course of one cell type, or a mix of these possibilities is difficult to assess.  Possibly include a figure showing these three possibilities, time courses as color gradients, cell types as shapes and behavioral exposures as letters.
 
@@ -673,6 +743,25 @@ Hoch5k.GCadult.onlyJeagerDEGs <- FindClusters(Hoch5k.GCadult.onlyJeagerDEGs, res
 
 ```
 
+```{r}
+onlyJeagerDEGs.markers <- FindAllMarkers(Hoch5k.GCadult.onlyJeagerDEGs, min.pct = 0.25, logfc.threshold = 0.25)
+```
+
+```{r}
+onlyJeagerDEGs.markers %>%
+    group_by(cluster) %>%
+    slice_max(n = 2, order_by = avg_log2FC)
+```
+
+
+
+```{r}
+onlyJeagerDEGs.markers %>%
+    group_by(cluster) %>%
+    slice_max(n = 5, order_by = avg_log2FC)
+```
+
+
 
 ```{r}
 Hoch5k.GCadult.onlyJeagerDEGs <- RunUMAP(Hoch5k.GCadult.onlyJeagerDEGs, dims = 1:4)
@@ -685,25 +774,39 @@ DimPlot(Hoch5k.GCadult.onlyJeagerDEGs, reduction ="umap")
 DimPlot(Hoch5k.GCadult.onlyJeagerDEGs, reduction ="pca")
 ```
 
+
+```{r}
+FeaturePlot(Hoch5k.GCadult.onlyJeagerDEGs, reduction = 'pca', 
+            features = c( "Inhba", "Rpl4"), blend = TRUE)
+
+```
+
+```{r}
+FeaturePlot(Hoch5k.GCadult.onlyJeagerDEGs, reduction = 'pca', 
+            features = c( "Rgs4", "Rps14"), blend = TRUE)
+
+```
+
+
+I am satisfied that we have identified a cluster of engram cells in cluster 3.  I am concerned this method is not
+robust and reproducible, it took a fair bit of fiddling with it maybe for that reason a classifier will be better.  Though
+I am not entriely willing to just give up on an unsupervised method for doing this.  May be with the right embedding and better data one could find a better method.
+
+```{r}
+Hoch5k.GCadult@meta.data$JeagerDEGs_clusters_3PCs <- Hoch5k.GCadult.onlyJeagerDEGs@meta.data$seurat_clusters
+```
+
+
 Definately worth talking about this with regard to the DEG expression across hippocampus: https://pubmed.ncbi.nlm.nih.gov/29875406/
 
 Shows lack of stability in CA1 and Ca2 representation in calcium imaging data.
 
-```{r}
-# trying again with more dimensions
-#Clustering, we will visualize in UMP later
-Hoch5k.GCadult.onlyJeagerDEGs <- FindNeighbors(Hoch5k.GCadult.onlyJeagerDEGs, dims = 1:7)
-Hoch5k.GCadult.onlyJeagerDEGs <- FindClusters(Hoch5k.GCadult.onlyJeagerDEGs, resolution = 0.2)
-```
-
 
 
 ```{r}
-Hoch5k.GCadult.onlyJeagerDEGs %>%
+onlyJeagerDEGs.markers %>%
     group_by(cluster) %>%
     slice_max(n = 2, order_by = avg_log2FC)
-
-
 ```
 
 
@@ -754,7 +857,7 @@ head(cluster2.markers, n = 10)
 
 ```{r}
 cluster3.markers <- FindMarkers(Hoch5k.GCadult.onlyJeagerDEGs, ident.1 = 3, min.pct = 0.25)
-head(cluster3.markers, n = 30)
+head(cluster3.markers, n = 10)
 ```
 ```{r}
 sum(cluster0.markers$p_val_adj<0.05)
@@ -764,16 +867,23 @@ sum(cluster3.markers$p_val_adj<0.05)
 
 ```
 ```{r}
-sd(abs(cluster0.markers$avg_log2FC[cluster0.markers$p_val_adj<0.005]))
-sd(abs(cluster1.markers$avg_log2FC[cluster1.markers$p_val_adj<0.005]))
-sd(abs(cluster2.markers$avg_log2FC[cluster2.markers$p_val_adj<0.005]))
-sd(abs(cluster3.markers$avg_log2FC[cluster3.markers$p_val_adj<0.005]))
+summary(abs(cluster0.markers$avg_log2FC[cluster0.markers$p_val_adj<0.05]))
+summary(abs(cluster1.markers$avg_log2FC[cluster1.markers$p_val_adj<0.05]))
+summary(abs(cluster2.markers$avg_log2FC[cluster2.markers$p_val_adj<0.05]))
+summary(abs(cluster3.markers$avg_log2FC[cluster3.markers$p_val_adj<0.05]))
+```
+
+
+
+```{r}
+sd(abs(cluster0.markers$avg_log2FC[cluster0.markers$p_val_adj<0.05]))
+sd(abs(cluster1.markers$avg_log2FC[cluster1.markers$p_val_adj<0.05]))
+sd(abs(cluster2.markers$avg_log2FC[cluster2.markers$p_val_adj<0.05]))
+sd(abs(cluster3.markers$avg_log2FC[cluster3.markers$p_val_adj<0.05]))
 ```
 ```{r}
+rownames(cluster3.markers)[cluster3.markers$p_val_adj<0.05]
 cluster3.markers$avg_log2FC[cluster3.markers$p_val_adj<0.05]
-
-rownames(cluster3.markers)[cluster3.markers$p_val_adj<0.01]
-cluster3.markers$avg_log2FC[cluster3.markers$p_val_adj<0.01]
 ```
 
 
@@ -783,32 +893,7 @@ The only two clusters with really significant are cluster 0 and cluster 3.  Inhb
 <br>
 <br>
 
-```{r}
-DimPlot(Hoch5k.GCadult, reduction = "pca")
-```
-```{r}
-p <- DimPlot(Hoch5k.GCadult, reduction = "pca") +
-  ggtitle("Hochgerner Adult DGCs clustered with Jeager DEGs") +
-  scale_color_discrete(name = "Cluster") + #not scale_fill
-  theme_classic() +
-  theme(plot.title = element_text(hjust = 0.5)) +
-  xlab("PC1") +
-  ylab("PC2") 
-  
 
-p
-```
-
-```{r}
-#meh kinda pointless PCA still look the best for illustrating my point
-Hoch5k.GCadult <- RunTSNE(Hoch5k.GCadult)
-
-p <- DimPlot(Hoch5k.GCadult, reduction = "tsne") +
-  ggtitle("Adult DGCs clustered with Engram DEGs (tSNE)") +
-  theme(plot.title = element_text(hjust = 0.5)) 
-
-p
-```
 
 <br>
 <br>
@@ -817,17 +902,21 @@ The other clusters are more or less intermixed while the *Inhba* labelled neuron
 <br>
 
 ```{r}
-Hoch5k.GCadult.markers <- FindAllMarkers(Hoch5k.GCadult, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-Hoch5k.GCadult.markers %>%
+JeagerDEG.markers <- FindAllMarkers(Hoch5k.GCadult.onlyJeagerDEGs, only.pos = FALSE, min.pct = 0.25, logfc.threshold = 0.25)
+JeagerDEG.markers$JeagerGrouping <- Jeager.DEGs$group[Jeager.DEGs$GeneID %in% JeagerDEG.markers$gene]
+
+JeagerDEG.markers %>%
     group_by(cluster) %>%
-    slice_max(n = 2, order_by = avg_log2FC)
+    slice_max(n = 5, order_by = avg_log2FC)
 ```
 ```{r}
-Hoch5k.GCadult.markers %>%
+JeagerDEG.markers %>%
     group_by(cluster) %>%
     top_n(n = 10, wt = avg_log2FC) -> top10
 
-DoHeatmap(Hoch5k.GCadult, features = top10$gene, label = FALSE) + 
+
+
+DoHeatmap(Hoch5k.GCadult.onlyJeagerDEGs, features = c(top10$gene, "Inhba", "Fos"), label = FALSE) + 
   theme(axis.text.y = element_text(face = "bold")) +
   theme(legend.title = element_text(face = "bold")) + 
   ggtitle("Hochgerner P35 Mature DCGs Clustered with Jeager Engram DEGs")
@@ -837,12 +926,7 @@ DoHeatmap(Hoch5k.GCadult, features = top10$gene, label = FALSE) +
 <br>
 
 
-```{r}
-clstr3.mrks <- Hoch5k.GCadult.markers[Hoch5k.GCadult.markers$cluster=="3",]
 
-clstr3.mrks$JeagerGrouping <- Jeager.DEGs$group[Jeager.DEGs$GeneID %in% clstr3.mrks$gene]
-clstr3.mrks$JeagerGrouping
-```
 <br>
 <br>
 Despite 1hr group having the largest portion of the gene's in the Jeager data the majority of the markers here are from the 1hr_4hr_and_5hr group  and the rest are 4hr or 5hr.  I will check their adjusted p-values and the fold change of gene's which cross significance.
