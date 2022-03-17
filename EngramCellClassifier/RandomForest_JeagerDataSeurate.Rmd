@@ -1,0 +1,105 @@
+---
+title: "DG_1to5hoursNE_classifier"
+author: "Angus Campbell"
+date: "17/03/2022"
+output: html_document
+---
+
+
+
+```{r}
+# first attempt at a classifier
+setwd("C:/Users/angus/Desktop/PavLabEngrams/EngramCellClassifier")
+
+library(tidyverse)
+library(GEOquery)
+library(AnnotationDbi)
+library(randomForest)
+library(data.table)
+library(reshape2)
+library(FactoMineR)
+library(factoextra)
+library(Rtsne)
+library(dplyr)
+library(Seurat)
+library(stringr)
+library(patchwork)
+library(metap)
+library(cqn)
+library(GeoTcgaData)
+# BiocManager::install("cqn")
+
+
+
+```
+
+
+```{r}
+# Lacar et al., (2016)
+lacar2016_meta <- read.csv('Lacar2016_GSE77067/SraRunTable.txt', header = TRUE)
+lacar2016_snHC_counts <- read.table('Lacar2016_GSE77067/GSE77067_sn_hc_counts.txt.gz')
+lacar2016_snNE_counts <- read.table('Lacar2016_GSE77067/GSE77067_sn_ne_counts.txt.gz')
+```
+
+
+```{r}
+# Jeager et al., (2018) meta data and counts
+jeager2018_counts <- bind_cols(read.table('Jeager2018_GSE98679/GSE98679_count.txt.gz', header = TRUE, check.names = FALSE),
+                               read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_count.txt.gz', header = TRUE, check.names = FALSE))
+
+jeager2018_meta <- read.csv('Jeager2018_GSE98679/SraRunTable.txt', header = TRUE)
+jeager2018_meta = jeager2018_meta[c(1:46,599:912,47:598),] #we need to fix Jeager's files up a bit
+rownames(jeager2018_meta) <- c(1:912)
+
+```
+
+```{r}
+#Jeagers meta rows are a little out of order wrt their counts, i.e. rows do no correspond to cells order we fix that in a bit
+jeager2018_counts <- bind_cols(read.table('Jeager2018_GSE98679/GSE98679_count.txt.gz', header = TRUE, check.names = FALSE),
+                               read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_count.txt.gz', header = TRUE, check.names = FALSE))
+
+jeager2018_meta <- read.csv('Jeager2018_GSE98679/SraRunTable.txt', header = TRUE)
+jeager2018_meta = jeager2018_meta[c(1:46,599:912,47:598),] #here we fix the order
+rownames(jeager2018_meta) <- c(1:912)
+
+jeager2018_meta$predicted_cell_type <- as.character(lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x}))
+jeager2018_meta$predicted_cell_type <- lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x})
+
+jeager2018_meta$fos_status <- as.factor(sapply(as.character(jeager2018_meta$source_name), function(y) if (grepl("_F_", y, fixed=TRUE)) "Fos+" else "Fos-"  ))
+jeager2018_meta$fos_status[361:dim(jeager2018_meta)[1]] <- "Fos+"
+
+jeager2018_meta$Mouse_Number[c(361:912)] <- jeager2018_meta$mousingle_number[c(361:912)]
+jeager2018_meta <- jeager2018_meta %>% 
+  dplyr::select(-mousingle_number)
+
+#filtering out cells as per instructions in Jeager et al., 2018)
+under4k <- sapply(jeager2018_counts, function(y) sum(length(which(y>0))))
+
+filtered.idx <- as.numeric(which(under4k>4000))
+filtered.idx <- order(c(filtered.idx,194))
+
+jeager2018_counts <-jeager2018_counts[,filtered.idx]
+jeager2018_meta <- jeager2018_meta[filtered.idx,]
+
+
+
+```
+
+Ok so we will need to filter the counts data later for the genes that match in Hochgerner or other datasets we use.
+First we will try to reproduce the results of Jeager et al. (2018) in figure 5.
+
+
+```{r}
+Jeager2018 <- CreateSeuratObject(jeager2018_counts)
+
+#https://www.rdocumentation.org/packages/Seurat/versions/2.3.4/topics/BuildRFClassifier
+BuildRFClassifier(object, training.genes = NULL, training.classes = NULL,
+  verbose = TRUE, ...)
+
+# Following this we can run the data through this function
+ClassifyCells(jeagerdata, classifier, training.genes = NULL,
+              training.classes = NULL, new.data = test.set, ...)
+
+```
+
+

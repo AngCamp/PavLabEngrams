@@ -45,14 +45,15 @@ The Hochgerner dataset contains some peculiarities.  They have pooled cells betw
 
 ### Jeager et al., (2018) meta data and counts
 
-Load Jeager data.
+Load Jeager data, some preprocessing is required.
 
 ```{r}
+#Jeagers meta rows are a little out of order wrt their counts, i.e. rows do no correspond to cells order we fix that in a bit
 jeager2018_counts <- bind_cols(read.table('Jeager2018_GSE98679/GSE98679_count.txt.gz', header = TRUE, check.names = FALSE),
                                read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_count.txt.gz', header = TRUE, check.names = FALSE))
 
 jeager2018_meta <- read.csv('Jeager2018_GSE98679/SraRunTable.txt', header = TRUE)
-jeager2018_meta = jeager2018_meta[c(1:46,599:912,47:598),] #we need to fix Jeager's files up a bit
+jeager2018_meta = jeager2018_meta[c(1:46,599:912,47:598),] #here we fix the order
 rownames(jeager2018_meta) <- c(1:912)
 
 jeager2018_meta$predicted_cell_type <- as.character(lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x}))
@@ -539,6 +540,7 @@ these processes and some reasources may be worth following up on have been provi
 In particular it may be worht stuyding manifold learning methods.  
 
 Moon, K. R., Stanley III, J. S., Burkhardt, D., van Dijk, D., Wolf, G., & Krishnaswamy, S. (2018). Manifold learning-based methods for analyzing single-cell RNA-sequencing data. Current Opinion in Systems Biology, 7, 36-46.
+https://www.sciencedirect.com/science/article/pii/S2452310017301877
 -very relevant
 
 Moon et al. (2018) cites the following paper seems relevant to what you want to know:
@@ -552,7 +554,21 @@ methods, J. Comput. Chem. 20 (1999) 1760–1774.
 [5] W. Huisinga, Ch. Schütte, A.M. Stuart, Extracting macroscopic stochastic dynamics: Model problems, Comm. Pure Appl. Math. 56 (2003)
 234–269.
 
-https://www.sciencedirect.com/science/article/pii/S2452310017301877
+This also gives a R package you can use: 
+Zhao, J., Jaffe, A., Li, H., Lindenbaum, O., Sefik, E., Jackson, R., ... & Kluger, Y. (2021). Detection of differentially abundant cell subpopulations in scRNA-seq data. Proceedings of the National Academy of Sciences, 118(22).
+https://www.pnas.org/doi/10.1073/pnas.2100293118
+Rpackage: https://github.com/KlugerLab/DAseq
+-does no limit itself to clusters
+-can idenity differential abundance as well
+
+More data to pick through:
+Zhang, T. Y., Keown, C. L., Wen, X., Li, J., Vousden, D. A., Anacker, C., ... & Meaney, M. J. (2018).
+Environmental enrichment increases transcriptional and epigenetic differentiation
+between mouse dorsal and ventral dentate gyrus. Nature communications, 9(1), 1-11.
+-Could look for markers of interest?
+-Could this explain some of our results?
+
+
 
 Buettner, F., Natarajan, K. N., Casale, F. P., Proserpio, V., Scialdone, A., Theis, F. J., ... & Stegle, O. (2015). Computational analysis of cell-to-cell heterogeneity in single-cell RNA-sequencing data reveals hidden subpopulations of cells. Nature biotechnology, 33(2), 155-160.
 
@@ -780,6 +796,7 @@ top5markers <- onlyJeagerDEGs.markers %>%
 top5markers 
 ```
 ```{r}
+#Engram cell heatmap
 DoHeatmap(Hoch5k.GCadult.onlyJeagerDEGs, features = top5markers$gene)
 ```
 ```{r}
@@ -787,6 +804,24 @@ table(Hoch5k.GCadult.onlyJeagerDEGs@meta.data$seurat_clusters)
 ```
 So what we see above is somewhat arbitrary but I have good experimental reasons to believe these are engram cells.
 They are a rare cell type expressing known IEG markers that are strongly active following activity.  Although i feel the main issue that arrises is that we are trying to cluster them.  The gradients (components) of this analysis itself may be informative.
+
+```{r}
+DimPlot(Hoch5k.GCadult.onlyJeagerDEGs, reduction = 'pca')
+```
+```{r}
+# this does not work so well looks ugly
+Inhba.p <- FeaturePlot(Hoch5k.GCadult.onlyJeagerDEGs, reduction = 'pca', feature = "Inhba")
+Rgs4.p <- FeaturePlot(Hoch5k.GCadult.onlyJeagerDEGs, reduction = 'pca', feature = "Rgs4")
+Nptx2.p <- FeaturePlot(Hoch5k.GCadult.onlyJeagerDEGs, reduction = 'pca', feature = "Nptx2")
+
+Inhba.p + Rgs4.p + Nptx2.p
+```
+```{r}
+FeaturePlot(Hoch5k.GCadult.onlyJeagerDEGs, reduction = 'pca', feature = c("Inhba", "Rgs4") )
+```
+```{r}
+FeaturePlot(Hoch5k.GCadult.onlyJeagerDEGs, reduction = 'pca', feature = c("Nptx2", "Lingo1") )
+```
 
 
 
