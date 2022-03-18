@@ -276,8 +276,8 @@ Now we can check the most variable genes which seurat will restrict further anal
 ```{r}
 top10 <-  head(VariableFeatures(Hoch5k.GCadult), 10)
 plot1 <- VariableFeaturePlot(Hoch5k.GCadult)
-plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
-plot2
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE) + NoLegend()
+plot2 + ggtitle("Seurat Most Variable Genes Hochgerner")
 ```
 
 Lets look at the top 100 of the 2000 genes seurat will use and check the timepoint(s) Jeager et al., (2018) assigned them to.  For the most part these DEGs are positively expressed.
@@ -326,7 +326,8 @@ Up to Pc3 we see decently significance, though later we get 4 cluster, though to
 <br>
 
 ```{r}
-ElbowPlot(Hoch5k.GCadult)
+p <- ElbowPlot(Hoch5k.GCadult)
+p+ ggtitle("Explained Varience of Seurat ")
 ```
 <br>
 <br>

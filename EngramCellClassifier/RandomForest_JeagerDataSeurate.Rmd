@@ -5,7 +5,11 @@ date: "17/03/2022"
 output: html_document
 ---
 
-
+HOW TO GET THE REACTIVATION SIGNATURE:
+-this is not denoted in their metadata
+-you must cluster the cells together with the cells from the time course data,
+-the cells in condition A>A whihc cluster with the newly active cells are taken to be recently active cells
+-the late signature cells are reactivated cells
 
 ```{r}
 # first attempt at a classifier
@@ -42,16 +46,7 @@ lacar2016_snNE_counts <- read.table('Lacar2016_GSE77067/GSE77067_sn_ne_counts.tx
 ```
 
 
-```{r}
-# Jeager et al., (2018) meta data and counts
-jeager2018_counts <- bind_cols(read.table('Jeager2018_GSE98679/GSE98679_count.txt.gz', header = TRUE, check.names = FALSE),
-                               read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_count.txt.gz', header = TRUE, check.names = FALSE))
 
-jeager2018_meta <- read.csv('Jeager2018_GSE98679/SraRunTable.txt', header = TRUE)
-jeager2018_meta = jeager2018_meta[c(1:46,599:912,47:598),] #we need to fix Jeager's files up a bit
-rownames(jeager2018_meta) <- c(1:912)
-
-```
 
 ```{r}
 #Jeagers meta rows are a little out of order wrt their counts, i.e. rows do no correspond to cells order we fix that in a bit
@@ -75,10 +70,13 @@ jeager2018_meta <- jeager2018_meta %>%
 #filtering out cells as per instructions in Jeager et al., 2018)
 under4k <- sapply(jeager2018_counts, function(y) sum(length(which(y>0))))
 
-filtered.idx <- as.numeric(which(under4k>4000))
+# as per the mthods section we remove cells with less than 4k gene expressed or 100k reads aligned
+filtered.idx <- as.numeric(which((under4k>4000)&(jeager2018_meta$alignable>100000)))
 filtered.idx <- order(c(filtered.idx,194))
 
 jeager2018_counts <-jeager2018_counts[,filtered.idx]
+jeager2018_counts[is.na(jeager2018_counts)] <- 0
+
 jeager2018_meta <- jeager2018_meta[filtered.idx,]
 
 
@@ -90,10 +88,65 @@ First we will try to reproduce the results of Jeager et al. (2018) in figure 5.
 
 
 ```{r}
-Jeager2018 <- CreateSeuratObject(jeager2018_counts)
+#granule cells ,DG whihc were not in the homecage condition HC
+DG.idx <- which(jeager2018_meta$predicted_cell_type=="DG")
 
+Jeager2018 <- CreateSeuratObject(jeager2018_counts[,DG.idx])
+
+#this is the only filtering step I will retain from seurat as we have already done filterin earlier
+# based on reads aligned and total gene expressed in the last section
+Jeager2018[["percent.mt"]] <- PercentageFeatureSet(Jeager2018, pattern = "^MT-")
+
+# this doesnt tell you much but its ok, looks ugly but yes basically there are no unacceptablely hihg or low expressiion
+# and mitochondrial genes are in acceptable ranges
+VlnPlot(Jeager2018, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+
+```{r}
+
+plot1 <- FeatureScatter(Jeager2018, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(Jeager2018, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+
+```
+
+
+```{r}
+
+Jeager2018 <- NormalizeData(Jeager2018, normalization.method = "LogNormalize", scale.factor = 10000)
+
+Jeager2018 <- FindVariableFeatures(Jeager2018, selection.method = "vst", nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(Jeager2018), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(Jeager2018)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot2
+```
+
+
+```{r}
+sum(jeager2018_meta$fos_status=="Fos+")
+
+all.genes.jeager <- rownames(Jeager2018)
+Jeager2018 <- ScaleData(Jeager2018, features = all.genes.jeager)
+
+```
+
+
+```{r}
+
+
+
+```
+
+
+```{r}
 #https://www.rdocumentation.org/packages/Seurat/versions/2.3.4/topics/BuildRFClassifier
-BuildRFClassifier(object, training.genes = NULL, training.classes = NULL,
+BuildRFClassifier(Jeager2018, training.genes = NULL, training.classes = NULL,
   verbose = TRUE, ...)
 
 # Following this we can run the data through this function
@@ -103,3 +156,100 @@ ClassifyCells(jeagerdata, classifier, training.genes = NULL,
 ```
 
 
+#PLaying around looking for Penk
+
+Again ti is incredibly lowly expressed in general, a seubset of cells
+
+```{r}
+# which(rownames(jeager2018_counts) == "Penk")
+# 34282
+# > sum((jeager2018_counts[34282,DG.idx]>1)&(jeager2018_meta$fos_status[DG.idx]=="Fos+"))
+# [1] 96
+# > sum((jeager2018_counts[34282,DG.idx]>1)&(jeager2018_meta$fos_status[DG.idx]=="Fos-"))
+# [1] 11
+528
+sum(jeager2018_meta$fos_status[DG.idx]=="Fos-")
+
+#summaries of...
+#Penk expression in Fox- DGCs
+summary(as.numeric(jeager2018_counts[34282,DG.idx][which(jeager2018_meta$fos_status[DG.idx]=="Fos-")]))
+#Penk expression in Fos+ DGCs
+summary(as.numeric(jeager2018_counts[34282,DG.idx][which(jeager2018_meta$fos_status[DG.idx]=="Fos+")]))
+
+#give you quantiles of Penk first in Fos+ cells then in population as a whole
+quantile(as.numeric(jeager2018_counts[34282,DG.idx][which(jeager2018_meta$fos_status[DG.idx]=="Fos+")]), prob =0.99)
+quantile(as.numeric(jeager2018_counts[34282,DG.idx]), prob =0.8)
+
+
+
+sum((jeager2018_counts[34282,DG.idx]>105)&(jeager2018_meta$fos_status[DG.idx]=="Fos-"))
+sum((jeager2018_counts[34282,DG.idx]>105)&(jeager2018_meta$fos_status[DG.idx]=="Fos+"))
+
+
+sum((jeager2018_counts[34282,DG.idx]>1)&(jeager2018_meta$fos_status[DG.idx]=="Fos+")&(jeager2018_meta$exposure[DG.idx]=="1hr"))
+
+sum((jeager2018_counts[34282,DG.idx]>1)&(jeager2018_meta$fos_status[DG.idx]=="Fos+")&(jeager2018_meta$exposure[DG.idx]=="4hr"))
+
+sum((jeager2018_counts[34282,DG.idx]>1)&(jeager2018_meta$fos_status[DG.idx]=="Fos+")&(jeager2018_meta$exposure[DG.idx]=="5hr"))
+
+sum(as.numeric((jeager2018_counts[34282,DG.idx]>1)&(jeager2018_meta$fos_status[DG.idx]=="Fos+")&(jeager2018_meta$exposure[DG.idx]=="A>A")))
+
+sum(as.numeric((jeager2018_counts[34282,DG.idx]>1)&(jeager2018_meta$fos_status[DG.idx]=="Fos+")&(jeager2018_meta$exposure[DG.idx]=="A>C")))
+
+
+
+
+sum(jeager2018_meta$fos_status[DG.idx]=="Fos+")
+sum((jeager2018_counts[34282,DG.idx]>105)&(jeager2018_meta$fos_status[DG.idx]=="Fos+"))
+sum(jeager2018_meta$fos_status[DG.idx]=="Fos-")
+sum((jeager2018_counts[34282,DG.idx]>105)&(jeager2018_meta$fos_status[DG.idx]=="Fos-"))
+```
+Penk expression is heavily skewed, about a fifth fo cells on this hihg depth sequecning (albeit single nucleus) have more than 1 read count.  At baseline this is about 20% of adult DGCs (Fos-) but only ~10 % express it in the 90th quantile at >105
+Penk is very rarely expressed a threshold of 1 read is sufficient to generate a similar result to the on below.  A pattern clearly emerges, it become more obvious as you raise the threshold of Penk.  In general baseline fos- neurons exhibit the same frequency of penk expression as the 5hr group and the 1hr group.  But at 1 and 4 hours there is distinctly lower penk expression, this is espescially noticable at the highest threshold.  At the 99th percentile 9230 reads only the A>A group exhibits penk.
+```{r}
+#give you quantiles of Penk first in Fos+ cells then in population as a whole
+quantile(as.numeric(jeager2018_counts[34282,DG.idx][which(jeager2018_meta$fos_status[DG.idx]=="Fos+")]), prob =0.8)
+quantile(as.numeric(jeager2018_counts[34282,DG.idx]), prob =0.8)
+# gives you penkthresh
+
+#Plotting Penk expression by exposure
+penkfreq <- c()
+exposure.list = c("1hr", "4hr", "5hr", "A>C", "A>A")
+penk.thresh = 9253 # 80th qyunsatile at 1 read, 90th at 105 and 95th at 1037.8 call it 10 OF Fof+ CELLS not the whol population
+
+#for loop to make test to get frequency of penk expression, 105 was chosen as it represents the top 90th percentile of penk expression, most cells do not express it at all and where it is expressed it is generally highly expresed
+for(i in c(1:5)){
+  
+penk.count <- sum((jeager2018_counts[34282,DG.idx]>penk.thresh)&(jeager2018_meta$fos_status[DG.idx]=="Fos+")&(jeager2018_meta$exposure[DG.idx]==exposure.list[i]))
+
+totalpos <- sum((jeager2018_meta$fos_status[DG.idx]=="Fos+")&(jeager2018_meta$exposure[DG.idx]=="5hr"))
+
+penkfreq <- c(penkfreq , (penk.count/totalpos)*100)
+
+}
+
+test <- data.frame(penkfreq )
+test$exposure <- exposure.list
+
+#frequency in fos- adult DGCs
+sum((jeager2018_counts[34282,DG.idx]>penk.thresh)&(jeager2018_meta$fos_status[DG.idx]=="Fos-"))/sum(jeager2018_meta$fos_status[DG.idx]=="Fos-")
+
+test
+
+# Results after making test with above for loop
+# > test
+#     penkfreq exposure
+# 1 0.01041667      1hr
+# 2 0.02083333      4hr
+# 3 0.12500000      5hr
+# 4 0.07291667      A>C
+# 5 0.32291667      A>A
+# > sum((jeager2018_counts[34282,DG.idx]>1)&(jeager2018_meta$fos_status[DG.idx]=="Fos-"))/sum(jeager2018_meta$fos_status[DG.idx]=="Fos-")
+# [1] 0.1964286
+# > sum((jeager2018_counts[34282,DG.idx]>105)&(jeager2018_meta$fos_status[DG.idx]=="Fos-"))/sum(jeager2018_meta$fos_status[DG.idx]=="Fos-")
+# [1] 0.1071429
+# > sum((jeager2018_counts[34282,DG.idx]>penk.thresh)&(jeager2018_meta$fos_status[DG.idx]=="Fos-"))/sum(jeager2018_meta$fos_status[DG.idx]=="Fos-")
+# [1] 0.1071429
+
+
+```
