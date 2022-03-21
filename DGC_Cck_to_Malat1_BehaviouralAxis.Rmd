@@ -1,0 +1,193 @@
+---
+title: "COmponents Readings"
+author: "Angus Campbell"
+date: "20/03/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+These PC's are from the full gene list of the Hochgerner post natal day P35.
+
+PC_ 1 
+Positive:  Malat1, Tmsb10, Rgs4, Sh3bgrl3, Igfbp6, Rasgrp1, Chgb, Nptx2, Penk, Inhba 
+	   Sgk1, Rprm, Prkcdbp, Nefm, Ier5, Aldoa, Nefl, Scn1b, Lingo1, Shisa4 
+	   Aldh3b1, Snhg11, Kcnk1, Bdnf, Ppp1r1a, Arpp21, Gsg1l, Tesc, Meg3, Chchd10 
+	   Rbp4, Syne1, Srxn1, Ddit3, Myh14, Kcnip3, Necab3, Gpr83, Fbxo32, Serpine2 
+	   Tpt1, Vgf, Scg5, S100a6, Plk2, Ttyh1, Zfp804a, Sult2b1, C1ql2, Hsph1 
+Negative:  Tmsb4x, Cck, Ahcyl2, Snca, Tubb2b, Olfm1, Pgm2l1, Neurod2, Adcyap1r1, Igfbp5 
+	   Nsg2, Mpc2, Crym, Capn3, Rplp0, Tubgcp2, Ddn, Frzb, Rogdi, Nt5dc2 
+	   Ccdc28b, Plppr4, Ly6h, Wbp11, Faim, Prrt1, Tpd52l1, Nsmf, Rnf165, Nme1 
+	   Trim2, Spns2, Inf2, Eif1b, Pde1a, mt-Nd1, Elfn2, Limd2, Fam213a, Gfra1 
+	   Gm13889, Spock2, Sipa1l2, Nrp1, Bhlhe22, Mfap3, Nnat, Gm10605, Syce2, Tmem114 
+PC_ 2 
+Positive:  Aldoa, Inhba, Rgs4, Rprm, Zwint, Lingo1, Meg3, Grp, 1110008P14Rik, Penk 
+	   Mlf2, Ap1s1, Arpp21, Snca, Nptxr, Chgb, Resp18, Shisa4, C1ql2, Bdnf 
+	   Krt2, Klc1, Aldh3b1, Snhg11, Tpt1, Hint1, Gm10605, Synpo, Gng3, Plk2 
+	   Clta, Hsph1, Trim32, Xbp1, Scn1b, Ttc3, Ddit4l, Srxn1, Cmip, Nptx2 
+	   Syn2, Rtn4rl1, 0610012G03Rik, Nptx1, Mrpl30, Sh3bgrl3, Ppp1r1a, Tspan7, Gsg1l, Nefl 
+Negative:  Malat1, Ahcyl2, Actb, Tmsb4x, Ppm1h, Fst, Nat8l, Epha5, Neurod2, Dsp 
+	   Ccdc28b, Gm13889, Adcy1, Inf2, Opcml, Ptpn9, Sox4, Cep95, Ythdf2, Fchsd2 
+	   Dpagt1, Rccd1, Ubiad1, Snapc4, Zbtb34, Pls3, Il16, Bhlhe22, Tmem8b, Il18 
+	   Slc4a4, Gse1, Sdccag8, Lrp8, Mterf1b, Tpcn1, Clptm1, Rint1, E130308A19Rik, Jph1 
+	   Chrna1os, Scaf11, Wdr12, Bbc3, Tbl3, Snap29, Rnf19b, Klhl20, Cars, Wbscr25 
+PC_ 3 
+Positive:  Tmsb10, Eif4a2, Fxyd6, Junb, Aldoa, Jun, Grp, Tuba1a, Gng3, Cxcl12 
+	   Scg5, Nap1l5, Tagln3, Mff, Cisd1, Snca, Fxyd7, Ppp3r1, Rsrp1, Zwint 
+	   Polr2m, Nsg1, Rpl15, C1ql2, Tprgl, Ier2, Wbp5, Ephx4, Ahi1, Necab3 
+	   Cited2, Vapa, Hint1, Tmem50a, Arl4a, 1500011B03Rik, Atp6v1f, Nrsn1, Bex1, Nme1 
+	   Pafah1b3, Dap3, 2610524H06Rik, Mia, Smim10l1, Snhg11, Eif4h, 3110082I17Rik, Pkia, Lamtor5 
+Negative:  Inhba, Epha10, Adcy1, Asb11, Arc, Lingo1, Ddn, Nptx2, Chst1, Trim2 
+	   Kcnf1, Adgrb1, Rasd1, Wipf3, Syne1, Dclk1, Samd4, Pgbd5, Pdgfb, Cyfip2 
+	   Srxn1, Cenpa, Actb, Atp1b1, Pmepa1, Rasgrf1, Ptn, Lgi1, Baz1a, Ppm1l 
+	   Gadd45b, Adgrl1, Hist1h2bc, Dlg3, Ahcyl2, Synpo, Ntrk3, Efhd2, Nefm, Smad7 
+	   Inf2, Midn, Mt1, Neurod2, Tanc1, mt-Nd1, Prpf38b, Pcdh8, Lrp12, Kcnj4 
+PC_ 4 
+Positive:  Snhg11, Meg3, Krt2, Gm10605, Grp, Rprm, Tenm4, Tenm2, Pde1a, Arpp21 
+	   Akap5, Ttyh1, Fam65b, Faim, Mycbp2, Icam5, Shisa4, Nsg2, Resp18, Timp2 
+	   Lmo4, Lpin2, Cbx6, Kcnq1ot1, Ngb, Arrb1, Scg2, Prune2, Nptxr, Ptpra 
+	   Ctsb, Mpped2, Ttc3, Penk, Igfbp6, Tmeff2, Syn2, Pgm2l1, Atpaf1, Aldh3b1 
+	   Nbea, Unc5a, Ep400, Mier1, Faf2, Gpd2, Megf8, Iqgap2, Dtx4, Mapk8ip1 
+Negative:  Tmsb4x, Ier2, Gadd45b, Junb, Arc, Rheb, Inhba, Samd4, Cenpa, Gadd45g 
+	   Midn, Hist4h4, Fos, Tuba1a, March11, Asb11, Rasd1, Tagln3, Bex2, Baz1a 
+	   Srsf5, Aldoa, Efhd2, Kcnf1, Pcdh8, Smad7, Psmb2, Jun, Ybx1, Homer1 
+	   Fxyd7, Tpd52l2, Cltb, Nefl, Ppp1cb, Vapa, Cdc42, Dclk1, Csnk1a1, Plk2 
+	   Park7, Nr4a1, Pabpc4, Eef2, Ube2d3, Epha7, Synpo, Nme1, Nptx2, Vgf 
+PC_ 5 
+Positive:  Timp2, Meg3, Grp, Midn, Junb, Nrp1, Fxyd7, Vgf, Gng3, Arc 
+	   Gadd45g, Ly6h, Gadd45b, Nnat, Lingo1, Pdgfb, Tenm4, Mia, Egr1, Inhba 
+	   Crym, Bcl2, Gm16062, Basp1, Wdr6, Fxyd6, Nr4a1, mt-Nd1, Tmem158, Samd4 
+	   Resp18, Kcnq1ot1, Spns2, Rasd1, Spock2, Sec22a, Cck, Cenpa, Bdnf, Qsox1 
+	   March11, Ptpre, Rwdd3, Snhg11, Tmsb10, Pithd1, Baz1a, Cntnap2, Rtn4rl1, Synpo 
+Negative:  Ppp1r1a, Hist1h2bc, Adcy1, Opcml, Eif4a2, Epha5, Stk32c, Chn1, Fam101b, Neurod2 
+	   Park7, Ddn, Ppp3r1, Ppp1r9a, Epha7, Rasgrp1, Sh3bgr, Igfbp6, Tpgs1, Wbp11 
+	   Iqgap2, Aamdc, Limd2, Map7d1, Mat2b, Rccd1, Rgl1, Kars, Ndrg4, Mmp17 
+	   Psmb5, Minos1, Gng2, Eef2, Arpc1a, Nufip1, Sat2, Dsp, 1500011B03Rik, Rprm 
+	   Ddit4l, Arpc5, Igbp1, Pgbd5, Csdc2, Xlr3b, C1qbp, Poldip2, Mrps23, Chchd10 
+PC_ 6 
+Positive:  Snca, Rplp0, Agap1, Ccnl2, Usp22, Pgm2l1, Mical2, Aldh3b1, Pgbd5, Ncs1 
+	   Dnlz, Sec61b, Eif4a2, Rabac1, Gxylt2, Synpo, Mpp1, Evl, Rnf32, Wdr19 
+	   Apoe, Atxn7l3b, Dlg3, Cygb, Prrt1, Rpl7a, Dennd4a, Larp7, Elavl3, Sh3d19 
+	   Rpl15, Ppp1r1a, Nptx1, Rab36, Wasf1, Trappc2l, Stau2, Fam188a, Drd4, Kcnj3 
+	   Galt, Etnk2, Ankrd26, Nvl, Tmem8b, Ctdsp2, Nit2, Sap30, Rala, Zfp81 
+Negative:  Junb, Scg5, Faf2, Fos, Ier2, Btg2, C2cd4b, Zfp956, Lrp11, Tmem246 
+	   Gde1, Derl1, Egr1, Serpine2, Gadd45g, Mtor, Cpox, Usp36, Nap1l4, G6pc3 
+	   Vmp1, Mpc2, Slc2a6, Gm26802, Ghitm, Cabp1, Fam65b, Cisd1, Fam213a, Gm13889 
+	   Hist4h4, Telo2, Atp6v1d, Sipa1l2, Nrn1, Prkd2, Polrmt, Nsg2, Man2c1, Vegfb 
+	   Cttn, Jun, Fam214b, Zfp112, Tsc22d1, Tm2d1, Tmem240, Uchl3, Cited2, Ly6h 
+	   
+	   
+	   
+	   
+From PC1:
+
+Cck Loading:
+Crym
+Lamia, K. A., Papp, S. J., Yu, R. T., Barish, G. D., Uhlenhaut, N. H., Jonker, J. W., ... & Evans, R. M. (2011). Cryptochromes mediate rhythmic repression of the glucocorticoid receptor. Nature, 480(7378), 552-556.
+-
+
+Cck
+Flati, T., Gioiosa, S., Chillemi, G., Mele, A., Oliverio, A., Mannironi, C., ... & Castrignanò, T. (2020). A gene expression atlas for different kinds of stress in the mouse brain. Scientific Data, 7(1), 1-18.
+-Cck shows up across many tissues
+
+Longitudinal 
+Levone, B. R., Moloney, G. M., Cryan, J. F., & O'Leary, O. F. (2021). Specific sub-regions along the longitudinal axis of the hippocampus mediate antidepressant-like behavioral effects. Neurobiology of stress, 14, 100331.
+
+Anacker, C., Luna, V. M., Stevens, G. S., Millette, A., Shores, R., Jimenez, J. C., ... & Hen, R. (2018). Hippocampal neurogenesis confers stress resilience by inhibiting the ventral dentate gyrus. Nature, 559(7712), 98-102.
+
+
+
+
+
+
+FROM ICA OF THE ENGRAM DEGs
+
+IC_ 1 
+Positive:  Rps14, Rps18, Pcdh20, Rpl17, Fam19a1, Rpl10, Rpl4, Arhgap44, Asns, Set 
+	   P4ha1, Crtac1, Rasa3, Rpl7, Rpl36al, Agpat4, Ric8, Pcgf2, Gm26981, Cacna1a 
+	   Ptma, Eif3l, Ppp1r8, Hnrnpa1, Kdm5a, Gpbp1, Brap, Mlip, Coro1a, Rgs17 
+Negative:  Gadd45b, Inhba, Rasd1, Asb11, Arc, Npas4, Baz1a, Acan, Nptx2, Kcnf1 
+	   Samd4, Midn, Iqsec3, Rasl11b, Atf3, Csrnp1, Smad7, Sertad1, Osgin2, Fosl2 
+	   Lingo1, Zfp655, Plk2, Fosb, Fgfr1, Elmo1, Nr4a1, Neat1, Numbl, Srxn1 
+IC_ 2 
+Positive:  Hs3st1, Prex1, Per2, Rasd1, Sec24a, Atxn7, Pdia6, Chga, Epha10, Pxmp4 
+	   Tbk1, Pcnx, Lrfn2, Rpn1, Il1r1, Smyd4, Galnt9, Clstn3, Slc25a36, Mirg 
+	   Nrp1, Pde4a, Usp14, Dusp4, Calr, Klhl32, Pak6, Gprasp1, Bdnf, Ssr2 
+Negative:  Rps14, Rpl41, Aldoa, Rpl19, Rpl10, Rps11, Oaz1, Rpl4, Rpl21, Eif5a 
+	   Rpl17, Timm13, Rps18, Rplp0, Pfn1, Ybx1, Atp5d, Clta, Cct5, Rpl7 
+	   Ensa, Eef2, Cox14, Rpsa, Ptma, Smim14, Hnrnpk, Eif4a1, Zwint, Amd1 
+IC_ 3 
+Positive:  Klhl40, Drd4, Npy, Kcnj2, Rgs4, Unc13d, Ttyh1, Chgb, Gsg1l, Cdkn1a 
+	   Frmd6, Rnh1, Batf3, Arc, Rtn4rl1, Tmod1, Svil, Daglb, Pde4d, Slc6a8 
+	   Trnp1, Dot1l, Sv2c, Dcdc2a, Shisa4, Gm4208, Plk2, Ice1, Atp6v1b2, Glcci1 
+Negative:  Smad7, Oaz1, Rangap1, Eif3l, Coro2b, Cnppd1, Zbtb1, Entpd7, Pja1, Fosb 
+	   Nrp1, Med13, Ptma, Cystm1, Snap91, Snf8, Mrpl44, Pdia6, Pde4a, Gm13889 
+	   Churc1, Dmxl1, Mat2a, Hax1, Ranbp2, Sec63, Clstn3, Sbds, Gid8, St7 
+IC_ 4 
+Positive:  Amd1, Sox11, Arxes1, Fbxo33, Ggnbp2, Spsb1, Smim13, Cdkn1a, Myh9, Micu1 
+	   Gm4208, Churc1, Errfi1, Dpysl5, Tdrd7, Tulp3, Nab2, Lrtm2, Hspa14, Ensa 
+	   Rasl11a, Slc41a1, Gabrb1, Spns2, Rrp1b, Erh, Tmem35, Csde1, Lrfn2, Bzw1 
+Negative:  Asb11, Megf11, Neat1, Daglb, Cenpa, Prpf38b, Drd4, Dgki, Dhps, Lingo1 
+	   Efhd2, Nefm, Bhlhe41, Nifk, Blnk, Mrpl44, Dtna, Cntn3, Iqsec3, Sec63 
+	   Hsf2, Tufm, Gm27004, Trank1, Rbbp7, Cystm1, Tpt1, Rapgef6, Dock3, Rgs4 
+IC_ 5 
+Positive:  Lrfn2, Ncs1, Srebf2, Snx1, Osbpl6, Ano6, Oaz1, Ascc3, Trpm2, Abr 
+	   Ppm1h, Sema3e, Pip5k1a, Kdm5a, Nrp2, Acvr1c, Csnk2a1, Prorsd1, Mgat4a, Zfc3h1 
+	   Scg2, Stx1b, Meg3, Ppp1r16b, B830012L14Rik, Camta2, Ildr2, Prickle2, Klhl32, Cntn5 
+Negative:  Ssr2, Sf3b1, Pja1, Arpc2, Stmn4, Ddx24, Cfl1, Cap1, Zc3h15, Hnrnpk 
+	   Rpl7, Rab11a, Slc6a6, Ssr1, Snf8, Commd7, Ensa, Gm16286, Sgta, Kcnk1 
+	   Nop56, Eif4a1, Mphosph8, Stip1, Hnrnpll, Efhd2, Eif5a, Arxes1, Ric8, Hsp90aa1 
+
+
+
+In IC_1  NOTE THAT THIS IS RUN SPECIFICALLY ON THE JEAGER ET AL. GENEs 
+Chang, S., Bok, P., Tsai, C. Y., Sun, C. P., Liu, H., Deussing, J. M., & Huang, G. J. (2018). NPTX2 is a key component in the regulation of anxiety. Neuropsychopharmacology, 43(9), 1943-1953.
+-Npt2x supresses anxiety
+
+Pinzari, C. A., Kang, L., Michalak, P., Jermiin, L. S., Price, D. K., & Bonaccorso, F. J. (2020). Analysis of genomic sequence data reveals the origin and evolutionary separation of Hawaiian hoary bat populations. Genome biology and evolution, 12(9), 1504-1514.
+BAZ1A is mutated in bat populations showing differences in foragin behaviours
+
+Conith, M. R., Hu, Y., Conith, A. J., Maginnis, M. A., Webb, J. F., & Albertson, R. C. (2018). Genetic and developmental origins of a unique foraging adaptation in a Lake Malawi cichlid genus. Proceedings of the National Academy of Sciences, 115(27), 7063-7068.
+-smad4 is mutated in a fish species with different foragin behaviours, it was implicated with snout shape in this study which
+is useful for certain behaviours 
+
+Wang, C. N., Gong, S. N., Guan, W., Wang, J. L., Gao, T. T., Wang, Y., ... & Jiang, B. (2020). Hippocampal overexpression of chordin protects against the chronic social defeat stress-induced depressive-like effects in mice. Brain research bulletin, 158, 31-39.
+-smad4 suppresses stress
+
+Faguet, J. (2014). The role of neuropeptide signaling in C. elegans food sensation and social behavior. University of California, San Francisco.
+-in celegans smad is assocaited with foraging, in food rich environments 
+
+Massagué, J., Seoane, J., & Wotton, D. (2005). Smad transcription factors. Genes & development, 19(23), 2783-2810.
+-smad is associated with exploitation of food rich environments in many insects and invertebrates
+
+Fear memories are not replayed during theta osscilations:  Feng, H., Su, J., Fang, W., Chen, X., & He, J. (2021). The entorhinal cortex modulates trace fear memory formation and neuroplasticity in the lateral amygdala via cholecystokinin. bioRxiv.
+
+Cck is expressed in fear memories in entorhinal cortex in neurons that project to Cck expressing neurons in amygdala,
+this circuit is likely driving fear memory formation 
+Feng, H., Su, J., Fang, W., Chen, X., & He, J. (2021). The entorhinal cortex modulates trace fear memory formation and neuroplasticity in the mouse lateral amygdala via cholecystokinin. Elife, 10, e69333.  
+
+Smagin, D. A., Kovalenko, I. L., Galyamina, A. G., Bragin, A. O., Orlov, Y. L., & Kudryavtseva, N. N. (2016). Dysfunction in ribosomal gene expression in the hypothalamus and hippocampus following chronic social defeat stress in male mice as revealed by RNA-Seq. Neural Plasticity, 2016.
+Rpl7 is implicated in chronic social stress in rodents
+-RNA seq study
+
+Sagehashi, N., Obara, Y., Maruyama, O., Nakagawa, T., Hosoi, T., & Ishii, K. (2022). Insulin enhances gene expression of Midnolin, a novel genetic risk factor for Parkinson's disease, via ERK, PI3-kinase and multiple transcription factors in SH-SY5Y cells. Journal of Pharmacology and Experimental Therapeutics.
+-Midn is expressede in response to insulin 
+
+
+Barbier, M., Chometton, S., Pautrat, A., Miguet-Alfonsi, C., Datiche, F., Gascuel, J., ... & Risold, P. Y. (2020). A basal ganglia-like cortical–amygdalar–hypothalamic network mediates feeding behavior. Proceedings of the National Academy of Sciences, 117(27), 15967-15976.
+-a basal ganglia like feeding network exists between cortex, amygdala and hypothalamus and may have split from the basal ganglia
+
+Flati, T., Gioiosa, S., Chillemi, G., Mele, A., Oliverio, A., Mannironi, C., ... & Castrignanò, T. (2020). A gene expression atlas for different kinds of stress in the mouse brain. Scientific Data, 7(1), 1-18.
+-visual cortex, dentate gyrus and other regions have elevated Cck expression in stress conditions

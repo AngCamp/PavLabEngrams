@@ -253,3 +253,55 @@ test
 
 
 ```
+
+WARNING PUT ON YOUR TINFOIL HAT
+Penk codes for a Proenkephalin, an opiod receptor.  Exercise is a known inhibitor of memory formation in rodents.  Endogenous opioids increase during exercise (find a reference I would assume they do), and often metabolic pathways are driven down by the excessive presence of a substance.  I.e. think of lactase (may be not the best example), Busckaski showed that blood sugar is driven down by short wave ripples in hippocampus via a hippocampal-hypothalamic pathway.  SWRs tend to occur while mice are standing still, the hippocampus is deeply tied to the animals decision to move and the biological processes .  It is possible that during highly exertive exploration mice are designed not to remeber the event in the long term, to prevent them from returning to the same area.  It will be interesting to see if this is conserved in humans as we seem to be making memories all the time.  Mice tend to replay areas that have been highly rewarded during replay as well this could be a mechanism for enforcing a levy walk between highly rewarding areas while avoiding areas invovling hihgly strenuous activity.  Given teh spatial clustering of penk cells I feel they would have similar connectivity.  It will be interesting to see what features the random forest pulls up or whether exploring these gradient markers may be informative instead.
+
+Opposing theories of exercise focus on neurogenesis, hypothesizing that neurogenesis drives integration of immature granule cells into circuits and disrupt their formation.  This may be possible but I would like to advance this opposite hypothesis here that exercise dampens penk expression which is tied to other more directly memory related pathways as well,  this hypothesis could be tested via flourescent endoenkenephalins probes and a activity label for penk (with a viral construct), to establish if penk expression is diminished by endoenkenephalins.  Or alternatively by washing in interfereing mRNA for Penk during prior to an animal learning and seeing if this has the same level and kinds of deficits as a control animal.
+In Melo et al., (2014) Penk mice showed reduced effects of a chronic mild stress protocol.  The authors offered the explanation that penk is therefor a regulator of chronic stress.  But Erwin et al. (2018) found penk expression to be I would suggest instead that Penk in the dentate gyrus along with other Enkephalin related gene's are barometrs of exertion.  These may be down
+regulated by enkephalin relese in response to exercise.  They may appear generally across many behaviours there for to serve as a barometer of exertion associated with this sequence of events.  Behaviours that are not strenuous would drive expression of engram cells.  In other words they are a mechanism by which animals tend to remeber and therefor prefer less strenuous environments or choices that are less strenuous to perform.  Penk KO mice are not simply less responsive to stress they are not remembering the events.  A conditioned place preference for nicotine was also absent in Penk KO mice (Berrendero et al., 2005), I would suggest this is due to them being unable to form engram cells representing the region they recieved the reward.  As Berrendo et al., (2005) did not test the performance of the Penk KO mice on a general spatial test their results can not rule this possibility out.
+
+Melo, I., Drews, E., Zimmer, A., & Bilkei‐Gorzo, A. (2014). Enkephalin knockout male mice are resistant to chronic mild stress. Genes, Brain and Behavior, 13(6), 550-558.
+https://pubmed.ncbi.nlm.nih.gov/24804898/#:~:text=Previous%20studies%20using%20preproenkephalin%20knockout,stress%20conditions%20is%20not%20known.
+
+Berrendero, F., Mendizábal, V., Robledo, P., Galeote, L., Bilkei-Gorzo, A., Zimmer, A., & Maldonado, R. (2005). Nicotine-induced antinociception, rewarding effects, and physical dependence are decreased in mice lacking the preproenkephalin gene. Journal of Neuroscience, 25(5), 1103-1112.
+
+
+Ziółkowska, B., Przewłocka, B., Mika, J., Łabuz, D., & Przewłocki, R. (1998). Evidence for Fos involvement in the regulation of proenkephalin and prodynorphin gene expression in the rat hippocampus. Molecular brain research, 54(2), 243-251.
+https://www.sciencedirect.com/science/article/pii/S0169328X97003409?casa_token=Nhia_qNzNzcAAAAA:KK_uoqv-r7vtykVOguDRrkIcJqMO_iveVnafd7O6DQtUUsS-1LC-Xlncp3T1-tNbgnkGQS02mmI
+
+Great review on this topic:
+https://www.sciencedirect.com/science/article/pii/S0079612307630155?casa_token=pNgh9WgXC1wAAAAA:S3Zv6zw4xaaGNL4g1o7HBp7LUvt_DY-yUL98bJSPM0CwHOGHY8rgxE2QcdPPbNrC3q9zdiBG0So#fig1
+
+Johnston, H. M., & Morris, B. J. (1994). Induction of c-fos gene expression is not responsible for increased proenkephalin mRNA levels in the hippocampal dentate gyrus following NMDA stimulation. Molecular brain research, 25(1-2), 147-150.
+
+
+Johnson, M. A., Contoreggi, N. H., Kogan, J. F., Bryson, M., Rubin, B. R., Gray, J. D., ... & Milner, T. A. (2021). Chronic stress differentially alters mRNA expression of opioid peptides and receptors in the dorsal hippocampus of female and male rats. Journal of Comparative Neurology, 529(10), 2636-2657.
+
+Watson, Charles, and Daniel Binks. "Elongation of the CA1 field of the septal hippocampus in ungulates." Journal of Comparative Neurology 527, no. 4 (2019): 818-832.
+-shows penk expression in hippocampus is conserved across mammals though it is lower in primates compared to rodents
+
+
+"Overall, the DG exhibits low levels of activity under normal physiological conditions and
+behavior states regardless of whether the animal is immobile or engaging in active behavior,
+such as, during exploration and mobility. Only about one to three per-cent of principal granule
+cells are active while the majority of the cells remain inactive, and the cells fire only one to two
+times in 10 seconds 1,2,6–8"
+https://assets.researchsquare.com/files/rs-123425/v1_covered.pdf?c=1631849209
+Lipponen, A., Sahramäki, J., Penttonen, M., & Nokia, M. (2020). Dentate gyrus single cell neuronal activity in rats during fixed interval task and subsequent sleep.
+
+Diets can act to decrease neuronal excitability:
+Bough, K. J., Schwartzkroin, P. A., & Rho, J. M. (2003). Calorie restriction and ketogenic diet diminish neuronal excitability in rat dentate gyrus in vivo. Epilepsia, 44(6), 752-760.
+
+https://sci-hub.hkvisa.net/10.1080/1028415x.2000.11747302
+
+
+Bonthuis, P. J., Steinwand, S., Hörndli, C. N. S., Emery, J., Huang, W. C., Kravitz, S., ... & Gregg, C. (2022). Noncanonical genomic imprinting in the monoamine system determines naturalistic foraging and brain-adrenal axis functions. Cell Reports, 38(10), 110500.
+-interesting paper
+
+Padilla, S. L., Qiu, J., Soden, M. E., Sanz, E., Nestor, C. C., Barker, F. D., ... & Palmiter, R. D. (2016). Agouti-related peptide neural circuits mediate adaptive behaviors in the starved state. Nature neuroscience, 19(5), 734-741.
+-really interesting introduction about food and behaviours
+-makes note that in starvation animals become less sensitive to stress and more risk taking.
+
+Uemura, M., Blankvoort, S., Tok, S. S. L., Yuan, L., Cobar, L. F., Lit, K. K., & Tashiro, A. (2021). A neurogenic microenvironment defined by excitatory-inhibitory neuronal circuits in adult dentate gyrus. Cell Reports, 36(1), 109324.
+-shows local cell activity can mediate immature cells to integrate into circuits
