@@ -88,10 +88,12 @@ jeager2018_meta <- jeager2018_meta[filtered.idx,]
 
 ```{r}
 lastcol.to.firstcol <- function(df.in){
-  df.out <- df.in[,c(dim(df.in)[2], 2:(dim(df.in)[2]-1))]
+  df.out <- df.in[,c(dim(df.in)[2], 2:(dim(df.in)[2]))]
   return(df.out)
 }
-#Match the gene sets
+#Match the gene sets by adding the gene names as rows, will strip later
+DG.idx <- which(jeager2018_meta$predicted_cell_type=="DG")
+
 jeager2018_counts$gene <- rownames(jeager2018_counts)
 jeager2018_counts <- lastcol.to.firstcol(jeager2018_counts)
 
@@ -101,28 +103,36 @@ lacar2016_snHC_counts <- lastcol.to.firstcol(lacar2016_snHC_counts)
 lacar2016_snNE_counts$gene <- rownames(lacar2016_snNE_counts)
 lacar2016_snNE_counts <- lastcol.to.firstcol(lacar2016_snNE_counts)
 
-# we will remove the PTZ treate cells as well
-non.ptz.lacar.idx <- which((lacar2016_meta$treatment == "home-cage")|(lacar2016_meta$treatment == "novel environment")|(lacar2016_meta$treatment == "Saline") )
-lacar2016_wc_counts <- lacar2016_wc_counts
+# we will remove the PTZ treated cells as well before matching its genes
+not.ptz <- which(lacar2016_meta$treatment != "PTZ")
 
 lacar2016_wc_counts$gene <- rownames(lacar2016_wc_counts)
 lacar2016_wc_counts <- lastcol.to.firstcol(lacar2016_wc_counts)
 
-
-combined.counts <- jeager2018_counts %>%
-  left_join(lacar2016_wc_counts) %>%
+# we must change DG.idx and not.ptz slightly to deal with the generow shifting the index
+combined.counts <- jeager2018_counts[,as.numeric(c(1,DG.idx+1))] %>% 
+  left_join(lacar2016_wc_counts[, c(1, not.ptz[not.ptz <= 82]+1) ]) %>%
   left_join(lacar2016_snHC_counts) %>%
-  left_join(lacar2016_snNE_counts)
+  left_join(lacar2016_snNE_counts) #%>% 
+  #tibble::column_to_rownames(var="gene") %>% this throws an error, it would be good
+  #dplyr::select(-gene)
+
+#give the combined.counts genes for rownames and get rid of that column
+rownames(combined.counts) <- combined.counts[,1]
+combined.counts[,1] <- NULL
+
+#cleaning up the gene column from the other count data
+jeager2018_counts[,1] <- NULL
+lacar2016_snHC_counts[,1] <- NULL
+lacar2016_snNE_counts[,1] <- NULL
+lacar2016_wc_counts[,1] <- NULL
 
 ```
 
 
 
 ```{r}
-#making the meta data, j,lhc,lne
-
-which((lacar2016_meta$treatment == "home-cage")|(lacar2016_meta$treatment == "novel environment")|(lacar2016_meta$treatment == "Saline") )
-
+#making the meta data,
 
 jeager2018_meta$predicted_cell_type <- as.character(lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x}))
 
