@@ -574,6 +574,9 @@ Rpackage: https://github.com/KlugerLab/DAseq
 -does no limit itself to clusters
 -can idenity differential abundance as well
 
+Another method that looks good:
+Skinnider, Michael A., Jordan W. Squair, Claudia Kathe, Mark A. Anderson, Matthieu Gautier, Kaya JE Matson, Marco Milano et al. "Cell type prioritization in single-cell data." Nature biotechnology 39, no. 1 (2021): 30-34.
+
 More data to pick through:
 Zhang, T. Y., Keown, C. L., Wen, X., Li, J., Vousden, D. A., Anacker, C., ... & Meaney, M. J. (2018).
 Environmental enrichment increases transcriptional and epigenetic differentiation
@@ -1168,13 +1171,10 @@ Wang, C. N., Gong, S. N., Guan, W., Wang, J. L., Gao, T. T., Wang, Y., ... & Jia
 Faguet, J. (2014). The role of neuropeptide signaling in C. elegans food sensation and social behavior. University of California, San Francisco.
 -in celegans smad is assocaited with foraging, in food rich environments 
 
-Massagué, J., Seoane, J., & Wotton, D. (2005). Smad transcription factors. Genes & development, 19(23), 2783-2810.
--smad is associated with exploitation of food rich environments in many insects and invertebrates
-
 Fear memories are not replayed during theta osscilations:  Feng, H., Su, J., Fang, W., Chen, X., & He, J. (2021). The entorhinal cortex modulates trace fear memory formation and neuroplasticity in the lateral amygdala via cholecystokinin. bioRxiv.
-
-Cck is expressed in fear memories in entorhinal cortex in neurons that project to Cck expressing neurons in amygdala,
+-Cck is expressed in fear memories in entorhinal cortex in neurons that project to Cck expressing neurons in amygdala,
 this circuit is likely driving fear memory formation 
+
 Feng, H., Su, J., Fang, W., Chen, X., & He, J. (2021). The entorhinal cortex modulates trace fear memory formation and neuroplasticity in the mouse lateral amygdala via cholecystokinin. Elife, 10, e69333.  
 
 Smagin, D. A., Kovalenko, I. L., Galyamina, A. G., Bragin, A. O., Orlov, Y. L., & Kudryavtseva, N. N. (2016). Dysfunction in ribosomal gene expression in the hypothalamus and hippocampus following chronic social defeat stress in male mice as revealed by RNA-Seq. Neural Plasticity, 2016.
@@ -1184,12 +1184,25 @@ Rpl7 is implicated in chronic social stress in rodents
 Sagehashi, N., Obara, Y., Maruyama, O., Nakagawa, T., Hosoi, T., & Ishii, K. (2022). Insulin enhances gene expression of Midnolin, a novel genetic risk factor for Parkinson's disease, via ERK, PI3-kinase and multiple transcription factors in SH-SY5Y cells. Journal of Pharmacology and Experimental Therapeutics.
 -Midn is expressede in response to insulin 
 
+Pitychoutis, P. M., Sanoudou, D., Papandreou, M., Nasias, D., Kouskou, M., Tomlinson, C. R., ... & Papadopoulou-Daifoti, Z. (2014). Forced swim test induces divergent global transcriptomic alterations in the hippocampus of high versus low novelty-seeker rats. Human genomics, 8(1), 1-13.
+-smad7 is differentially regulated between two novelty seeking rodent lines who differ in amount of observed locomotor activity
+
 
 Barbier, M., Chometton, S., Pautrat, A., Miguet-Alfonsi, C., Datiche, F., Gascuel, J., ... & Risold, P. Y. (2020). A basal ganglia-like cortical–amygdalar–hypothalamic network mediates feeding behavior. Proceedings of the National Academy of Sciences, 117(27), 15967-15976.
 -a basal ganglia like feeding network exists between cortex, amygdala and hypothalamus and may have split from the basal ganglia
 
 Flati, T., Gioiosa, S., Chillemi, G., Mele, A., Oliverio, A., Mannironi, C., ... & Castrignanò, T. (2020). A gene expression atlas for different kinds of stress in the mouse brain. Scientific Data, 7(1), 1-18.
 -visual cortex, dentate gyrus and other regions have elevated Cck expression in stress conditions
+
+https://www.sciencedirect.com/science/article/pii/S0079612307630155?casa_token=UAsB4LZLpDoAAAAA:lprJ_G_Hctq5HU6cj8dzHG_ridQX-cc9w6wB1tJI7hzKPxKHm0685_JZ-Eh-Ftk8XztkUO-EaYo
+
+
+Shoham, S., Marcus, E. L., Avraham, Y., & Berry, E. M. (2000). Diet restriction increases enkephalin-and dynorphin-like immunoreactivity in rat brain and attenuates long-term retention of passive avoidance. Nutritional neuroscience, 3(1), 41-55.
+-blood sugar is strongly negatively correlated with Penk expression and low engergy diets induce changes in stress related memory tasks but not food rewarded tasks
+
+
+https://www.nature.com/articles/s41586-021-03811-w
+
 
 ```{r}
 DimPlot(Hoch5k.GCadult.onlyJeagerDEGs, reduction = 'ica')

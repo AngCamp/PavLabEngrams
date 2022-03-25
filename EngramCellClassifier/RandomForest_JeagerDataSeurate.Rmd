@@ -43,6 +43,7 @@ library(GeoTcgaData)
 lacar2016_meta <- read.csv('Lacar2016_GSE77067/SraRunTable.txt', header = TRUE)
 lacar2016_snHC_counts <- read.table('Lacar2016_GSE77067/GSE77067_sn_hc_counts.txt.gz')
 lacar2016_snNE_counts <- read.table('Lacar2016_GSE77067/GSE77067_sn_ne_counts.txt.gz')
+lacar2016_wc_counts <- read.table('Lacar2016_GSE77067/GSE77067_wc_counts.txt.gz')
 ```
 
 
@@ -81,7 +82,68 @@ jeager2018_meta <- jeager2018_meta[filtered.idx,]
 
 
 
+
 ```
+
+
+```{r}
+lastcol.to.firstcol <- function(df.in){
+  df.out <- df.in[,c(dim(df.in)[2], 2:(dim(df.in)[2]-1))]
+  return(df.out)
+}
+#Match the gene sets
+jeager2018_counts$gene <- rownames(jeager2018_counts)
+jeager2018_counts <- lastcol.to.firstcol(jeager2018_counts)
+
+lacar2016_snHC_counts$gene <- rownames(lacar2016_snHC_counts)
+lacar2016_snHC_counts <- lastcol.to.firstcol(lacar2016_snHC_counts)
+
+lacar2016_snNE_counts$gene <- rownames(lacar2016_snNE_counts)
+lacar2016_snNE_counts <- lastcol.to.firstcol(lacar2016_snNE_counts)
+
+# we will remove the PTZ treate cells as well
+non.ptz.lacar.idx <- which((lacar2016_meta$treatment == "home-cage")|(lacar2016_meta$treatment == "novel environment")|(lacar2016_meta$treatment == "Saline") )
+lacar2016_wc_counts <- lacar2016_wc_counts
+
+lacar2016_wc_counts$gene <- rownames(lacar2016_wc_counts)
+lacar2016_wc_counts <- lastcol.to.firstcol(lacar2016_wc_counts)
+
+
+combined.counts <- jeager2018_counts %>%
+  left_join(lacar2016_wc_counts) %>%
+  left_join(lacar2016_snHC_counts) %>%
+  left_join(lacar2016_snNE_counts)
+
+```
+
+
+
+```{r}
+#making the meta data, j,lhc,lne
+
+which((lacar2016_meta$treatment == "home-cage")|(lacar2016_meta$treatment == "novel environment")|(lacar2016_meta$treatment == "Saline") )
+
+
+jeager2018_meta$predicted_cell_type <- as.character(lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x}))
+
+lacar.label <- replicate( ,"" )
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+---Looking for Reactivation
+
 
 Ok so we will need to filter the counts data later for the genes that match in Hochgerner or other datasets we use.
 First we will try to reproduce the results of Jeager et al. (2018) in figure 5.
@@ -91,7 +153,10 @@ First we will try to reproduce the results of Jeager et al. (2018) in figure 5.
 #granule cells ,DG whihc were not in the homecage condition HC
 DG.idx <- which(jeager2018_meta$predicted_cell_type=="DG")
 
-Jeager2018 <- CreateSeuratObject(jeager2018_counts[,DG.idx])
+
+rownames(jeager2018_meta) <- colnames(jeager2018_counts)
+Jeager2018 <- CreateSeuratObject(counts = jeager2018_counts[,DG.idx],
+                                 meta.data = jeager2018_meta[DG.idx,])
 
 #this is the only filtering step I will retain from seurat as we have already done filterin earlier
 # based on reads aligned and total gene expressed in the last section
@@ -116,7 +181,7 @@ plot1 + plot2
 
 Jeager2018 <- NormalizeData(Jeager2018, normalization.method = "LogNormalize", scale.factor = 10000)
 
-Jeager2018 <- FindVariableFeatures(Jeager2018, selection.method = "vst", nfeatures = 2000)
+Jeager2018 <- FindVariableFeatures(Jeager2018, selection.method = "vst", nfeatures = 8000)
 
 # Identify the 10 most highly variable genes
 top10 <- head(VariableFeatures(Jeager2018), 10)
@@ -138,10 +203,81 @@ Jeager2018 <- ScaleData(Jeager2018, features = all.genes.jeager)
 
 
 ```{r}
-
+Jeager2018 <- RunPCA(Jeager2018, 
+                     features = VariableFeatures(object = Jeager2018),
+                     npcs = 50)
 
 
 ```
+
+
+```{r}
+
+Jeager2018 <- JackStraw(Jeager2018, num.replicate = 100)
+Jeager2018 <- ScoreJackStraw(Jeager2018, dims = 1:20)
+
+JackStrawPlot(Jeager2018)
+```
+
+```{r}
+ElbowPlot(Jeager2018)
+```
+
+
+```{r}
+#Clustering, we will visualize in UMP later
+Jeager2018 <- FindNeighbors(Jeager2018, dims = 1:6)
+Jeager2018 <- FindClusters(Jeager2018, resolution = 0.2) #resolution of 0.5 finds 4 clusters, 0.2 combines all the late signature into one cluster, are these rpehaps reactivated cells?  Or just really active cells
+#PCA makes it seem like cells are definitely moving from baseline into distinct activation paths
+Jeager2018@meta.data$PointTwoClusters <- Jeager2018@meta.data$seurat_clusters
+
+Jeager2018 <- FindClusters(Jeager2018, resolution = 0.5) 
+Jeager2018@meta.data$PointFiveClusters <- Jeager2018@meta.data$seurat_clusters
+```
+
+```{r}
+Jeager2018 <- RunTSNE(Jeager2018, ndims = 1:6)
+DimPlot(Jeager2018, reduction = 'tsne', group.by = "exposure") + 
+  DimPlot(Jeager2018, reduction = 'tsne')
+```
+
+```{r}
+#look at pca
+DimPlot(Jeager2018, reduction = 'pca', group.by = "PointTwoClusters") + 
+  DimPlot(Jeager2018, reduction = 'pca', group.by ='exposure')
+```
+```{r}
+DimPlot(Jeager2018, reduction = 'pca', group.by = "PointFiveClusters") +
+  DimPlot(Jeager2018, reduction = 'pca', group.by ='exposure')
+
+```
+
+```{r}
+DimPlot(Jeager2018, reduction = 'pca', group.by = "fos_status") +
+  DimPlot(Jeager2018, reduction = 'pca', group.by ='exposure')
+```
+
+
+
+```{r}
+jeager.markers <- FindAllMarkers(Jeager2018, only.pos = FALSE, min.pct = 0.25, logfc.threshold = 0.25)
+jeager.markers %>%
+    group_by(cluster) %>%
+    slice_max(n = 2, order_by = avg_log2FC)
+```
+
+```{r}
+jeager.markers
+```
+
+
+
+```{r}
+Jeager2018 <- RunUMAP(Jeager2018, dims = 1:4)
+DimPlot(Jeager2018, reduction = 'pca')
+
+```
+
 
 
 ```{r}
@@ -154,6 +290,19 @@ ClassifyCells(jeagerdata, classifier, training.genes = NULL,
               training.classes = NULL, new.data = test.set, ...)
 
 ```
+
+
+#Ideas for classifiers
+
+1) Simply which cells have a bunch of known IEGs highly expressed?
+
+2) Fold change then relu
+
+
+This paper needs to be looked at and readFernandez-Albert, J., Lipinski, M., Lopez-Cascales, M. T., Rowley, M. J., Martin-Gonzalez, A. M., Del Blanco, B., ... & Barco, A. (2019). Immediate and deferred epigenomic signatures of in vivo neuronal activation in mouse hippocampus. Nature neuroscience, 22(10), 1718-1730.
+https://www.nature.com/articles/s41593-019-0476-2#data-availability
+Data:  https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE125068
+
 
 
 #PLaying around looking for Penk
@@ -254,12 +403,26 @@ test
 
 ```
 
+
+
+
+
+
 WARNING PUT ON YOUR TINFOIL HAT
 Penk codes for a Proenkephalin, an opiod receptor.  Exercise is a known inhibitor of memory formation in rodents.  Endogenous opioids increase during exercise (find a reference I would assume they do), and often metabolic pathways are driven down by the excessive presence of a substance.  I.e. think of lactase (may be not the best example), Busckaski showed that blood sugar is driven down by short wave ripples in hippocampus via a hippocampal-hypothalamic pathway.  SWRs tend to occur while mice are standing still, the hippocampus is deeply tied to the animals decision to move and the biological processes .  It is possible that during highly exertive exploration mice are designed not to remeber the event in the long term, to prevent them from returning to the same area.  It will be interesting to see if this is conserved in humans as we seem to be making memories all the time.  Mice tend to replay areas that have been highly rewarded during replay as well this could be a mechanism for enforcing a levy walk between highly rewarding areas while avoiding areas invovling hihgly strenuous activity.  Given teh spatial clustering of penk cells I feel they would have similar connectivity.  It will be interesting to see what features the random forest pulls up or whether exploring these gradient markers may be informative instead.
 
 Opposing theories of exercise focus on neurogenesis, hypothesizing that neurogenesis drives integration of immature granule cells into circuits and disrupt their formation.  This may be possible but I would like to advance this opposite hypothesis here that exercise dampens penk expression which is tied to other more directly memory related pathways as well,  this hypothesis could be tested via flourescent endoenkenephalins probes and a activity label for penk (with a viral construct), to establish if penk expression is diminished by endoenkenephalins.  Or alternatively by washing in interfereing mRNA for Penk during prior to an animal learning and seeing if this has the same level and kinds of deficits as a control animal.
 In Melo et al., (2014) Penk mice showed reduced effects of a chronic mild stress protocol.  The authors offered the explanation that penk is therefor a regulator of chronic stress.  But Erwin et al. (2018) found penk expression to be I would suggest instead that Penk in the dentate gyrus along with other Enkephalin related gene's are barometrs of exertion.  These may be down
 regulated by enkephalin relese in response to exercise.  They may appear generally across many behaviours there for to serve as a barometer of exertion associated with this sequence of events.  Behaviours that are not strenuous would drive expression of engram cells.  In other words they are a mechanism by which animals tend to remeber and therefor prefer less strenuous environments or choices that are less strenuous to perform.  Penk KO mice are not simply less responsive to stress they are not remembering the events.  A conditioned place preference for nicotine was also absent in Penk KO mice (Berrendero et al., 2005), I would suggest this is due to them being unable to form engram cells representing the region they recieved the reward.  As Berrendo et al., (2005) did not test the performance of the Penk KO mice on a general spatial test their results can not rule this possibility out.
+
+There also appears to be cross talk between circuits as evidenced by generalization such as stress and again this appears to be located ni the dorsal dentate gyrus(Ren et al., 2022).  There appear to be distinct transcriptional responses in different cells within the same memory whihc drive different synaptic propoerties (Sun et al., 2020).  Although the authors of sun et al. (2020) do note that their construct expressed using enhancers for the different IEGs and that the initial IEGs themselves may be general but induce different expression in different populations (this is a question we can answer or look at in literature such as Marco or Fernandez ATAC seq data).  There is an argument in there where they discuss the "generalizability of  memory engrams" the push and pull of engram trace but no discussion of why there would be different memory engrams in the first place.
+
+
+Denny, C. A., Kheirbek, M. A., Alba, E. L., Tanaka, K. F., Brachman, R. A., Laughman, K. B., ... & Hen, R. (2014). Hippocampal memory traces are differentially modulated by experience, time, and adult neurogenesis. Neuron, 83(1), 189-201.
+
+Sun, X., Bernstein, M. J., Meng, M., Rao, S., Sørensen, A. T., Yao, L., ... & Lin, Y. (2020). Functionally distinct neuronal ensembles within the memory engram. Cell, 181(2), 410-423.
+
+Ren, L. Y., Meyer, M. A., Grayson, V. S., Gao, P., Guedea, A. L., & Radulovic, J. (2022). Stress-induced generalization of negative memories is mediated by an extended hippocampal circuit. Neuropsychopharmacology, 47(2), 516-523.
 
 Melo, I., Drews, E., Zimmer, A., & Bilkei‐Gorzo, A. (2014). Enkephalin knockout male mice are resistant to chronic mild stress. Genes, Brain and Behavior, 13(6), 550-558.
 https://pubmed.ncbi.nlm.nih.gov/24804898/#:~:text=Previous%20studies%20using%20preproenkephalin%20knockout,stress%20conditions%20is%20not%20known.

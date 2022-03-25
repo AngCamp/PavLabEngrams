@@ -5,20 +5,6 @@ date: "20/03/2022"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
-```
-
 These PC's are from the full gene list of the Hochgerner post natal day P35.
 
 PC_ 1 
@@ -89,7 +75,8 @@ Negative:  Junb, Scg5, Faf2, Fos, Ier2, Btg2, C2cd4b, Zfp956, Lrp11, Tmem246
 	   Cttn, Jun, Fam214b, Zfp112, Tsc22d1, Tm2d1, Tmem240, Uchl3, Cited2, Ly6h 
 	   
 	   
-	   
+Environmental Enrichment effects on DG expression
+https://www.frontiersin.org/articles/10.3389/fnmol.2018.00126/full
 	   
 From PC1:
 
@@ -102,14 +89,22 @@ Cck
 Flati, T., Gioiosa, S., Chillemi, G., Mele, A., Oliverio, A., Mannironi, C., ... & Castrignanò, T. (2020). A gene expression atlas for different kinds of stress in the mouse brain. Scientific Data, 7(1), 1-18.
 -Cck shows up across many tissues
 
-Longitudinal 
+https://www.biorxiv.org/content/10.1101/2021.09.25.461769v2.full
+
+
+Longitudinal Axis
 Levone, B. R., Moloney, G. M., Cryan, J. F., & O'Leary, O. F. (2021). Specific sub-regions along the longitudinal axis of the hippocampus mediate antidepressant-like behavioral effects. Neurobiology of stress, 14, 100331.
 
 Anacker, C., Luna, V. M., Stevens, G. S., Millette, A., Shores, R., Jimenez, J. C., ... & Hen, R. (2018). Hippocampal neurogenesis confers stress resilience by inhibiting the ventral dentate gyrus. Nature, 559(7712), 98-102.
 
+Fear Behaviour Natural Behaviour studies:
+https://www.nature.com/articles/s41539-017-0007-4
+https://www.sciencedirect.com/science/article/pii/S0896627319304775#bib77
+Lozano-Montes, L., Dimanico, M., Mazloum, R., Li, W., Nair, J., Kintscher, M., ... & Rainer, G. (2020). Optogenetic stimulation of basal forebrain parvalbumin neurons activates the default mode network and associated behaviors. Cell Reports, 33(6), 108359.
+https://www.sciencedirect.com/science/article/pii/S2211124720313486
 
-
-
+Here study confirms penk is highly localized:
+Johnston, H. M., & Morris, B. J. (1994). Induction of c-fos gene expression is not responsible for increased proenkephalin mRNA levels in the hippocampal dentate gyrus following NMDA stimulation. Molecular brain research, 25(1-2), 147-150.
 
 
 FROM ICA OF THE ENGRAM DEGs
@@ -121,6 +116,9 @@ Positive:  Rps14, Rps18, Pcdh20, Rpl17, Fam19a1, Rpl10, Rpl4, Arhgap44, Asns, Se
 Negative:  Gadd45b, Inhba, Rasd1, Asb11, Arc, Npas4, Baz1a, Acan, Nptx2, Kcnf1 
 	   Samd4, Midn, Iqsec3, Rasl11b, Atf3, Csrnp1, Smad7, Sertad1, Osgin2, Fosl2 
 	   Lingo1, Zfp655, Plk2, Fosb, Fgfr1, Elmo1, Nr4a1, Neat1, Numbl, Srxn1 
+	   
+	   
+	   
 IC_ 2 
 Positive:  Hs3st1, Prex1, Per2, Rasd1, Sec24a, Atxn7, Pdia6, Chga, Epha10, Pxmp4 
 	   Tbk1, Pcnx, Lrfn2, Rpn1, Il1r1, Smyd4, Galnt9, Clstn3, Slc25a36, Mirg 
@@ -153,6 +151,13 @@ Negative:  Ssr2, Sf3b1, Pja1, Arpc2, Stmn4, Ddx24, Cfl1, Cap1, Zc3h15, Hnrnpk
 
 
 In IC_1  NOTE THAT THIS IS RUN SPECIFICALLY ON THE JEAGER ET AL. GENEs 
+
+
+https://www.nature.com/articles/npp20114
+-opiod receptors in amny brain regions are subject to expression changes in response
+to various diets
+
+
 Chang, S., Bok, P., Tsai, C. Y., Sun, C. P., Liu, H., Deussing, J. M., & Huang, G. J. (2018). NPTX2 is a key component in the regulation of anxiety. Neuropsychopharmacology, 43(9), 1943-1953.
 -Npt2x supresses anxiety
 
@@ -166,13 +171,15 @@ is useful for certain behaviours
 Wang, C. N., Gong, S. N., Guan, W., Wang, J. L., Gao, T. T., Wang, Y., ... & Jiang, B. (2020). Hippocampal overexpression of chordin protects against the chronic social defeat stress-induced depressive-like effects in mice. Brain research bulletin, 158, 31-39.
 -smad4 suppresses stress
 
+Krampert, M., Chirasani, S. R., Wachs, F. P., Aigner, R., Bogdahn, U., Yingling, J. M., ... & Heuchel, R. (2010). Smad7 regulates the adult neural stem/progenitor cell pool in a transforming growth factor β-and bone morphogenetic protein-independent manner. Molecular and cellular biology, 30(14), 3685-3694.
+-smad7 also appears to regulate neurogenesis in the dentate gyurs
+
 Faguet, J. (2014). The role of neuropeptide signaling in C. elegans food sensation and social behavior. University of California, San Francisco.
 -in celegans smad is assocaited with foraging, in food rich environments 
 
-Massagué, J., Seoane, J., & Wotton, D. (2005). Smad transcription factors. Genes & development, 19(23), 2783-2810.
--smad is associated with exploitation of food rich environments in many insects and invertebrates
 
 Fear memories are not replayed during theta osscilations:  Feng, H., Su, J., Fang, W., Chen, X., & He, J. (2021). The entorhinal cortex modulates trace fear memory formation and neuroplasticity in the lateral amygdala via cholecystokinin. bioRxiv.
+-Cck
 
 Cck is expressed in fear memories in entorhinal cortex in neurons that project to Cck expressing neurons in amygdala,
 this circuit is likely driving fear memory formation 
@@ -185,9 +192,14 @@ Rpl7 is implicated in chronic social stress in rodents
 Sagehashi, N., Obara, Y., Maruyama, O., Nakagawa, T., Hosoi, T., & Ishii, K. (2022). Insulin enhances gene expression of Midnolin, a novel genetic risk factor for Parkinson's disease, via ERK, PI3-kinase and multiple transcription factors in SH-SY5Y cells. Journal of Pharmacology and Experimental Therapeutics.
 -Midn is expressede in response to insulin 
 
-
 Barbier, M., Chometton, S., Pautrat, A., Miguet-Alfonsi, C., Datiche, F., Gascuel, J., ... & Risold, P. Y. (2020). A basal ganglia-like cortical–amygdalar–hypothalamic network mediates feeding behavior. Proceedings of the National Academy of Sciences, 117(27), 15967-15976.
 -a basal ganglia like feeding network exists between cortex, amygdala and hypothalamus and may have split from the basal ganglia
 
 Flati, T., Gioiosa, S., Chillemi, G., Mele, A., Oliverio, A., Mannironi, C., ... & Castrignanò, T. (2020). A gene expression atlas for different kinds of stress in the mouse brain. Scientific Data, 7(1), 1-18.
 -visual cortex, dentate gyrus and other regions have elevated Cck expression in stress conditions
+
+
+REASOURCES:
+Cell atlas for testing conservation of cell types 
+https://www.cell.com/cell-reports/pdf/S2211-1247(21)00117-0.pdf
+-likely insufficiently detailed view of dentate gyrus to know if the expression is conserved
