@@ -91,6 +91,10 @@ Flati, T., Gioiosa, S., Chillemi, G., Mele, A., Oliverio, A., Mannironi, C., ...
 
 https://www.biorxiv.org/content/10.1101/2021.09.25.461769v2.full
 
+Desai, A. J., Dong, M., Harikumar, K. G., & Miller, L. J. (2016). Cholecystokinin-induced satiety, a key gut servomechanism that is affected by the membrane microenvironment of this receptor. International journal of obesity supplements, 6(1), S22-S27.
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5485878/
+-Cck is a short acting satiety inducing hormone and the DG cells are producing it
+
 
 Longitudinal Axis
 Levone, B. R., Moloney, G. M., Cryan, J. F., & O'Leary, O. F. (2021). Specific sub-regions along the longitudinal axis of the hippocampus mediate antidepressant-like behavioral effects. Neurobiology of stress, 14, 100331.
@@ -179,7 +183,10 @@ Faguet, J. (2014). The role of neuropeptide signaling in C. elegans food sensati
 
 
 Fear memories are not replayed during theta osscilations:  Feng, H., Su, J., Fang, W., Chen, X., & He, J. (2021). The entorhinal cortex modulates trace fear memory formation and neuroplasticity in the lateral amygdala via cholecystokinin. bioRxiv.
--Cck
+-Cck -/- mice display lower freezing behaviour in conditioned fear task,
+tasks were either given with short or long trace tasks, where tone predciting shock was played either 2s or 10s respesctively
+before shock, to investigate Hp ability to assocaite events occuring over long periods of time
+-scaring the mice with white noise does and measuring immediate fear responses show no difference between wild type and regular mice, suggesting the 
 
 Cck is expressed in fear memories in entorhinal cortex in neurons that project to Cck expressing neurons in amygdala,
 this circuit is likely driving fear memory formation 

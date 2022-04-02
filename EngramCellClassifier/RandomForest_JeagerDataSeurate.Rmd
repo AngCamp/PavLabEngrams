@@ -19,6 +19,7 @@ library(tidyverse)
 library(GEOquery)
 library(AnnotationDbi)
 library(randomForest)
+library(rfUtilities) # tutorial here: https://evansmurphy.wixsite.com/evansspatial/random-forest-sdm
 library(data.table)
 library(reshape2)
 library(FactoMineR)
@@ -31,9 +32,11 @@ library(patchwork)
 library(metap)
 library(cqn)
 library(GeoTcgaData)
+library(caTools)
 # BiocManager::install("cqn")
 
-
+# Lacar paper: https://www.nature.com/articles/ncomms11022?origin=ppub
+# Jeager paper: https://www.nature.com/articles/s41467-018-05418-8
 
 ```
 
@@ -44,6 +47,8 @@ lacar2016_meta <- read.csv('Lacar2016_GSE77067/SraRunTable.txt', header = TRUE)
 lacar2016_snHC_counts <- read.table('Lacar2016_GSE77067/GSE77067_sn_hc_counts.txt.gz')
 lacar2016_snNE_counts <- read.table('Lacar2016_GSE77067/GSE77067_sn_ne_counts.txt.gz')
 lacar2016_wc_counts <- read.table('Lacar2016_GSE77067/GSE77067_wc_counts.txt.gz')
+
+
 ```
 
 
@@ -87,68 +92,194 @@ jeager2018_meta <- jeager2018_meta[filtered.idx,]
 
 
 ```{r}
-lastcol.to.firstcol <- function(df.in){
-  df.out <- df.in[,c(dim(df.in)[2], 2:(dim(df.in)[2]))]
-  return(df.out)
-}
-#Match the gene sets by adding the gene names as rows, will strip later
-DG.idx <- which(jeager2018_meta$predicted_cell_type=="DG")
+#matching all genes and merging datasets
+multi.intersect <- function(x) Reduce(intersect, x) #takes lists of lists, c() will not work
 
-jeager2018_counts$gene <- rownames(jeager2018_counts)
-jeager2018_counts <- lastcol.to.firstcol(jeager2018_counts)
+shared.genes <- multi.intersect(list(rownames(jeager2018_counts),
+                           rownames(lacar2016_wc_counts),
+                           rownames(lacar2016_snHC_counts),
+                           rownames(lacar2016_snNE_counts)
+                          )
+                        )
 
-lacar2016_snHC_counts$gene <- rownames(lacar2016_snHC_counts)
-lacar2016_snHC_counts <- lastcol.to.firstcol(lacar2016_snHC_counts)
+jeager2018_counts$gene <- as.character(rownames(jeager2018_counts))
+jeager2018_counts <- jeager2018_counts[rownames(jeager2018_counts) %in% shared.genes,]
+#jeager2018_counts <- lastcol.to.firstcol(jeager2018_counts)
 
-lacar2016_snNE_counts$gene <- rownames(lacar2016_snNE_counts)
-lacar2016_snNE_counts <- lastcol.to.firstcol(lacar2016_snNE_counts)
+lacar2016_wc_counts$gene <- as.character(rownames(lacar2016_wc_counts))
+lacar2016_wc_counts <- lacar2016_wc_counts[rownames(lacar2016_wc_counts) %in% shared.genes,]
+
+#lacar2016_wc_counts <- lastcol.to.firstcol(lacar2016_wc_counts)
+
+lacar2016_snHC_counts$gene <- as.character(rownames(lacar2016_snHC_counts))
+lacar2016_snHC_counts <-lacar2016_snHC_counts[rownames(lacar2016_snHC_counts) %in% shared.genes,]
+#lacar2016_snHC_counts <- lastcol.to.firstcol(lacar2016_snHC_counts)
+
+lacar2016_snNE_counts$gene <- as.character(rownames(lacar2016_snNE_counts))
+lacar2016_snNE_counts[rownames(lacar2016_snNE_counts) %in% shared.genes,]
+#lacar2016_snNE_counts <- lastcol.to.firstcol(lacar2016_snNE_counts)
 
 # we will remove the PTZ treated cells as well before matching its genes
 not.ptz <- which(lacar2016_meta$treatment != "PTZ")
 
-lacar2016_wc_counts$gene <- rownames(lacar2016_wc_counts)
-lacar2016_wc_counts <- lastcol.to.firstcol(lacar2016_wc_counts)
 
-# we must change DG.idx and not.ptz slightly to deal with the generow shifting the index
-combined.counts <- jeager2018_counts[,as.numeric(c(1,DG.idx+1))] %>% 
-  left_join(lacar2016_wc_counts[, c(1, not.ptz[not.ptz <= 82]+1) ]) %>%
-  left_join(lacar2016_snHC_counts) %>%
-  left_join(lacar2016_snNE_counts) #%>% 
+#Match the gene sets by adding the gene names as rows, will strip later
+DG.idx <- which(jeager2018_meta$predicted_cell_type=="DG")
+
+# we must add 1 to the values of DG.idx and not.ptz to deal with the generow shifting the index 1
+combined.counts <- jeager2018_counts[, c(DG.idx,862)] %>% 
+  left_join(lacar2016_wc_counts[, c(not.ptz[not.ptz <= 82],83)], by = 'gene' , all.y = TRUE) %>%
+  left_join(lacar2016_snHC_counts, by = 'gene', all.y = TRUE) %>%
+  left_join(lacar2016_snNE_counts, by = 'gene', all.y = TRUE) #%>% 
   #tibble::column_to_rownames(var="gene") %>% this throws an error, it would be good
   #dplyr::select(-gene)
 
+#this join is possibly inclduing the gene rows leading to mismathc number of cells later 
+
 #give the combined.counts genes for rownames and get rid of that column
-rownames(combined.counts) <- combined.counts[,1]
-combined.counts[,1] <- NULL
+rownames(combined.counts) <- combined.counts$gene
+combined.counts$gene <- NULL
+combined.counts[is.na(combined.counts)] <- 0
 
 #cleaning up the gene column from the other count data
-jeager2018_counts[,1] <- NULL
-lacar2016_snHC_counts[,1] <- NULL
-lacar2016_snNE_counts[,1] <- NULL
-lacar2016_wc_counts[,1] <- NULL
+jeager2018_counts$gene <- NULL
+lacar2016_wc_counts$gene <- NULL
+lacar2016_snHC_counts$gene <- NULL
+lacar2016_snNE_counts$gene <- NULL
 
 ```
 
 
 
 ```{r}
-#making the meta data,
 
-jeager2018_meta$predicted_cell_type <- as.character(lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x}))
-
-lacar.label <- replicate( ,"" )
+#modify this line in order to change the strings in the metadata below
+#jeager2018_meta$predicted_cell_type <- as.character(lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x}))
 
 
+#columns for which paper the cells are from
+experiment.label <- c(replicate( length(DG.idx),"Jeager" ),
+                 replicate( length(not.ptz),"Lacar" ))
 
+
+#column for treatment
+treatment <- c(jeager2018_meta$exposure[DG.idx],
+               lacar2016_meta$treatment[not.ptz])
+treatment <- as.character(lapply(treatment, function(x) if (x=="home-cage") {"HC"} else {x}))
+treatment <- as.character(lapply(treatment, function(x) if (x=="novel environment") {"NE"} else {x}))
+
+#fos status 
+fos_status <-c(as.character(jeager2018_meta$fos_status[DG.idx]),
+               lacar2016_meta$facs_sort[not.ptz])
+fos_status <- as.character(lapply(fos_status, function(x) if (x=="Prox1+/Fos+") {"Fos+"} else {x}))
+fos_status <- as.character(lapply(fos_status, function(x) if (x=="NeuN+/Prox1+") {"Fos-"} else {x}))
+fos_status <- as.character(lapply(fos_status, function(x) if (x=="Prox1+/Fos-") {"Fos-"} else {x}))
+fos_status <- as.character(lapply(fos_status, function(x) if (x=="GFP+") {"Fos-"} else {x}))
+# need to check what GFP + means, I think it means it is fos positive
+
+
+combined.meta <- data.frame(experiment.label,
+                 treatment,
+                 fos_status)
+#this throws an error mismathc number of rows and genes most likely
+rownames(combined.meta) <- colnames(combined.counts)
 ```
 
 
+L3 <- LETTERS[1:3]
+fac <- sample(L3, 10, replace = TRUE)
+(d <- data.frame(x = 1, y = 1:10, fac = fac))
+## The "same" with automatic column names:
+data.frame(1, 1:10, sample(L3, 10, replace = TRUE))
 
 
 
 
 
 
+###THings to include in our model
+
+
+1) test if rank transform or onehotencoding is best, may be one with both
+
+2) try including different datasets all at once
+
+3) try including a term for cell type, could include a marker set so the classifier could easily do this itself,
+throws out unclassified cells or classifies them seperately or try just 
+
+4) Try to include epilepsy cells (PTZ treated from Lacar et al., 2016), according to Jeager these should have fairly distinct transcription profiles.
+
+
+
+One hot encoding this
+---
+```{r}
+#no need to scale we are one hot encoding this
+onehot <- function(x){
+  x <- x<1
+  return(as.integer(x))
+}
+
+
+binarized.counts <- data.frame( lapply(combined.counts, function(x) as.character(as.integer(x>1))) )
+binarized.counts <- data.frame( t(binarized.counts), stringsAsFactors = TRUE )
+binarized.counts$Engramcell <- as.factor(combined.meta$fos_status)
+
+# sample slit comes from library(caTools)
+
+split <- sample.split(binarized.counts$Engramcell, SplitRatio = 0.8)
+
+training_set = subset(binarized.counts, split == TRUE)
+test_set = subset(binarized.counts, split == FALSE)
+
+classifier = randomForest(x = training_set[-1],
+                          y = training_set$Engramcell,
+                          ntree = 500)
+
+#this function may handle all the splitting
+# from rfUtilities package
+rf.cv <- rf.crossValidation(classifier, training_set[-1], 
+                            normalize = FALSE, p=0.125, 
+                            n=10, ntree=501)
+# plotting
+plot(rf.cv, type = "cv", main = "CV producers accuracy") 
+plot(rf.cv, type = "model", main = "Model producers accuracy")
+plot(rf.cv, type = "cv", stat = "oob", main = "CV oob error")
+plot(rf.cv, type = "model", stat = "oob", main = "Model oob error")
+
+# Predicting the Test set results
+y_pred = predict(classifier, newdata = test_set)
+
+classifier$importance
+importancerank <- data.frame(rownames(combined.counts),
+                             classifier$importance)
+test <- arrange(importancerank, desc(MeanDecreaseGini))
+
+
+cv.classifier <- rfcv(trainx = training_set[-1], trainy = training_set$Engramcell,
+     cv.fold=5, scale="log", step=0.5)
+
+
+
+
+#split the data
+#making the meta data,
+# https://rdrr.io/rforge/CrossValidate/man/balancedSplit.html
+library(CrossValidate) # use this library to make balanced test trainng and folds of data
+library(randomForest)
+library(caret) # also has functions to split the data and 
+library(rfUtilities)
+#  https://cran.r-project.org/web/packages/rfUtilities/rfUtilities.pdf
+
+
+
+#
+RF.fit = randomForest(x = dat[,c(1:n)], #reisudals from our models
+                           y = dat$cbcltotal,  #
+                           ntree = treenumber, importance = T)
+
+
+```
 
 
 
