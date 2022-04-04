@@ -83,7 +83,7 @@ From PC1:
 Cck Loading:
 Crym
 Lamia, K. A., Papp, S. J., Yu, R. T., Barish, G. D., Uhlenhaut, N. H., Jonker, J. W., ... & Evans, R. M. (2011). Cryptochromes mediate rhythmic repression of the glucocorticoid receptor. Nature, 480(7378), 552-556.
--
+-the fact this is expressed in the more inactive branch could indicate mice are not expressing this
 
 Cck
 Flati, T., Gioiosa, S., Chillemi, G., Mele, A., Oliverio, A., Mannironi, C., ... & Castrignanò, T. (2020). A gene expression atlas for different kinds of stress in the mouse brain. Scientific Data, 7(1), 1-18.
@@ -109,6 +109,12 @@ https://www.sciencedirect.com/science/article/pii/S2211124720313486
 
 Here study confirms penk is highly localized:
 Johnston, H. M., & Morris, B. J. (1994). Induction of c-fos gene expression is not responsible for increased proenkephalin mRNA levels in the hippocampal dentate gyrus following NMDA stimulation. Molecular brain research, 25(1-2), 147-150.
+
+Penk in CA2 VIP interneurons inportant for social memory
+https://www.nature.com/articles/s41380-021-01124-y#Sec2
+
+Ca2+ imaging of CA2 shows odor specific topography
+Hassan, S. I., Bigler, S., & Siegelbaum, S. A. (2021). Coding of social odors in the hippocampal CA2 region as a substrate for social memory. bioRxiv.
 
 
 FROM ICA OF THE ENGRAM DEGs

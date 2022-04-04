@@ -33,11 +33,17 @@ library(metap)
 library(cqn)
 library(GeoTcgaData)
 library(caTools)
+library(pROC)
 # BiocManager::install("cqn")
 
 # Lacar paper: https://www.nature.com/articles/ncomms11022?origin=ppub
 # Jeager paper: https://www.nature.com/articles/s41467-018-05418-8
 
+
+# Some notes to read  to deal with class imbalance 
+# https://machinelearningmastery.com/what-is-imbalanced-classification/#:~:text=Majority%20Class%3A%20The%20class%20(or,problem%20that%20has%20few%20examples.
+# https://machinelearningmastery.com/undersampling-algorithms-for-imbalanced-classification/
+# rfUtilities tutorial https://evansmurphy.wixsite.com/evansspatial/random-forest-sdm
 ```
 
 
@@ -215,19 +221,14 @@ One hot encoding this
 ---
 ```{r}
 #no need to scale we are one hot encoding this
-onehot <- function(x){
-  x <- x<1
-  return(as.integer(x))
-}
 
-
-binarized.counts <- data.frame( lapply(combined.counts, function(x) as.character(as.integer(x>1))) )
-binarized.counts <- data.frame( t(binarized.counts), stringsAsFactors = TRUE )
+binarized.counts <- data.frame( lapply(combined.counts, function(x) as.character(as.integer(x>1))) ) #binarize
+binarized.counts <- data.frame( t(binarized.counts), stringsAsFactors = TRUE ) #convert the strings into factors
 binarized.counts$Engramcell <- as.factor(combined.meta$fos_status)
 
 # sample slit comes from library(caTools)
-
-split <- sample.split(binarized.counts$Engramcell, SplitRatio = 0.8)
+#Attempt 1 regular random forest with split
+split <- sample.split(binarized.counts$Engramcell, SplitRatio = 0.7)
 
 training_set = subset(binarized.counts, split == TRUE)
 test_set = subset(binarized.counts, split == FALSE)
@@ -236,11 +237,51 @@ classifier = randomForest(x = training_set[-1],
                           y = training_set$Engramcell,
                           ntree = 500)
 
+predictions <- as.data.frame(predict(classifier, test_set, type = "prob"))
+predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
+predictions$observed <- test_set$Engramcell
+colnames(predictions)[1:2] <- c("Fos_neg","Fos_pos")
+predictions$engramobserved <- ifelse(predictions$observed=="Fos+", 1, 0)
+
+predictions$inactiveobserved <- ifelse(predictions$observed=="Fos-", 1, 0)
+
+
+TP <- sum((predictions$predict == "Fos+")&(predictions$observed == "Fos+"))
+TN <- sum((predictions$predict == "Fos-")&(predictions$observed == "Fos-"))
+FP <- sum((predictions$predict == "Fos+")&(predictions$observed == "Fos-"))
+FN <- sum((predictions$predict == "Fos-")&(predictions$observed == "Fos+"))
+
+precision <- TP/(TP+FP)
+recall <- TP/(TP+FN)
+F1.score = 2 * (precision * recall) / (precision + recall)
+
+precision
+recall
+F1.score 
+
+#Plotting in ggplot https://www.statology.org/roc-curve-ggplot2/
+roc.engramcell <- roc(predictions$engramobserved, as.numeric(predictions$Fos_pos) )
+roc.inactive <- roc(predictions$inactiveobserved, as.numeric(predictions$Fos_neg) )
+
+plot(roc.engramcell, col = "red")
+lines(roc.inactive, col = "blue")
+```
+Overall this first approach is not working very well, the error is 
+
+```{r}
+#for plotting ROC
+#https://stackoverflow.com/questions/46124424/how-can-i-draw-a-roc-curve-for-a-randomforest-model-with-three-classes-in-r
+
 #this function may handle all the splitting
 # from rfUtilities package
 rf.cv <- rf.crossValidation(classifier, training_set[-1], 
                             normalize = FALSE, p=0.125, 
                             n=10, ntree=501)
+
+predictions <- as.data.frame(predict(rf.cv, test_set, type = "prob")) 
+predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
+predictions$observed <- test_set$Engramcell # adding in the actual label to determine TPs and FPs
+
 # plotting
 plot(rf.cv, type = "cv", main = "CV producers accuracy") 
 plot(rf.cv, type = "model", main = "Model producers accuracy")
@@ -258,10 +299,28 @@ test <- arrange(importancerank, desc(MeanDecreaseGini))
 
 cv.classifier <- rfcv(trainx = training_set[-1], trainy = training_set$Engramcell,
      cv.fold=5, scale="log", step=0.5)
+```
+
+
+We have yet another option as well.  Running intentional subsampling to balance the classes artificially.  Using the classbalance function from rfUtilities, documentation is [here](https://rdrr.io/github/jeffreyevans/rfUtilities/man/rf.classBalance.html).  Described in Evans & Cushman (2009).
+
+Evans, J. S., & Cushman, S. A. (2009). Gradient modeling of conifer species using random forests. Landscape ecology, 24(5), 673-683.
+
+Useful for reading: 
+Fawcett, T. (2006). An introduction to ROC analysis. Pattern recognition letters, 27(8), 861-874.
+
+```{r}
+#first we can try down sampling so i will jsut remove the cells from the A>C and A>A groups
+
+
+roc(predictions, )
+
+
+```
 
 
 
-
+```{r}
 #split the data
 #making the meta data,
 # https://rdrr.io/rforge/CrossValidate/man/balancedSplit.html
@@ -281,6 +340,16 @@ RF.fit = randomForest(x = dat[,c(1:n)], #reisudals from our models
 
 ```
 
+
+
+
+```{r}
+#habib et al., (2016)
+
+Habibcounts <- read.table('C:/Users/angus/Downloads/GSE85721_PROCESSED_data.sNuc-Seq_Data_RSEM_log_TPM.for_GEO.txt.gz')
+
+GSE85721_PROCESSED_data.sNuc-Seq_Data_RSEM_log_TPM.for_GEO.txt
+```
 
 
 ---Looking for Reactivation
