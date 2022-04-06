@@ -2,22 +2,21 @@
 
 # Load libraries
 library(tidyverse)
-library(GEOquery)
-library(AnnotationDbi)
+library(dplyr)
+#library(AnnotationDbi)
 library(randomForest)
 library(rfUtilities) # tutorial here: https://evansmurphy.wixsite.com/evansspatial/random-forest-sdm
-library(data.table)
-library(reshape2)
+#library(data.table)
+#library(reshape2)
 library(FactoMineR)
 library(factoextra)
-library(Rtsne)
-library(dplyr)
+#library(Rtsne)
 library(Seurat)
 library(stringr)
-library(patchwork)
-library(metap)
-library(cqn)
-library(GeoTcgaData)
+#library(patchwork)
+#library(metap)
+#library(cqn)
+#library(GeoTcgaData)
 library(caTools)
 library(pROC)
 
@@ -163,31 +162,49 @@ classifier = randomForest(x = training_set[-1],
                           y = training_set$Engramcell,
                           ntree = 500)
 
-predictions <- as.data.frame(predict(classifier, test_set, type = "prob"))
-predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
-predictions$observed <- test_set$Engramcell
-colnames(predictions)[1:2] <- c("Fos_neg","Fos_pos")
-predictions$engramobserved <- ifelse(predictions$observed=="Fos+", 1, 0)
+make.predictions.df <- function(classifier.object){
+  #generate predictions for making classifier summary
+  predictions <- as.data.frame(predict(classifier.object, test_set, type = "prob"))
+  predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
+  predictions$observed <- test_set$Engramcell
+  colnames(predictions)[1:2] <- c("Fos_neg","Fos_pos")
+  predictions$engramobserved <- ifelse(predictions$observed=="Fos+", 1, 0)
+  predictions$inactiveobserved <- ifelse(predictions$observed=="Fos-", 1, 0)
+  return(predictions)
+}
 
-predictions$inactiveobserved <- ifelse(predictions$observed=="Fos-", 1, 0)
+assessment <- function(predictions.df){
+  # returns a vector of assesments to be used to make dataframe summarizing classifiers performance
+  # can be used to make df of all calssifiers trained in a single run
+  TP <- sum((predictions.df$predict == "Fos+")&(predictions.df$observed == "Fos+"))
+  TN <- sum((predictions.df$predict == "Fos-")&(predictions.df$observed == "Fos-"))
+  FP <- sum((predictions.df$predict == "Fos+")&(predictions.df$observed == "Fos-"))
+  FN <- sum((predictions.df$predict == "Fos-")&(predictions.df$observed == "Fos+"))
+  
+  #precision and recall as well as sumamry stats F1
+  precision <- TP/(TP+FP)
+  recall <- TP/(TP+FN)
+  F1.score = 2 * (precision * recall) / (precision + recall)
+  
+  #getting auc
+  roc.engramcell <- roc(predictions.df$engramobserved, as.numeric(predictions.df$Fos_pos) )
+  AUC <- auc(roc.engramcell)
+  
+  return( c(F1.score, AUC, FPR, FNR, TP, TN, FP, FN) )
+}
 
-
-TP <- sum((predictions$predict == "Fos+")&(predictions$observed == "Fos+"))
-TN <- sum((predictions$predict == "Fos-")&(predictions$observed == "Fos-"))
-FP <- sum((predictions$predict == "Fos+")&(predictions$observed == "Fos-"))
-FN <- sum((predictions$predict == "Fos-")&(predictions$observed == "Fos+"))
-
-precision <- TP/(TP+FP)
-recall <- TP/(TP+FN)
-F1.score = 2 * (precision * recall) / (precision + recall)
-
-precision
-recall
-F1.score 
 
 #Plotting in ggplot https://www.statology.org/roc-curve-ggplot2/
-roc.engramcell <- roc(predictions$engramobserved, as.numeric(predictions$Fos_pos) )
-roc.inactive <- roc(predictions$inactiveobserved, as.numeric(predictions$Fos_neg) )
+predictions.rf <- as.data.frame(predict(classifier, test_set, type = "prob"))
+predictions.rf$predict <- names(predictions.rf)[1:2][apply(predictions.rf[,1:2], 1, which.max)] #1:2 for the number of classes
+predictions.rf$observed <- test_set$Engramcell
+colnames(predictions.rf)[1:2] <- c("Fos_neg","Fos_pos")
+predictions.rf$engramobserved <- ifelse(predictions.rf$observed=="Fos+", 1, 0)
+
+predictions.rf$inactiveobserved <- ifelse(predictions.rf$observed=="Fos-", 1, 0)
+
+roc.engramcell <- roc(predictions.rf$engramobserved, as.numeric(predictions.rf$Fos_pos) )
+roc.inactive <- roc(predictions.rf$inactiveobserved, as.numeric(predictions.rf$Fos_neg) )
 
 plot(roc.engramcell, col = "red")
 lines(roc.inactive, col = "blue")
