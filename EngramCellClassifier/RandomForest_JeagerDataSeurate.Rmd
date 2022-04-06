@@ -299,6 +299,7 @@ test <- arrange(importancerank, desc(MeanDecreaseGini))
 
 cv.classifier <- rfcv(trainx = training_set[-1], trainy = training_set$Engramcell,
      cv.fold=5, scale="log", step=0.5)
+
 ```
 
 
@@ -311,7 +312,7 @@ Fawcett, T. (2006). An introduction to ROC analysis. Pattern recognition letters
 
 ```{r}
 #first we can try down sampling so i will jsut remove the cells from the A>C and A>A groups
-
+# we should remov A>A cells that cluster with baseline
 
 roc(predictions, )
 
@@ -349,6 +350,11 @@ RF.fit = randomForest(x = dat[,c(1:n)], #reisudals from our models
 Habibcounts <- read.table('C:/Users/angus/Downloads/GSE85721_PROCESSED_data.sNuc-Seq_Data_RSEM_log_TPM.for_GEO.txt.gz')
 
 GSE85721_PROCESSED_data.sNuc-Seq_Data_RSEM_log_TPM.for_GEO.txt
+
+#Hrvatin et al., (2018)
+
+test <- read.csv('Hrvatin2018/GSE102827_merged_all_raw.csv.gz')
+
 ```
 
 
