@@ -275,7 +275,7 @@ Overall this first approach is not working very well, the error is
 #this function may handle all the splitting
 # from rfUtilities package
 rf.cv <- rf.crossValidation(classifier, training_set[-1], 
-                            normalize = FALSE, p=0.125, 
+                            normalize = FALSE, p=0.1, 
                             n=10, ntree=501)
 
 predictions <- as.data.frame(predict(rf.cv, test_set, type = "prob")) 

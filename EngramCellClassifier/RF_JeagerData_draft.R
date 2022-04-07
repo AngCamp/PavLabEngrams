@@ -13,6 +13,7 @@ library(factoextra)
 #library(Rtsne)
 library(Seurat)
 library(stringr)
+library(sampler)
 #library(patchwork)
 #library(metap)
 #library(cqn)
@@ -147,7 +148,7 @@ rownames(combined.meta) <- colnames(combined.counts)
 
 ## Training our first classifier
 
-binarized.counts <- data.frame( lapply(combined.counts, function(x) as.character(as.integer(x>1))) ) #binarize
+binarized.counts <- data.frame( lapply(combined.counts, function(x) as.character(as.integer(x>0))) ) #binarize
 binarized.counts <- data.frame( t(binarized.counts), stringsAsFactors = TRUE ) #convert the strings into factors
 binarized.counts$Engramcell <- as.factor(combined.meta$fos_status)
 
@@ -158,10 +159,12 @@ split <- sample.split(binarized.counts$Engramcell, SplitRatio = 0.7)
 training_set = subset(binarized.counts, split == TRUE)
 test_set = subset(binarized.counts, split == FALSE)
 
-classifier = randomForest(x = training_set[-1],
+onehot.classifier = randomForest(x = training_set[-1],
                           y = training_set$Engramcell,
                           ntree = 500)
 
+
+## These functions will save the assesments of the classifiers
 make.predictions.df <- function(classifier.object){
   #generate predictions for making classifier summary
   predictions <- as.data.frame(predict(classifier.object, test_set, type = "prob"))
@@ -200,12 +203,70 @@ assessment <- function(predictions.df){
 
 
 #testing the functions above
-onehotjeager.rf.predictions <- make.predictions.df(classifier)
+onehotjeager.rf.predictions <- make.predictions.df(onehot.classifier)
 
-rf.performances <- data.frame( JeagerOneHotEncoded = assessment(onehotjeager.rf.predictions) )
+rf.performances <- data.frame( onehot = assessment(onehotjeager.rf.predictions) )
 rownames(rf.performances) <- c("F1 Score", "AUC", "Precision", "Recall",
                                "FPR", "FNR", "True Positives", "False Negatives", 
                                "True Negatives", "False Positives")
+
+#TRYING WITH MORE THAN ONE READ AS THRESHOLD RATHER THAN 0
+#
+binarized.counts <- data.frame( lapply(combined.counts, function(x) as.character(as.integer(x>1))) ) #binarize
+binarized.counts <- data.frame( t(binarized.counts), stringsAsFactors = TRUE ) #convert the strings into factors
+binarized.counts$Engramcell <- as.factor(combined.meta$fos_status)
+
+# sample slit comes from library(caTools)
+#Attempt 1 regular random forest with split
+split <- sample.split(binarized.counts$Engramcell, SplitRatio = 0.7)
+
+training_set = subset(binarized.counts, split == TRUE)
+test_set = subset(binarized.counts, split == FALSE)
+
+morethanone.classifier = randomForest(x = training_set[-1],
+                          y = training_set$Engramcell,
+                          ntree = 500)
+
+morethanoneread.rf.predictions <- make.predictions.df(classifier)
+
+rf.performances$morethanoneread <- assessment(morethanoneread.rf.predictions)
+
+#CROSS VALIDATION
+# rfcv is from rfUtilities package
+rf.cv.classifier <- rf.crossValidation(onehot.classifier, training_set[-1], 
+                            normalize = FALSE, p=0.1, 
+                            n=10, ntree=501)
+
+
+onehotCV.rf.predictions <- make.predictions.df(rf.cv.classifier)
+
+rf.performances$morethanoneread <- assessment(morethanoneread.rf.predictions)
+
+
+###DOWN SAMPLING
+#uses sampler package https://www.rdocumentation.org/packages/sampler/versions/0.2.4
+
+combined.meta$idx <- c(1:750)
+df.temp <- ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], n=176, strata=treatment, over=0)
+
+
+downsamp.combinedcounts <- vbind()
+
+
+#RANK TRANSFORM
+
+
+#INCLUDING CELLS FROM HABIB ET AL. 2016
+
+
+
+#FORNITO FUETZ
+
+
+
+
+
+
 
 
 
