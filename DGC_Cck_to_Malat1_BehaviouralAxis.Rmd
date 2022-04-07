@@ -116,6 +116,10 @@ https://www.nature.com/articles/s41380-021-01124-y#Sec2
 Ca2+ imaging of CA2 shows odor specific topography
 Hassan, S. I., Bigler, S., & Siegelbaum, S. A. (2021). Coding of social odors in the hippocampal CA2 region as a substrate for social memory. bioRxiv.
 
+Jarzebowski, P., Hay, Y. A., Grewe, B. F., & Paulsen, O. (2022). Different encoding of reward location in dorsal and intermediate hippocampus. Current Biology.
+-publications of tetrode 
+-pdf of entire thesis is in SteinmetzLab fodler on PC
+
 
 FROM ICA OF THE ENGRAM DEGs
 
@@ -216,3 +220,12 @@ REASOURCES:
 Cell atlas for testing conservation of cell types 
 https://www.cell.com/cell-reports/pdf/S2211-1247(21)00117-0.pdf
 -likely insufficiently detailed view of dentate gyrus to know if the expression is conserved
+
+
+Schmitz, M. T., Sandoval, K., Chen, C. P., Mostajo-Radji, M. A., Seeley, W. W., Nowakowski, T. J., ... & Pollen, A. A. (2022). The development and evolution of inhibitory neurons in primate cerebrum. Nature, 1-7.
+-Evolution of various inhibitory cell types
+-200k+ cells used from multiuple species and multiple regions
+
+Krienen, F., Goldman, M., Mullally, C., Reed, N., McCarroll, S., & Berretta, S. (2021). A Cell Atlas of the Human Amygdala. Biological Psychiatry, 89(9), S11-S12.
+
+-human cell types of the amygdala with comparisson to mouse and marmoset may be useful

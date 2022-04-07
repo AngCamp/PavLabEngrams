@@ -173,25 +173,40 @@ make.predictions.df <- function(classifier.object){
   return(predictions)
 }
 
+
+
 assessment <- function(predictions.df){
-  # returns a vector of assesments to be used to make dataframe summarizing classifiers performance
+  # returns a vector of assessments to be used to make dataframe summarizing classifiers performance
   # can be used to make df of all calssifiers trained in a single run
   TP <- sum((predictions.df$predict == "Fos+")&(predictions.df$observed == "Fos+"))
   TN <- sum((predictions.df$predict == "Fos-")&(predictions.df$observed == "Fos-"))
-  FP <- sum((predictions.df$predict == "Fos+")&(predictions.df$observed == "Fos-"))
   FN <- sum((predictions.df$predict == "Fos-")&(predictions.df$observed == "Fos+"))
-  
+  FP <- sum((predictions.df$predict == "Fos+")&(predictions.df$observed == "Fos-"))
+
   #precision and recall as well as sumamry stats F1
   precision <- TP/(TP+FP)
   recall <- TP/(TP+FN)
   F1.score = 2 * (precision * recall) / (precision + recall)
+  FPR <- FP/(TN+FP)
+  FNR <- FN/(TP+FN)
   
   #getting auc
   roc.engramcell <- roc(predictions.df$engramobserved, as.numeric(predictions.df$Fos_pos) )
   AUC <- auc(roc.engramcell)
   
-  return( c(F1.score, AUC, FPR, FNR, TP, TN, FP, FN) )
+  return( c(F1.score, AUC, precision, recall, FPR, FNR,
+            TP, FN, TN, FP) )
 }
+
+
+#testing the functions above
+onehotjeager.rf.predictions <- make.predictions.df(classifier)
+
+rf.performances <- data.frame( JeagerOneHotEncoded = assessment(onehotjeager.rf.predictions) )
+rownames(rf.performances) <- c("F1 Score", "AUC", "Precision", "Recall",
+                               "FPR", "FNR", "True Positives", "False Negatives", 
+                               "True Negatives", "False Positives")
+
 
 
 #Plotting in ggplot https://www.statology.org/roc-curve-ggplot2/
