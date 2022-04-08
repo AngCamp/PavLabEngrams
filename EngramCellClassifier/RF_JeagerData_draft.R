@@ -20,6 +20,7 @@ library(sampler)
 #library(GeoTcgaData)
 library(caTools)
 library(pROC)
+library(CVXR)
 
 # Loading Lacar et al., (2016)
 lacar2016_meta <- read.csv('Lacar2016_GSE77067/SraRunTable.txt', header = TRUE)
@@ -247,10 +248,134 @@ rf.performances$morethanoneread <- assessment(morethanoneread.rf.predictions)
 #uses sampler package https://www.rdocumentation.org/packages/sampler/versions/0.2.4
 
 combined.meta$idx <- c(1:750)
-df.temp <- ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], n=176, strata=treatment, over=0)
+df.temp <- ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], n=175, strata=treatment, over=0)
+# due to representation we need to set this to n=175 to get 174 cells 
+combined.counts[,df.temp$idx]
+combined.counts[,combined.meta$fos_status=="Fos-"]
+
+#make the new count matrix and meta data
+downsamp.combinedcounts <- cbind(combined.counts[,df.temp$idx],
+                                 combined.counts[,combined.meta$fos_status=="Fos-"]
+                                 )
 
 
-downsamp.combinedcounts <- vbind()
+downsamp.meta <- rbind(df.temp,
+                       combined.meta[combined.meta$fos_status=="Fos-",]
+                       ) 
+
+
+binarized.counts <- data.frame( lapply(downsamp.combinedcounts, function(x) as.character(as.integer(x>0))) ) #binarize
+binarized.counts <- data.frame( t(binarized.counts), stringsAsFactors = TRUE ) #convert the strings into factors
+binarized.counts$Engramcell <- as.factor(downsamp.meta$fos_status)
+
+# sample slit comes from library(caTools)
+#Attempt 1 regular random forest with split
+split <- sample.split(binarized.counts$Engramcell, SplitRatio = 0.7)
+
+training_set = subset(binarized.counts, split == TRUE)
+test_set = subset(binarized.counts, split == FALSE)
+
+downsamp.onehot.classifier = randomForest(x = training_set[-1],
+                                 y = training_set$Engramcell,
+                                 ntree = 500)
+
+downsamp.onehot.predictions <- make.predictions.df(downsamp.onehot.classifier)
+
+rf.performances$Downsampled_onehot <- assessment(downsamp.onehot.predictions)
+
+
+roc.engramcell <- roc(downsamp.onehot.predictions$engramobserved, 
+                      as.numeric(downsamp.onehot.predictions$Fos_pos) )
+
+# try training on raw data as well and do resampling on both,
+# test on the hochgerner dataset as well
+
+#roc.inactive <- roc(predictions$inactiveobserved, as.numeric(predictions$Fos_neg) )
+
+jpeg("ROCBinarized.jpg", width = 350, height = "350")
+plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
+dev.off()
+#lines(roc.inactive, col = "blue")
+
+#RAW COUNTS DOWNSAMPLED
+df.temp <- ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], n=175, strata=treatment, over=0)
+# due to representation we need to set this to n=175 to get 174 cells 
+combined.counts[,df.temp$idx]
+combined.counts[,combined.meta$fos_status=="Fos-"]
+
+#make the new count matrix and meta data
+downsamp.combinedcounts <- cbind(combined.counts[,df.temp$idx],
+                                 combined.counts[,combined.meta$fos_status=="Fos-"]
+                                 )
+
+#
+downsamp.meta <- rbind(df.temp,
+                       combined.meta[combined.meta$fos_status=="Fos-",]
+                       ) 
+
+
+downsamp.raw.counts <- data.frame( t(downsamp.combinedcounts) ) #convert the strings into factors
+downsamp.raw.counts$Engramcell <- as.factor(downsamp.meta$fos_status)
+
+# sample slit comes from library(caTools)
+#Attempt 1 regular random forest with split
+split <- sample.split(downsamp.raw.counts$Engramcell, SplitRatio = 0.7)
+
+training_set = subset(downsamp.raw.counts, split == TRUE)
+test_set = subset(downsamp.raw.counts, split == FALSE)
+
+downsamp.raw.classifier = randomForest(x = training_set[-1],
+                                          y = training_set$Engramcell,
+                                          ntree = 500)
+
+
+downsamp.raw.predictions <- make.predictions.df(downsamp.raw.classifier)
+
+rf.performances$Downsampled_rawcounts <- assessment(downsamp.raw.predictions)
+
+#to make ROC plot
+roc.engramcell <- roc(downsamp.raw.predictions$engramobserved, 
+                      as.numeric(downsamp.onehot.predictions$Fos_pos) )
+
+
+#LOG NORMALIZED DOWNSAMPLED
+logplusone <- function(x){
+  return( log(x+1) )
+}
+
+
+downsamp.lognorm.counts <- apply(downsamp.combinedcounts, MARGIN = 1, 
+                                       FUN = logplusone
+                                       )
+downsamp.lognorm.counts  <- scale(t(downsamp.lognorm.counts )) #apply is transposing the data frame for some reason
+downsamp.lognorm.counts  <- data.frame( t(downsamp.lognorm.counts ) ) #convert the strings into factors
+downsamp.lognorm.counts$Engramcell <- as.factor(downsamp.meta$fos_status)
+
+#split data
+split <- sample.split(downsamp.lognorm.counts$Engramcell, SplitRatio = 0.7)
+
+training_set = subset(downsamp.lognorm.counts, split == TRUE)
+test_set = subset(downsamp.lognorm.counts, split == FALSE)
+
+#make classifier
+downsamp.lognorm.classifier = randomForest(x = training_set[-1],
+                                       y = training_set$Engramcell,
+                                       ntree = 500)
+
+
+downsamp.lognorm.predictions <- make.predictions.df(downsamp.lognorm.classifier)
+
+rf.performances$Downsampled_lognorm <- assessment(downsamp.lognorm.predictions)
+
+#Plotting ROC...
+roc.engramcell <- roc(downsamp.lognorm.predictions$engramobserved, 
+                      as.numeric(downsamp.lognorm.predictions$Fos_pos) )
+
+#roc.inactive <- roc(predictions$inactiveobserved, as.numeric(predictions$Fos_neg) )
+
+jpeg("ROC_lognorm.jpg", width = 350, height = "350")
+plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
+dev.off()
 
 
 #RANK TRANSFORM
@@ -260,9 +385,92 @@ downsamp.combinedcounts <- vbind()
 
 
 
-#FORNITO FUETZ
+#TRYING ON HOCHGERNER dataset
+testsetpath <- "/home/acampbell/test_datasets" # needs to be changed for pavlab server
+
+hochgerner5k_2018_counts <- read.table(paste(testsetpath,"/Hochgerner2018/GSE95315_10X_expression_data_v2.tab.gz", sep=""))
+
+colnames(hochgerner5k_2018_counts) <- hochgerner5k_2018_counts[1,]
+rownames(hochgerner5k_2018_counts) <- hochgerner5k_2018_counts[,1]
+
+hochgerner5k_2018_meta <- hochgerner5k_2018_counts %>% 
+  dplyr::slice(c(1:3)) %>%
+  t() %>%
+  data.frame %>%
+  dplyr::slice(-1) %>% 
+  dplyr::select(-cellid)
+
+hochgerner5k_2018_counts <- hochgerner5k_2018_counts %>% 
+  dplyr::select(-cellid) %>% 
+  dplyr::slice(-c(1:3))
+
+#get index locations of these gene's in the other datasets
+hoch5k.GC_Adult.p35.idx <- (hochgerner5k_2018_meta$age.days.=="35") | (hochgerner5k_2018_meta$age.days.=="35*")
+hoch5k.GC_Adult.p35.idx <- (hoch5k.GC_Adult.p35.idx) & (hochgerner5k_2018_meta$cluster_name == "Granule-mature")
+hoch5k.GC_Adult.p35.idx <- which(hoch5k.GC_Adult.p35.idx)
+
+#Binarize and transpose hochgerner adult p35 cells
+hoch5k.adultDGCs.onehot <- data.frame( lapply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], function(x) as.character(as.integer(x>0))) ) #binarize
+hoch5k.adultDGCs.onehot <- data.frame( t(hoch5k.adultDGCs.onehot), stringsAsFactors = TRUE ) #convert the strings into factors
+colnames(hoch5k.adultDGCs.onehot) <- rownames(hochgerner5k_2018_counts)
+#lastly we must filter for matching genes this will drop our list to 14296 genes
+hoch5k.adultDGCs.onehot <- hoch5k.adultDGCs.onehot[,colnames(hoch5k.adultDGCs.onehot) %in% rownames(downsamp.combinedcounts)]
 
 
+#restrict genes to testing dataset and binarizing
+binarized.counts.forHoch5k <- data.frame( lapply(downsamp.combinedcounts, function(x) as.character(as.integer(x>0))) ) #binarize
+binarized.counts.forHoch5k <- data.frame( t(binarized.counts.forHoch5k), stringsAsFactors = TRUE ) #convert the strings into factors
+colnames(binarized.counts.forHoch5k) <- rownames(downsamp.combinedcounts)[rownames(downsamp.combinedcounts) %in% colnames(hoch5k.adultDGCs.onehot)]
+#again we filter for matching genes in this line
+binarized.counts.forHoch5k <- binarized.counts.forHoch5k[,colnames(binarized.counts.forHoch5k) %in% colnames(hoch5k.adultDGCs.onehot)]
+binarized.counts.forHoch5k$Engramcell <- as.factor(downsamp.meta$fos_status)
+
+
+# train classifier on restricted genes
+split <- sample.split(binarized.counts.forHoch5k$Engramcell, SplitRatio = 0.7)
+
+training_set = subset(binarized.counts.forHoch5k, split == TRUE)
+test_set = subset(binarized.counts.forHoch5k, split == FALSE)
+
+downsamp.onehot.classifier.forHoch5k = randomForest(x = training_set[-1],
+                                          y = training_set$Engramcell,
+                                          ntree = 500)
+
+downsamp.onehot.predictions <- make.predictions.df(downsamp.onehot.classifier.forHoch5k)
+
+rf.performances$Onehot.downsampled.forHoch5k <- assessment(downsamp.onehot.predictions)
+rf.performances #notice that as the number of genes drops our classifiers performance drops quite badly as well
+
+#predict the Hoch adult dentate gyrus granule cells from p35
+# this gives the following error:  
+# Error in predict.randomForest:... variables in the training data missing in newdata
+# check this:  rownames(object$importance)
+#
+#Stack post on this topic:
+#  https://stackoverflow.com/questions/30097730/error-when-using-predict-on-a-randomforest-object-trained-with-carets-train
+
+rownames(downsamp.onehot.classifier.forHoch5k$importance)
+
+test <- predict(downsamp.onehot.classifier.forHoch5k,
+                hoch5k.adultDGCs.onehot,
+                type = "prob")
+# the rownames(downsamp.onehot.classifier.forHoch5k$importance) includes EngramCell as a feature 
+# > rownames(downsamp.onehot.classifier.forHoch5k$importance)[!(rownames(downsamp.onehot.classifier.forHoch5k$importance) %in% colnames(hoch5k.adultDGCs.onehot) )]  
+# [1] "Engramcell"
+
+predictions.Hoch5k <- as.data.frame(predict(downsamp.onehot.classifier.forHoch5k,
+                                            hoch5k.adultDGCs.onehot,
+                                            type = "response")
+                                    )
+
+predictions.Hoch5k$predict <- names(predictions.Hoch5k)[1:2][apply(predictions.Hoch5k[,1:2], 1, which.max)] #1:2 for the number of classes
+
+
+
+predictions$observed <- test_set$Engramcell
+colnames(predictions)[1:2] <- c("Fos_neg","Fos_pos")
+predictions$engramobserved <- ifelse(predictions$observed=="Fos+", 1, 0)
+predictions$inactiveobserved <- ifelse(predictions$observed=="Fos-", 1, 0)
 
 
 

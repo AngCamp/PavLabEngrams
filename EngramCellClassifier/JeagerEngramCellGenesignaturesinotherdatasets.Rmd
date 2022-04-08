@@ -116,6 +116,8 @@ hist(as.numeric(jeager2018_counts[jeager.fos.idx, fospos.1hr]),
      main = "1Hour post-NE Fos-AntiBd Positive nuclear Fos read distribution",
      xlab = "Fos Read Count") 
 ```
+
+
 ```{r}
 #making ggplot histpgram 
 fnHC <- as.numeric(jeager2018_counts[jeager.fos.idx, fosneg.HC ])

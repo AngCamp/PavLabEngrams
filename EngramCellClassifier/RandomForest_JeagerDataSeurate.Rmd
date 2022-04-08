@@ -8,7 +8,7 @@ output: html_document
 HOW TO GET THE REACTIVATION SIGNATURE:
 -this is not denoted in their metadata
 -you must cluster the cells together with the cells from the time course data,
--the cells in condition A>A whihc cluster with the newly active cells are taken to be recently active cells
+-the cells in condition A>A which cluster with the newly active cells are taken to be recently active cells
 -the late signature cells are reactivated cells
 
 ```{r}
