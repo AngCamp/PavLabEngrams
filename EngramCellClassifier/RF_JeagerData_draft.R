@@ -8,8 +8,8 @@ library(randomForest)
 library(rfUtilities) # tutorial here: https://evansmurphy.wixsite.com/evansspatial/random-forest-sdm
 #library(data.table)
 #library(reshape2)
-library(FactoMineR)
-library(factoextra)
+#library(FactoMineR)
+#library(factoextra)
 #library(Rtsne)
 library(Seurat)
 library(stringr)
@@ -20,7 +20,7 @@ library(sampler)
 #library(GeoTcgaData)
 library(caTools)
 library(pROC)
-library(CVXR)
+#library(CVXR)
 
 # Loading Lacar et al., (2016)
 lacar2016_meta <- read.csv('Lacar2016_GSE77067/SraRunTable.txt', header = TRUE)
@@ -68,8 +68,8 @@ shared.genes <- multi.intersect(list(rownames(jeager2018_counts),
                                      rownames(lacar2016_wc_counts),
                                      rownames(lacar2016_snHC_counts),
                                      rownames(lacar2016_snNE_counts)
-)
-)
+                                     )#closing list 
+                                )#closing multi.intersect
 
 jeager2018_counts$gene <- as.character(rownames(jeager2018_counts))
 jeager2018_counts <- jeager2018_counts[rownames(jeager2018_counts) %in% shared.genes,]
@@ -100,10 +100,9 @@ combined.counts <- jeager2018_counts[, c(DG.idx,862)] %>%
   left_join(lacar2016_wc_counts[, c(not.ptz[not.ptz <= 82],83)], by = 'gene' , all.y = TRUE) %>%
   left_join(lacar2016_snHC_counts, by = 'gene', all.y = TRUE) %>%
   left_join(lacar2016_snNE_counts, by = 'gene', all.y = TRUE) #%>% 
-#tibble::column_to_rownames(var="gene") %>% this throws an error, it would be good
-#dplyr::select(-gene)
 
-#this join is possibly inclduing the gene rows leading to mismathc number of cells later 
+
+#this join is possibly including the gene rows leading to mismatch number of cells later 
 
 #give the combined.counts genes for rownames and get rid of that column
 rownames(combined.counts) <- combined.counts$gene
@@ -166,11 +165,12 @@ onehot.classifier = randomForest(x = training_set[-1],
 
 
 ## These functions will save the assesments of the classifiers
-make.predictions.df <- function(classifier.object){
+#this need changing, specifically test_set should not be a global, it is begging for issues
+make.predictions.df <- function(classifier.object, test_df){
   #generate predictions for making classifier summary
-  predictions <- as.data.frame(predict(classifier.object, test_set, type = "prob"))
+  predictions <- as.data.frame(predict(classifier.object, test_df[,1:(length(test_df)-1)], type = "prob"))
   predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
-  predictions$observed <- test_set$Engramcell
+  predictions$observed <- test_df$Engramcell #this should be changed if you want to make this functions more modular
   colnames(predictions)[1:2] <- c("Fos_neg","Fos_pos")
   predictions$engramobserved <- ifelse(predictions$observed=="Fos+", 1, 0)
   predictions$inactiveobserved <- ifelse(predictions$observed=="Fos-", 1, 0)
@@ -204,35 +204,17 @@ assessment <- function(predictions.df){
 
 
 #testing the functions above
-onehotjeager.rf.predictions <- make.predictions.df(onehot.classifier)
+onehotjeager.rf.predictions <- make.predictions.df(onehot.classifier, test_set)
 
 rf.performances <- data.frame( onehot = assessment(onehotjeager.rf.predictions) )
 rownames(rf.performances) <- c("F1 Score", "AUC", "Precision", "Recall",
                                "FPR", "FNR", "True Positives", "False Negatives", 
                                "True Negatives", "False Positives")
 
-#TRYING WITH MORE THAN ONE READ AS THRESHOLD RATHER THAN 0
-#
-binarized.counts <- data.frame( lapply(combined.counts, function(x) as.character(as.integer(x>1))) ) #binarize
-binarized.counts <- data.frame( t(binarized.counts), stringsAsFactors = TRUE ) #convert the strings into factors
-binarized.counts$Engramcell <- as.factor(combined.meta$fos_status)
 
-# sample slit comes from library(caTools)
-#Attempt 1 regular random forest with split
-split <- sample.split(binarized.counts$Engramcell, SplitRatio = 0.7)
-
-training_set = subset(binarized.counts, split == TRUE)
-test_set = subset(binarized.counts, split == FALSE)
-
-morethanone.classifier = randomForest(x = training_set[-1],
-                          y = training_set$Engramcell,
-                          ntree = 500)
-
-morethanoneread.rf.predictions <- make.predictions.df(classifier)
-
-rf.performances$morethanoneread <- assessment(morethanoneread.rf.predictions)
 
 #CROSS VALIDATION
+# not sure what to do with the object the cross validation returns it can't really be used to predict anything
 # rfcv is from rfUtilities package
 rf.cv.classifier <- rf.crossValidation(onehot.classifier, training_set[-1], 
                             normalize = FALSE, p=0.1, 
@@ -250,8 +232,6 @@ rf.performances$morethanoneread <- assessment(morethanoneread.rf.predictions)
 combined.meta$idx <- c(1:750)
 df.temp <- ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], n=175, strata=treatment, over=0)
 # due to representation we need to set this to n=175 to get 174 cells 
-combined.counts[,df.temp$idx]
-combined.counts[,combined.meta$fos_status=="Fos-"]
 
 #make the new count matrix and meta data
 downsamp.combinedcounts <- cbind(combined.counts[,df.temp$idx],
@@ -275,14 +255,17 @@ split <- sample.split(binarized.counts$Engramcell, SplitRatio = 0.7)
 training_set = subset(binarized.counts, split == TRUE)
 test_set = subset(binarized.counts, split == FALSE)
 
-downsamp.onehot.classifier = randomForest(x = training_set[-1],
+downsamp.onehot.classifier = randomForest(x = training_set[,1:(length(training_set)-1)],
                                  y = training_set$Engramcell,
                                  ntree = 500)
 
-downsamp.onehot.predictions <- make.predictions.df(downsamp.onehot.classifier)
+downsamp.onehot.predictions <- make.predictions.df(downsamp.onehot.classifier, test_set)
 
 rf.performances$Downsampled_onehot <- assessment(downsamp.onehot.predictions)
-
+for(i in c(1:length(rf.performances$Downsampled_onehot)) ){
+  print(rownames(rf.performances)[i])
+  print(rf.performances$Downsampled_onehot[i])
+}
 
 roc.engramcell <- roc(downsamp.onehot.predictions$engramobserved, 
                       as.numeric(downsamp.onehot.predictions$Fos_pos) )
@@ -300,15 +283,15 @@ dev.off()
 #RAW COUNTS DOWNSAMPLED
 df.temp <- ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], n=175, strata=treatment, over=0)
 # due to representation we need to set this to n=175 to get 174 cells 
-combined.counts[,df.temp$idx]
-combined.counts[,combined.meta$fos_status=="Fos-"]
+# combined.counts[,df.temp$idx]
+# combined.counts[,combined.meta$fos_status=="Fos-"]
 
 #make the new count matrix and meta data
 downsamp.combinedcounts <- cbind(combined.counts[,df.temp$idx],
                                  combined.counts[,combined.meta$fos_status=="Fos-"]
                                  )
 
-#
+#creating meta data
 downsamp.meta <- rbind(df.temp,
                        combined.meta[combined.meta$fos_status=="Fos-",]
                        ) 
@@ -324,12 +307,12 @@ split <- sample.split(downsamp.raw.counts$Engramcell, SplitRatio = 0.7)
 training_set = subset(downsamp.raw.counts, split == TRUE)
 test_set = subset(downsamp.raw.counts, split == FALSE)
 
-downsamp.raw.classifier = randomForest(x = training_set[-1],
+downsamp.raw.classifier = randomForest(x = training_set[,1:(length(training_set)-1)],
                                           y = training_set$Engramcell,
                                           ntree = 500)
 
 
-downsamp.raw.predictions <- make.predictions.df(downsamp.raw.classifier)
+downsamp.raw.predictions <- make.predictions.df(downsamp.raw.classifier, test_set)
 
 rf.performances$Downsampled_rawcounts <- assessment(downsamp.raw.predictions)
 
@@ -358,12 +341,12 @@ training_set = subset(downsamp.lognorm.counts, split == TRUE)
 test_set = subset(downsamp.lognorm.counts, split == FALSE)
 
 #make classifier
-downsamp.lognorm.classifier = randomForest(x = training_set[-1],
+downsamp.lognorm.classifier = randomForest(x = training_set[,1:(length(training_set)-1)],
                                        y = training_set$Engramcell,
                                        ntree = 500)
 
 
-downsamp.lognorm.predictions <- make.predictions.df(downsamp.lognorm.classifier)
+downsamp.lognorm.predictions <- make.predictions.df(downsamp.lognorm.classifier, test_set)
 
 rf.performances$Downsampled_lognorm <- assessment(downsamp.lognorm.predictions)
 
@@ -404,67 +387,268 @@ hochgerner5k_2018_counts <- hochgerner5k_2018_counts %>%
   dplyr::select(-cellid) %>% 
   dplyr::slice(-c(1:3))
 
-#get index locations of these gene's in the other datasets
+#get index locations of adult p35 DGCs
 hoch5k.GC_Adult.p35.idx <- (hochgerner5k_2018_meta$age.days.=="35") | (hochgerner5k_2018_meta$age.days.=="35*")
 hoch5k.GC_Adult.p35.idx <- (hoch5k.GC_Adult.p35.idx) & (hochgerner5k_2018_meta$cluster_name == "Granule-mature")
 hoch5k.GC_Adult.p35.idx <- which(hoch5k.GC_Adult.p35.idx)
+
+#get shared genes
+shared.genes <- intersect(rownames(downsamp.combinedcounts),
+                          rownames(hochgerner5k_2018_counts)
+                          )
 
 #Binarize and transpose hochgerner adult p35 cells
 hoch5k.adultDGCs.onehot <- data.frame( lapply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], function(x) as.character(as.integer(x>0))) ) #binarize
 hoch5k.adultDGCs.onehot <- data.frame( t(hoch5k.adultDGCs.onehot), stringsAsFactors = TRUE ) #convert the strings into factors
 colnames(hoch5k.adultDGCs.onehot) <- rownames(hochgerner5k_2018_counts)
 #lastly we must filter for matching genes this will drop our list to 14296 genes
-hoch5k.adultDGCs.onehot <- hoch5k.adultDGCs.onehot[,colnames(hoch5k.adultDGCs.onehot) %in% rownames(downsamp.combinedcounts)]
+hoch5k.adultDGCs.onehot <- hoch5k.adultDGCs.onehot[,colnames(hoch5k.adultDGCs.onehot) %in% shared.genes]
 
 
 #restrict genes to testing dataset and binarizing
+# We are getting downsamp.combinedcoutns and downsamp.meta from the earlier DOWNSAMPLING section, we restrict to the same cells
 binarized.counts.forHoch5k <- data.frame( lapply(downsamp.combinedcounts, function(x) as.character(as.integer(x>0))) ) #binarize
 binarized.counts.forHoch5k <- data.frame( t(binarized.counts.forHoch5k), stringsAsFactors = TRUE ) #convert the strings into factors
 colnames(binarized.counts.forHoch5k) <- rownames(downsamp.combinedcounts)[rownames(downsamp.combinedcounts) %in% colnames(hoch5k.adultDGCs.onehot)]
+#I think the line above amy be unnecessary
 #again we filter for matching genes in this line
-binarized.counts.forHoch5k <- binarized.counts.forHoch5k[,colnames(binarized.counts.forHoch5k) %in% colnames(hoch5k.adultDGCs.onehot)]
-binarized.counts.forHoch5k$Engramcell <- as.factor(downsamp.meta$fos_status)
+binarized.counts.forHoch5k <- binarized.counts.forHoch5k[,colnames(binarized.counts.forHoch5k) %in% shared.genes]
+binarized.counts.forHoch5k$Engramcell <- downsamp.meta$fos_status
+
+binarized.counts.forHoch5k$data.use <- rep("train/validate",dim(binarized.counts.forHoch5k)[1]) 
+
+#merge the datasets here then try training this classifier
+hoch5k.adultDGCs.onehot$Engramcell <- rep("Fos+", dim(hoch5k.adultDGCs.onehot)[1])
+hoch5k.adultDGCs.onehot$data.use <- rep("test",dim(hoch5k.adultDGCs.onehot)[1]) 
+
+all.data <- bind_rows(binarized.counts.forHoch5k, hoch5k.adultDGCs.onehot)
+index <- 1:ncol(all.data)
+all.data[ , index] <- lapply(all.data[ , index], as.factor)
+
+binarized.counts.forHoch5k <- all.data[all.data$data.use == "train/validate", ]
+binarized.counts.forHoch5k <- binarized.counts.forHoch5k[,1:(length(binarized.counts.forHoch5k)-1)]
+hoch5k.adultDGCs.onehot <- all.data[all.data$data.use == "test", ]
+hoch5k.adultDGCs.onehot <- hoch5k.adultDGCs.onehot[1:(length(hoch5k.adultDGCs.onehot)-1)]
 
 
 # train classifier on restricted genes
 split <- sample.split(binarized.counts.forHoch5k$Engramcell, SplitRatio = 0.7)
 
 training_set = subset(binarized.counts.forHoch5k, split == TRUE)
-test_set = subset(binarized.counts.forHoch5k, split == FALSE)
+validation_set = subset(binarized.counts.forHoch5k, split == FALSE)
 
-downsamp.onehot.classifier.forHoch5k = randomForest(x = training_set[-1],
+#train
+downsamp.onehot.classifier.forHoch5k = randomForest(x = training_set[,1:(length(training_set)-1)],
                                           y = training_set$Engramcell,
                                           ntree = 500)
 
-downsamp.onehot.predictions <- make.predictions.df(downsamp.onehot.classifier.forHoch5k)
+importance.df <- data.frame(gene = as.character( rownames(downsamp.onehot.classifier.forHoch5k$importance) ),
+                         importance_score = as.numeric( downsamp.onehot.classifier.forHoch5k$importance ) ) %>%
+  arrange(desc(importance_score))
+  
+
+important.df <- sort(importance.df, decreasing = TRUE) # these gene's are wierd, I do not think this classifer is working well at all
+
+#validate and measure performance
+downsamp.onehot.predictions <- make.predictions.df(downsamp.onehot.classifier.forHoch5k, validation_set)
 
 rf.performances$Onehot.downsampled.forHoch5k <- assessment(downsamp.onehot.predictions)
 rf.performances #notice that as the number of genes drops our classifiers performance drops quite badly as well
 
-#predict the Hoch adult dentate gyrus granule cells from p35
-# this gives the following error:  
-# Error in predict.randomForest:... variables in the training data missing in newdata
-# check this:  rownames(object$importance)
-#
-#Stack post on this topic:
-#  https://stackoverflow.com/questions/30097730/error-when-using-predict-on-a-randomforest-object-trained-with-carets-train
+#classify new data
+predictions.Hoch5k <- make.predictions.df(downsamp.onehot.classifier.forHoch5k, hoch5k.adultDGCs.onehot)
 
-rownames(downsamp.onehot.classifier.forHoch5k$importance)
 
-test <- predict(downsamp.onehot.classifier.forHoch5k,
-                hoch5k.adultDGCs.onehot,
-                type = "prob")
-# the rownames(downsamp.onehot.classifier.forHoch5k$importance) includes EngramCell as a feature 
-# > rownames(downsamp.onehot.classifier.forHoch5k$importance)[!(rownames(downsamp.onehot.classifier.forHoch5k$importance) %in% colnames(hoch5k.adultDGCs.onehot) )]  
-# [1] "Engramcell"
+###  LORNORM FOR PREDICTING HOCHGERNER
+# mean center scale then log(x+1)
 
-predictions.Hoch5k <- as.data.frame(predict(downsamp.onehot.classifier.forHoch5k,
-                                            hoch5k.adultDGCs.onehot,
-                                            type = "response")
-                                    )
+logplusone <- function(x){
+  return( log(x+1) )
+}
 
-predictions.Hoch5k$predict <- names(predictions.Hoch5k)[1:2][apply(predictions.Hoch5k[,1:2], 1, which.max)] #1:2 for the number of classes
+#Binarize and transpose hochgerner adult p35 cells
+hoch5k.adultDGCs.lognorm <- apply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], MARGIN = 1, FUN = as.integer)
+hoch5k.adultDGCs.lognorm <- apply(hoch5k.adultDGCs.lognorm,
+                                  MARGIN = 1,
+                                  FUN = logplusone
+                                  )
+hoch5k.adultDGCs.lognorm  <- scale( t(hoch5k.adultDGCs.lognorm ) ) #apply is transposing the data frame for some reason
+hoch5k.adultDGCs.lognorm  <- as.data.frame(hoch5k.adultDGCs.lognorm )
+#lastly we must filter for matching genes this will drop our list to 14296 genes
 
+
+#doing lognormalization for the training data
+downsamp.lognorm.counts <- apply(downsamp.combinedcounts, 
+                                 MARGIN = 1, 
+                                 FUN = logplusone
+                                 )
+downsamp.lognorm.counts  <- scale( t(downsamp.lognorm.counts) ) #we need it transposed so that the scaling is done per gene not cell
+downsamp.lognorm.counts  <- data.frame( t(downsamp.lognorm.counts) ) 
+
+
+#restrict to matching genes
+shared.genes <- intersect( colnames(hoch5k.adultDGCs.lognorm), colnames(downsamp.lognorm.counts) )
+hoch5k.adultDGCs.lognorm  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs.lognorm) %in% shared.genes]
+downsamp.lognorm.counts <- downsamp.lognorm.counts[,rownames(downsamp.combinedcounts) %in% shared.genes]
+
+hoch5k.adultDGCs.lognorm$Engramcell <- rep("Fos+", dim(hoch5k.adultDGCs.lognorm)[1])
+hoch5k.adultDGCs.lognorm$data.use <- rep("test",dim(hoch5k.adultDGCs.lognorm)[1]) 
+
+downsamp.lognorm.counts$Engramcell <- as.factor( downsamp.meta$fos_status )
+downsamp.lognorm.counts$data.use <- rep("train/validate",dim(downsamp.lognorm.counts)[1]) 
+
+
+
+# all.data <- bind_rows(downsamp.lognorm.counts, hoch5k.adultDGCs.lognorm)
+# all.data$Engramcell <- as.factor(all.data$Engramcell)
+# all.data$data.use <- as.factor(all.data$data.use)
+
+downsamp.lognorm.counts <- all.data[all.data$data.use == "train/validate", ]
+downsamp.lognorm.counts <- binarized.counts.forHoch5k[,1:(length(downsamp.lognorm.counts)-1)]
+hoch5k.adultDGCs.lognorm <- all.data[all.data$data.use == "test", ]
+hoch5k.adultDGCs.lognorm <- hoch5k.adultDGCs.lognorm[,1:(length(hoch5k.adultDGCs.lognorm)-1)]
+
+
+#split data
+split <- sample.split(downsamp.lognorm.counts$Engramcell, SplitRatio = 0.7)
+
+training_set = subset(downsamp.lognorm.counts, split == TRUE)
+validation_set = subset(downsamp.lognorm.counts, split == FALSE)
+
+#make classifier
+downsamp.lognorm.classifier.forHoch5k = randomForest(x = training_set[,1:(length(training_set)-1)],
+                                           y = training_set$Engramcell,
+                                           ntree = 500)
+
+
+downsamp.lognorm.predictions.forHoch5k <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k, validation_set)
+
+rf.performances$lognorm_forHoch5k <- assessment(downsamp.lognorm.predictions.forHoch5k)
+
+#classify new data
+hoch5k.adultDGCs.lognorm$Engramcell <- as.factor(rep("Fos-", dim(hoch5k.adultDGCs.lognorm)[1]))
+hoch5k.adultDGCs.lognorm[is.na(hoch5k.adultDGCs.lognorm)] <- 0
+
+
+predictions.Hoch5k.lognorm <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k, hoch5k.adultDGCs.lognorm)
+
+importance.df <- data.frame(gene = as.character( rownames(downsamp.lognorm.classifier.forHoch5k$importance) ),
+                            importance_score = as.numeric( downsamp.lognorm.classifier.forHoch5k$importance ) ) %>%
+  arrange(desc(importance_score))
+
+
+
+predictions <- as.data.frame(predict(downsamp.lognorm.classifier.forHoch5k, 
+                                     hoch5k.adultDGCs.lognorm[, 1:(length(hoch5k.adultDGCs.lognorm)-1)], 
+                                     type = "prob"))
+
+
+
+### JEAGER DEGS ONLY LOGNORM 
+
+
+Jeager.DEGs <- read.csv("Jeager2018_GSE98679/jeager_DEGs_grouped.csv", header = T)
+multi.intersect
+
+colnames(Jeager.DEGs)[1] <- "GeneID"
+
+#restrict to matching genes
+shared.genes.jdegs <- multi.intersect( list(colnames(hoch5k.adultDGCs.lognorm), 
+                                colnames(downsamp.lognorm.counts),
+                                Jeager.DEGs$GeneID
+                                )# close list
+                           )#close multi.intersect
+
+hoch5k.adultDGCs.lognorm.jdegs  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs.lognorm) %in% shared.genes.jdegs]
+downsamp.lognorm.counts.jdegs <- downsamp.lognorm.counts[,colnames(downsamp.lognorm.counts) %in% shared.genes.jdegs]
+
+
+hoch5k.adultDGCs.lognorm.jdegs$Engramcell <- as.factor(rep("Fos+", dim(hoch5k.adultDGCs.lognorm.jdegs)[1]))
+#hoch5k.adultDGCs.lognorm.jdegs$data.use <- rep("test",dim(hoch5k.adultDGCs.lognorm.jdegs)[1]) 
+
+downsamp.lognorm.counts.jdegs$Engramcell <- as.factor( downsamp.meta$fos_status )
+#downsamp.lognorm.counts.jdegs$data.use <- rep("train/validate",dim(downsamp.lognorm.counts.jdegs)[1]) 
+
+
+
+#split data
+split <- sample.split(downsamp.lognorm.counts.jdegs$Engramcell, SplitRatio = 0.7)
+
+training_set = subset(downsamp.lognorm.counts.jdegs, split == TRUE)
+validation_set = subset(downsamp.lognorm.counts.jdegs, split == FALSE)
+
+#make classifier
+downsamp.lognorm.classifier.forHoch5k.jdegs = randomForest(x = training_set[,1:(length(training_set)-1)],
+                                                     y = training_set$Engramcell,
+                                                     ntree = 500)
+
+
+downsamp.lognorm.predictions.forHoch5k.jdegs <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k.jdegs,
+                                                              validation_set)
+
+rf.performances$lognorm_forHoch5k_jdegs <- assessment(downsamp.lognorm.predictions.forHoch5k.jdegs)
+
+#classify new data
+hoch5k.adultDGCs.lognorm.jdegs[is.na(hoch5k.adultDGCs.lognorm.jdegs)] <- 0
+
+
+predictions.Hoch5k.lognorm.jdegs <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k.jdegs, 
+                                                  hoch5k.adultDGCs.lognorm.jdegs)
+
+importance.df <- data.frame(gene = as.character( rownames(downsamp.lognorm.classifier.forHoch5k.jdegs$importance) ),
+                            importance_score = as.numeric( downsamp.lognorm.classifier.forHoch5k$importance ) ) %>%
+  arrange(desc(importance_score))
+
+
+
+
+
+
+
+
+
+
+###  TRY RELU ACTIVATION
+library(sigmoid)
+
+relu.downsamp.combinedcounts <-
+
+# We are getting downsamp.combinedcoutns and downsamp.meta from the earlier DOWNSAMPLING section, we restrict to the same cells
+ #binarize
+binarized.counts.forHoch5k <- data.frame( t(binarized.counts.forHoch5k), stringsAsFactors = TRUE ) #convert the strings into factors
+colnames(binarized.counts.forHoch5k) <- rownames(downsamp.combinedcounts)[rownames(downsamp.combinedcounts) %in% colnames(hoch5k.adultDGCs.onehot)]
+#again we filter for matching genes in this line
+binarized.counts.forHoch5k <- binarized.counts.forHoch5k[,colnames(binarized.counts.forHoch5k) %in% shared.genes]
+binarized.counts.forHoch5k$Engramcell <- downsamp.meta$fos_status
+
+
+
+###  Try Restricting genes to jeager DEGs
+
+
+
+
+
+
+
+
+# > table(predictions.Hoch5k$predict)
+# 
+# Fos- 
+#   1014 
+# > summary(predictions.Hoch5k$Inactive)
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.6120  0.7100  0.7360  0.7387  0.7680  0.8860 
+# > summary(predictions.Hoch5k$Engram)  
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.1140  0.2320  0.2640  0.2613  0.2900  0.3880 
+
+
+
+
+#VISUALIZE RANDOM FOREST
+# A guide here for all thign random forest related has this 
+# https://rpubs.com/markloessi/498787
 
 
 predictions$observed <- test_set$Engramcell
