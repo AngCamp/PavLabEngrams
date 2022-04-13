@@ -548,7 +548,6 @@ predictions <- as.data.frame(predict(downsamp.lognorm.classifier.forHoch5k,
 
 
 Jeager.DEGs <- read.csv("Jeager2018_GSE98679/jeager_DEGs_grouped.csv", header = T)
-multi.intersect
 
 colnames(Jeager.DEGs)[1] <- "GeneID"
 
@@ -560,6 +559,11 @@ shared.genes.jdegs <- multi.intersect( list(colnames(hoch5k.adultDGCs.lognorm),
                            )#close multi.intersect
 
 hoch5k.adultDGCs.lognorm.jdegs  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs.lognorm) %in% shared.genes.jdegs]
+hoch5k.adultDGCs.relu.jdegs <- data.frame(t(apply(hoch5k.adultDGCs.lognorm.jdegs, MARGIN =1, FUN = relu)))
+colnames(hoch5k.adultDGCs.relu.jdegs) <- colnames(hoch5k.adultDGCs.lognorm.jdegs)
+rownames(hoch5k.adultDGCs.relu.jdegs) <- rownames(hoch5k.adultDGCs.lognorm.jdegs)
+
+
 downsamp.lognorm.counts.jdegs <- downsamp.lognorm.counts[,colnames(downsamp.lognorm.counts) %in% shared.genes.jdegs]
 
 
@@ -595,11 +599,121 @@ hoch5k.adultDGCs.lognorm.jdegs[is.na(hoch5k.adultDGCs.lognorm.jdegs)] <- 0
 predictions.Hoch5k.lognorm.jdegs <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k.jdegs, 
                                                   hoch5k.adultDGCs.lognorm.jdegs)
 
-importance.df <- data.frame(gene = as.character( rownames(downsamp.lognorm.classifier.forHoch5k.jdegs$importance) ),
+importance.df.jdegs <- data.frame(gene = as.character( rownames(downsamp.lognorm.classifier.forHoch5k.jdegs$importance) ),
+                            importance_score = as.numeric( downsamp.lognorm.classifier.forHoch5k.jdegs$importance ) ) %>%
+  arrange(desc(importance_score))
+
+
+
+
+### RESAMPLING, LOGNORM TRANSFORM
+# so this particular method tries to ensure the classes are
+# of the same covarience matrix, this is an interesting approach just from that
+
+# normalization here: http://bioconductor.org/books/3.13/OSCA.basic/normalization.html
+# https://bioconductor.org/packages/3.13/data/experiment/html/scRNAseq.html
+# Consider renormalizing based on simulated resampling with proportions based on Ca2+ studies
+# 
+# Also this python method should be considered
+# https://imbalanced-learn.org/stable/references/generated/imblearn.ensemble.BalancedRandomForestClassifier.html
+# https://statistics.berkeley.edu/sites/default/files/tech-reports/666.pdf
+
+# mean center scale then log(x+1)
+
+logplusone <- function(x){
+  return( log(x+1) )
+}
+
+#Binarize and transpose hochgerner adult p35 cells
+hoch5k.adultDGCs.lognorm <- apply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], MARGIN = 1, FUN = as.integer)
+hoch5k.adultDGCs.lognorm <- apply(hoch5k.adultDGCs.lognorm,
+                                  MARGIN = 1,
+                                  FUN = logplusone
+)
+hoch5k.adultDGCs.lognorm  <- scale( t(hoch5k.adultDGCs.lognorm ) ) #apply is transposing the data frame for some reason
+hoch5k.adultDGCs.lognorm  <- as.data.frame(hoch5k.adultDGCs.lognorm )
+#lastly we must filter for matching genes this will drop our list to 14296 genes
+
+
+#doing lognormalization for the training data
+resamp.lognorm.counts <- apply(combined.counts, 
+                                 MARGIN = 1, 
+                                 FUN = logplusone
+                               )
+resamp.lognorm.counts  <- scale( t(resamp.lognorm.counts) ) #we need it transposed so that the scaling is done per gene not cell
+resamp.lognorm.counts  <- data.frame( t(resamp.lognorm.counts) ) 
+
+
+#restrict to matching genes
+shared.genes <- intersect( colnames(hoch5k.adultDGCs.lognorm), colnames(resamp.lognorm.counts) )
+hoch5k.adultDGCs.lognorm  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs.lognorm) %in% shared.genes]
+resamp.lognorm.counts <- resamp.lognorm.counts[,colnames(resamp.lognorm.counts) %in% shared.genes]
+
+hoch5k.adultDGCs.lognorm$Engramcell <- rep("Fos+", dim(hoch5k.adultDGCs.lognorm)[1])
+hoch5k.adultDGCs.lognorm$data.use <- rep("test",dim(hoch5k.adultDGCs.lognorm)[1]) 
+
+resamp.lognorm.counts$Engramcell <- as.factor( combined.meta$fos_status )
+resamp.lognorm.counts$data.use <- rep("train/validate", dim(resamp.lognorm.counts)[1]) 
+
+
+
+all.data <- bind_rows(resamp.lognorm.counts, hoch5k.adultDGCs.lognorm)
+all.data$Engramcell <- as.factor(all.data$Engramcell)
+all.data$data.use <- as.factor(all.data$data.use)
+
+resamp.lognorm.counts <- all.data[all.data$data.use == "train/validate", ]
+resamp.lognorm.counts <- resamp.lognorm.counts[,1:(length(resamp.lognorm.counts)-1)]
+hoch5k.adultDGCs.lognorm <- all.data[all.data$data.use == "test", ]
+hoch5k.adultDGCs.lognorm <- hoch5k.adultDGCs.lognorm[,1:(length(hoch5k.adultDGCs.lognorm)-1)]
+
+
+#split data
+split <- sample.split(resamp.lognorm.counts$Engramcell, SplitRatio = 0.7)
+
+training_set = subset(resamp.lognorm.counts, split == TRUE)
+validation_set = subset(resamp.lognorm.counts, split == FALSE)
+
+#train the calssifier
+# see rfUtilities documentation here https://cran.r-project.org/web/packages/rfUtilities/rfUtilities.pdf
+resampled.lognorm.classifier.forHoch5k <- rf.classBalance( ydata=training_set$Engramcell, 
+                                                           xdata=training_set[,1:(length(training_set)-1)],
+                                                           cbf = 1, #tests to see if there is an imbalance
+                                                           sf = 1 # Majority subsampling factor, sf=1 gives  perfect balanced 
+                                                           ) 
+
+# 
+downsamp.lognorm.predictions.forHoch5k.jdegs <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k.jdegs,
+                                                                    validation_set)
+
+rf.performances$lognorm_forHoch5k_jdegs <- assessment(downsamp.lognorm.predictions.forHoch5k.jdegs)
+
+
+predictions.Hoch5k.lognorm <- make.predictions.df(resampled.lognorm.classifier.forHoch5k, hoch5k.adultDGCs.lognorm)
+
+importance.df <- data.frame(gene = as.character( rownames(downsamp.lognorm.classifier.forHoch5k$importance) ),
                             importance_score = as.numeric( downsamp.lognorm.classifier.forHoch5k$importance ) ) %>%
   arrange(desc(importance_score))
 
 
+
+predictions <- as.data.frame(predict(downsamp.lognorm.classifier.forHoch5k, 
+                                     hoch5k.adultDGCs.lognorm[, 1:(length(hoch5k.adultDGCs.lognorm)-1)], 
+                                     type = "prob"))
+
+
+#Eventually when we make rpedictions...
+#predict(rf.resampled.classifier$model,  hochgernerdata, type = "prob")
+
+# model assessment from tutorial....
+# # Calculate Kappa for each balanced model in ensemble 
+# for(i in 1:length(cb$confusion) ) { 
+#   print( accuracy(cb$confusion[[i]][,1:2])[5] ) 
+# }
+# 
+# # Evaluate cumulative and mean confusion matrix
+# accuracy( round((cb$confusion[[1]] + cb$confusion[[2]] + cb$confusion[[3]]))[,1:2] )
+# accuracy( round((cb$confusion[[1]] + cb$confusion[[2]] + cb$confusion[[3]])/3)[,1:2])
+# 
 
 
 

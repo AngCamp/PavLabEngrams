@@ -666,6 +666,7 @@ behavior states regardless of whether the animal is immobile or engaging in acti
 such as, during exploration and mobility. Only about one to three per-cent of principal granule
 cells are active while the majority of the cells remain inactive, and the cells fire only one to two
 times in 10 seconds 1,2,6–8"
+-this rteference kinda sucks, its not peer reviewed
 https://assets.researchsquare.com/files/rs-123425/v1_covered.pdf?c=1631849209
 Lipponen, A., Sahramäki, J., Penttonen, M., & Nokia, M. (2020). Dentate gyrus single cell neuronal activity in rats during fixed interval task and subsequent sleep.
 
