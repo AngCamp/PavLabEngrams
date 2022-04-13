@@ -682,23 +682,33 @@ resampled.lognorm.classifier.forHoch5k <- rf.classBalance( ydata=training_set$En
                                                            ) 
 
 # 
-downsamp.lognorm.predictions.forHoch5k.jdegs <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k.jdegs,
+downsamp.lognorm.predictions.forHoch5k.jdegs <- make.predictions.df(resampled.lognorm.classifier.forHoch5k$model,
                                                                     validation_set)
 
-rf.performances$lognorm_forHoch5k_jdegs <- assessment(downsamp.lognorm.predictions.forHoch5k.jdegs)
+rf.performances$resampling <- assessment(downsamp.lognorm.predictions.forHoch5k.jdegs)
 
 
-predictions.Hoch5k.lognorm <- make.predictions.df(resampled.lognorm.classifier.forHoch5k, hoch5k.adultDGCs.lognorm)
+predictions.Hoch5k.lognorm <- predict(resampled.lognorm.classifier.forHoch5k$model,
+                                      newdata = hoch5k.adultDGCs.lognorm,
+                                      type = "prob")
 
-importance.df <- data.frame(gene = as.character( rownames(downsamp.lognorm.classifier.forHoch5k$importance) ),
-                            importance_score = as.numeric( downsamp.lognorm.classifier.forHoch5k$importance ) ) %>%
+predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] 
+
+
+resampled.importance.df <- data.frame(gene = as.character( rownames(resampled.lognorm.classifier.forHoch5k$model$importance) ),
+                            importance_score = as.numeric( resampled.lognorm.classifier.forHoch5k$model$importance ) ) %>%
   arrange(desc(importance_score))
 
 
-
-predictions <- as.data.frame(predict(downsamp.lognorm.classifier.forHoch5k, 
+hoch5k.adultDGCs.lognorm[is.na(hoch5k.adultDGCs.lognorm)] <- 0
+predictions <- as.data.frame(predict(resampled.lognorm.classifier.forHoch5k$model, 
                                      hoch5k.adultDGCs.lognorm[, 1:(length(hoch5k.adultDGCs.lognorm)-1)], 
-                                     type = "prob"))
+                                     type = "prob")
+                             )
+
+
+downsamp.lognorm.predictions.forHoch5k.jdegs <- make.predictions.df(resampled.lognorm.classifier.forHoch5k$model,
+                                                                    hoch5k.adultDGCs.lognorm[, 1:(length(hoch5k.adultDGCs.lognorm)-1)])
 
 
 #Eventually when we make rpedictions...
