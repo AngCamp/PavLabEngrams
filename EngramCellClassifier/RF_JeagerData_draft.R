@@ -525,12 +525,16 @@ downsamp.lognorm.predictions.forHoch5k <- make.predictions.df(downsamp.lognorm.c
 
 rf.performances$lognorm_forHoch5k <- assessment(downsamp.lognorm.predictions.forHoch5k)
 
+df <- data.frame(Metrics = rf.performances$lognorm_forHoch5k)
+rownames(df) <- rownames(rf.performances)
+
 #classify new data
 hoch5k.adultDGCs.lognorm$Engramcell <- as.factor(rep("Fos-", dim(hoch5k.adultDGCs.lognorm)[1]))
 hoch5k.adultDGCs.lognorm[is.na(hoch5k.adultDGCs.lognorm)] <- 0
 
 
-predictions.Hoch5k.lognorm <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k, hoch5k.adultDGCs.lognorm)
+predictions.Hoch5k.lognorm <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k, 
+                                                  hoch5k.adultDGCs.lognorm)
 
 importance.df <- data.frame(gene = as.character( rownames(downsamp.lognorm.classifier.forHoch5k$importance) ),
                             importance_score = as.numeric( downsamp.lognorm.classifier.forHoch5k$importance ) ) %>%
@@ -541,6 +545,20 @@ importance.df <- data.frame(gene = as.character( rownames(downsamp.lognorm.class
 predictions <- as.data.frame(predict(downsamp.lognorm.classifier.forHoch5k, 
                                      hoch5k.adultDGCs.lognorm[, 1:(length(hoch5k.adultDGCs.lognorm)-1)], 
                                      type = "prob"))
+
+levels(predictions.Hoch5k.lognorm$engramobserved) <- c(0,1)
+#Plotting ROC...
+roc.engramcell <- roc(downsamp.lognorm.predictions.forHoch5k$engramobserved, 
+                      as.numeric(downsamp.lognorm.predictions.forHoch5k$Fos_pos) )
+# there is an error here the predictions.Hoch5k.lognorm$engramobserved is showing only as 1 which cannot be true
+# seomthing is wrong with the code don't know where this comes from
+
+#roc.inactive <- roc(predictions$inactiveobserved, as.numeric(predictions$Fos_neg) )
+
+jpeg("ROC_lognorm.jpg", width = 350, height = "350")
+plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
+dev.off()
+
 
 
 
