@@ -144,6 +144,208 @@ combined.meta <- data.frame(experiment.label,
 #this throws an error mismathc number of rows and genes most likely
 rownames(combined.meta) <- colnames(combined.counts)
 
+#HOCHGERNER DATA
+testsetpath <- "/home/acampbell/test_datasets" # needs to be changed for pavlab server
+
+hochgerner5k_2018_counts <- read.table(paste(testsetpath,"/Hochgerner2018/GSE95315_10X_expression_data_v2.tab.gz", sep=""))
+
+colnames(hochgerner5k_2018_counts) <- hochgerner5k_2018_counts[1,]
+rownames(hochgerner5k_2018_counts) <- hochgerner5k_2018_counts[,1]
+
+hochgerner5k_2018_meta <- hochgerner5k_2018_counts %>% 
+  dplyr::slice(c(1:3)) %>%
+  t() %>%
+  data.frame %>%
+  dplyr::slice(-1) %>% 
+  dplyr::select(-cellid)
+
+hochgerner5k_2018_counts <- hochgerner5k_2018_counts %>% 
+  dplyr::select(-cellid) %>% 
+  dplyr::slice(-c(1:3))
+
+#get index locations of adult p35 DGCs
+hoch5k.GC_Adult.p35.idx <- (hochgerner5k_2018_meta$age.days.=="35") | (hochgerner5k_2018_meta$age.days.=="35*")
+hoch5k.GC_Adult.p35.idx <- (hoch5k.GC_Adult.p35.idx) & (hochgerner5k_2018_meta$cluster_name == "Granule-mature")
+hoch5k.GC_Adult.p35.idx <- which(hoch5k.GC_Adult.p35.idx)
+
+
+
+
+
+## These functions will save the assesments of the classifiers
+#this need changing, specifically test_set should not be a global, it is begging for issues
+make.predictions.df <- function(classifier.object, test_df){
+  #generate predictions for making classifier summary
+  predictions <- as.data.frame(predict(classifier.object, test_df[,1:(length(test_df)-1)], type = "prob"))
+  predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
+  predictions$observed <- test_df$Engramcell #this should be changed if you want to make this functions more modular
+  colnames(predictions)[1:2] <- c("Fos_neg","Fos_pos")
+  predictions$engramobserved <- ifelse(predictions$observed=="Fos+", 1, 0)
+  predictions$inactiveobserved <- ifelse(predictions$observed=="Fos-", 1, 0)
+  return(predictions)
+}
+
+
+
+
+
+assessment <- function(predictions.df){
+  # returns a vector of assessments to be used to make dataframe summarizing classifiers performance
+  # can be used to make df of all calssifiers trained in a single run
+  TP <- sum((predictions.df$predict == "Fos+")&(predictions.df$observed == "Fos+"))
+  TN <- sum((predictions.df$predict == "Fos-")&(predictions.df$observed == "Fos-"))
+  FN <- sum((predictions.df$predict == "Fos-")&(predictions.df$observed == "Fos+"))
+  FP <- sum((predictions.df$predict == "Fos+")&(predictions.df$observed == "Fos-"))
+  
+  #precision and recall as well as sumamry stats F1
+  precision <- TP/(TP+FP)
+  recall <- TP/(TP+FN)
+  F1.score = 2 * (precision * recall) / (precision + recall)
+  FPR <- FP/(TN+FP)
+  FNR <- FN/(TP+FN)
+  
+  #getting auc
+  roc.engramcell <- roc(predictions.df$engramobserved, as.numeric(predictions.df$Fos_pos) )
+  AUC <- auc(roc.engramcell)
+  
+  return( c(F1.score, AUC, precision, recall, FPR, FNR,
+            TP, FN, TN, FP) )
+}
+
+
+
+### DOWNSAMPLING AND LORNORM FOR PREDICTING HOCHGERNER
+
+#downsampling from the count data
+combined.meta$idx <- c(1:750)
+df.temp <- ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], n=175, strata=treatment, over=0)
+# due to representation we need to set this to n=175 to get 174 cells 
+
+#make the new count matrix and meta data
+downsamp.combinedcounts <- cbind(combined.counts[,df.temp$idx],
+                                 combined.counts[,combined.meta$fos_status=="Fos-"]
+)
+
+
+downsamp.meta <- rbind(df.temp,
+                       combined.meta[combined.meta$fos_status=="Fos-",]
+) 
+
+# mean center scale then log(x+1) for normalizing
+logplusone <- function(x){
+  return( log(x+1) )
+}
+
+#Binarize and transpose hochgerner adult p35 cells
+hoch5k.adultDGCs.lognorm <- apply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], MARGIN = 1, FUN = as.integer)
+hoch5k.adultDGCs.lognorm <- apply(hoch5k.adultDGCs.lognorm,
+                                  MARGIN = 1,
+                                  FUN = logplusone
+)
+hoch5k.adultDGCs.lognorm  <- scale( t(hoch5k.adultDGCs.lognorm ) ) #apply is transposing the data frame for some reason
+hoch5k.adultDGCs.lognorm  <- as.data.frame(hoch5k.adultDGCs.lognorm )
+#lastly we must filter for matching genes this will drop our list to 14296 genes
+
+
+#doing lognormalization for the training data
+downsamp.lognorm.counts <- apply(downsamp.combinedcounts, 
+                                 MARGIN = 1, 
+                                 FUN = logplusone
+)
+downsamp.lognorm.counts  <- scale( t(downsamp.lognorm.counts) ) #we need it transposed so that the scaling is done per gene not cell
+downsamp.lognorm.counts  <- data.frame( t(downsamp.lognorm.counts) ) 
+
+
+#restrict to matching genes
+shared.genes <- intersect( colnames(hoch5k.adultDGCs.lognorm), colnames(downsamp.lognorm.counts) )
+hoch5k.adultDGCs.lognorm  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs.lognorm) %in% shared.genes]
+downsamp.lognorm.counts <- downsamp.lognorm.counts[,rownames(downsamp.combinedcounts) %in% shared.genes]
+
+hoch5k.adultDGCs.lognorm$Engramcell <- rep("Fos+", dim(hoch5k.adultDGCs.lognorm)[1])
+#hoch5k.adultDGCs.lognorm$data.use <- rep("test",dim(hoch5k.adultDGCs.lognorm)[1]) 
+
+downsamp.lognorm.counts$Engramcell <- as.factor( downsamp.meta$fos_status )
+#downsamp.lognorm.counts$data.use <- rep("train/validate",dim(downsamp.lognorm.counts)[1]) 
+
+
+
+# all.data <- bind_rows(downsamp.lognorm.counts, hoch5k.adultDGCs.lognorm)
+# all.data$Engramcell <- as.factor(all.data$Engramcell)
+# all.data$data.use <- as.factor(all.data$data.use)
+
+#downsamp.lognorm.counts <- all.data[all.data$data.use == "train/validate", ]
+#downsamp.lognorm.counts <- downsamp.lognorm.counts[,1:(length(downsamp.lognorm.counts)-1)]
+#hoch5k.adultDGCs.lognorm <- all.data[all.data$data.use == "test", ]
+#hoch5k.adultDGCs.lognorm <- hoch5k.adultDGCs.lognorm[,1:(length(hoch5k.adultDGCs.lognorm)-1)]
+
+
+#split data
+split <- sample.split(downsamp.lognorm.counts$Engramcell, SplitRatio = 0.7)
+
+training_set = subset(downsamp.lognorm.counts, split == TRUE)
+validation_set = subset(downsamp.lognorm.counts, split == FALSE)
+
+#make classifier
+downsamp.lognorm.classifier.forHoch5k = randomForest(x = training_set[,1:(length(training_set)-1)],
+                                                     y = training_set$Engramcell,
+                                                     ntree = 500)
+
+
+downsamp.lognorm.predictions.forHoch5k <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k, validation_set)
+
+rf.performances <- data.frame( lognorm_forHoch5k = assessment(downsamp.lognorm.predictions.forHoch5k) )
+rownames(rf.performances) <- c("F1 Score", "AUC", "Precision", "Recall",
+                               "FPR", "FNR", "True Positives", "False Negatives", 
+                               "True Negatives", "False Positives")
+
+df <- data.frame(Metrics = rf.performances$lognorm_forHoch5k)
+rownames(df) <- rownames(rf.performances)
+
+#classify new data
+hoch5k.adultDGCs.lognorm$Engramcell <- as.factor(rep("Fos-", dim(hoch5k.adultDGCs.lognorm)[1]))
+hoch5k.adultDGCs.lognorm[is.na(hoch5k.adultDGCs.lognorm)] <- 0
+
+
+predictions.Hoch5k.lognorm <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k, 
+                                                  hoch5k.adultDGCs.lognorm)
+
+importance.df <- data.frame(gene = as.character( rownames(downsamp.lognorm.classifier.forHoch5k$importance) ),
+                            importance_score = as.numeric( downsamp.lognorm.classifier.forHoch5k$importance ) ) %>%
+  arrange(desc(importance_score))
+
+
+
+# predictions <- as.data.frame(predict(downsamp.lognorm.classifier.forHoch5k, 
+#                                      hoch5k.adultDGCs.lognorm[, 1:(length(hoch5k.adultDGCs.lognorm)-1)], 
+#                                      type = "prob"))
+
+levels(predictions.Hoch5k.lognorm$engramobserved) <- c(0,1)
+#Plotting ROC...
+roc.engramcell <- roc(downsamp.lognorm.predictions.forHoch5k$engramobserved, 
+                      as.numeric(downsamp.lognorm.predictions.forHoch5k$Fos_pos) )
+# there is an error here the predictions.Hoch5k.lognorm$engramobserved is showing only as 1 which cannot be true
+# seomthing is wrong with the code don't know where this comes from
+
+#roc.inactive <- roc(predictions$inactiveobserved, as.numeric(predictions$Fos_neg) )
+
+jpeg("ROC_lognorm.jpg", width = 350, height = "350")
+plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
+dev.off()
+
+
+#looking at penk expression in these cells
+putative.engramcells.idx <- which(predictions.Hoch5k.lognorm$predict == "Fos+")
+penkcckmalat1.idx <- which(colnames(hoch5k.adultDGCs.lognorm) == c("Cck","Penk", "Malat1"))
+                           
+ df <- hoch5k.adultDGCs.lognorm[putative.engramcells.idx, penkcckmalat1.idx]
+sum(>0)
+
+
+
+
+##### A MILLION CLASSIFIERS TRIED AND FAILED
+
+
 
 
 ## Training our first classifier
@@ -163,44 +365,6 @@ onehot.classifier = randomForest(x = training_set[-1],
                           y = training_set$Engramcell,
                           ntree = 500)
 
-
-## These functions will save the assesments of the classifiers
-#this need changing, specifically test_set should not be a global, it is begging for issues
-make.predictions.df <- function(classifier.object, test_df){
-  #generate predictions for making classifier summary
-  predictions <- as.data.frame(predict(classifier.object, test_df[,1:(length(test_df)-1)], type = "prob"))
-  predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
-  predictions$observed <- test_df$Engramcell #this should be changed if you want to make this functions more modular
-  colnames(predictions)[1:2] <- c("Fos_neg","Fos_pos")
-  predictions$engramobserved <- ifelse(predictions$observed=="Fos+", 1, 0)
-  predictions$inactiveobserved <- ifelse(predictions$observed=="Fos-", 1, 0)
-  return(predictions)
-}
-
-
-
-assessment <- function(predictions.df){
-  # returns a vector of assessments to be used to make dataframe summarizing classifiers performance
-  # can be used to make df of all calssifiers trained in a single run
-  TP <- sum((predictions.df$predict == "Fos+")&(predictions.df$observed == "Fos+"))
-  TN <- sum((predictions.df$predict == "Fos-")&(predictions.df$observed == "Fos-"))
-  FN <- sum((predictions.df$predict == "Fos-")&(predictions.df$observed == "Fos+"))
-  FP <- sum((predictions.df$predict == "Fos+")&(predictions.df$observed == "Fos-"))
-
-  #precision and recall as well as sumamry stats F1
-  precision <- TP/(TP+FP)
-  recall <- TP/(TP+FN)
-  F1.score = 2 * (precision * recall) / (precision + recall)
-  FPR <- FP/(TN+FP)
-  FNR <- FN/(TP+FN)
-  
-  #getting auc
-  roc.engramcell <- roc(predictions.df$engramobserved, as.numeric(predictions.df$Fos_pos) )
-  AUC <- auc(roc.engramcell)
-  
-  return( c(F1.score, AUC, precision, recall, FPR, FNR,
-            TP, FN, TN, FP) )
-}
 
 
 #testing the functions above
@@ -321,7 +485,27 @@ roc.engramcell <- roc(downsamp.raw.predictions$engramobserved,
                       as.numeric(downsamp.onehot.predictions$Fos_pos) )
 
 
+
+
 #LOG NORMALIZED DOWNSAMPLED
+
+combined.meta$idx <- c(1:750)
+df.temp <- ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], n=175, strata=treatment, over=0)
+# due to representation we need to set this to n=175 to get 174 cells 
+
+#make the new count matrix and meta data
+downsamp.combinedcounts <- cbind(combined.counts[,df.temp$idx],
+                                 combined.counts[,combined.meta$fos_status=="Fos-"]
+                                 )
+
+
+downsamp.meta <- rbind(df.temp,
+                       combined.meta[combined.meta$fos_status=="Fos-",]
+                       ) 
+
+
+
+
 logplusone <- function(x){
   return( log(x+1) )
 }
@@ -359,6 +543,11 @@ roc.engramcell <- roc(downsamp.lognorm.predictions$engramobserved,
 jpeg("ROC_lognorm.jpg", width = 350, height = "350")
 plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
 dev.off()
+
+#With lower thresholds
+downsamp.lognorm.predictions$prob
+
+
 
 
 #RANK TRANSFORM
@@ -458,106 +647,6 @@ rf.performances #notice that as the number of genes drops our classifiers perfor
 #classify new data
 predictions.Hoch5k <- make.predictions.df(downsamp.onehot.classifier.forHoch5k, hoch5k.adultDGCs.onehot)
 
-
-###  LORNORM FOR PREDICTING HOCHGERNER
-# mean center scale then log(x+1)
-
-logplusone <- function(x){
-  return( log(x+1) )
-}
-
-#Binarize and transpose hochgerner adult p35 cells
-hoch5k.adultDGCs.lognorm <- apply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], MARGIN = 1, FUN = as.integer)
-hoch5k.adultDGCs.lognorm <- apply(hoch5k.adultDGCs.lognorm,
-                                  MARGIN = 1,
-                                  FUN = logplusone
-                                  )
-hoch5k.adultDGCs.lognorm  <- scale( t(hoch5k.adultDGCs.lognorm ) ) #apply is transposing the data frame for some reason
-hoch5k.adultDGCs.lognorm  <- as.data.frame(hoch5k.adultDGCs.lognorm )
-#lastly we must filter for matching genes this will drop our list to 14296 genes
-
-
-#doing lognormalization for the training data
-downsamp.lognorm.counts <- apply(downsamp.combinedcounts, 
-                                 MARGIN = 1, 
-                                 FUN = logplusone
-                                 )
-downsamp.lognorm.counts  <- scale( t(downsamp.lognorm.counts) ) #we need it transposed so that the scaling is done per gene not cell
-downsamp.lognorm.counts  <- data.frame( t(downsamp.lognorm.counts) ) 
-
-
-#restrict to matching genes
-shared.genes <- intersect( colnames(hoch5k.adultDGCs.lognorm), colnames(downsamp.lognorm.counts) )
-hoch5k.adultDGCs.lognorm  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs.lognorm) %in% shared.genes]
-downsamp.lognorm.counts <- downsamp.lognorm.counts[,rownames(downsamp.combinedcounts) %in% shared.genes]
-
-hoch5k.adultDGCs.lognorm$Engramcell <- rep("Fos+", dim(hoch5k.adultDGCs.lognorm)[1])
-hoch5k.adultDGCs.lognorm$data.use <- rep("test",dim(hoch5k.adultDGCs.lognorm)[1]) 
-
-downsamp.lognorm.counts$Engramcell <- as.factor( downsamp.meta$fos_status )
-downsamp.lognorm.counts$data.use <- rep("train/validate",dim(downsamp.lognorm.counts)[1]) 
-
-
-
-# all.data <- bind_rows(downsamp.lognorm.counts, hoch5k.adultDGCs.lognorm)
-# all.data$Engramcell <- as.factor(all.data$Engramcell)
-# all.data$data.use <- as.factor(all.data$data.use)
-
-downsamp.lognorm.counts <- all.data[all.data$data.use == "train/validate", ]
-downsamp.lognorm.counts <- binarized.counts.forHoch5k[,1:(length(downsamp.lognorm.counts)-1)]
-hoch5k.adultDGCs.lognorm <- all.data[all.data$data.use == "test", ]
-hoch5k.adultDGCs.lognorm <- hoch5k.adultDGCs.lognorm[,1:(length(hoch5k.adultDGCs.lognorm)-1)]
-
-
-#split data
-split <- sample.split(downsamp.lognorm.counts$Engramcell, SplitRatio = 0.7)
-
-training_set = subset(downsamp.lognorm.counts, split == TRUE)
-validation_set = subset(downsamp.lognorm.counts, split == FALSE)
-
-#make classifier
-downsamp.lognorm.classifier.forHoch5k = randomForest(x = training_set[,1:(length(training_set)-1)],
-                                           y = training_set$Engramcell,
-                                           ntree = 500)
-
-
-downsamp.lognorm.predictions.forHoch5k <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k, validation_set)
-
-rf.performances$lognorm_forHoch5k <- assessment(downsamp.lognorm.predictions.forHoch5k)
-
-df <- data.frame(Metrics = rf.performances$lognorm_forHoch5k)
-rownames(df) <- rownames(rf.performances)
-
-#classify new data
-hoch5k.adultDGCs.lognorm$Engramcell <- as.factor(rep("Fos-", dim(hoch5k.adultDGCs.lognorm)[1]))
-hoch5k.adultDGCs.lognorm[is.na(hoch5k.adultDGCs.lognorm)] <- 0
-
-
-predictions.Hoch5k.lognorm <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k, 
-                                                  hoch5k.adultDGCs.lognorm)
-
-importance.df <- data.frame(gene = as.character( rownames(downsamp.lognorm.classifier.forHoch5k$importance) ),
-                            importance_score = as.numeric( downsamp.lognorm.classifier.forHoch5k$importance ) ) %>%
-  arrange(desc(importance_score))
-
-
-
-predictions <- as.data.frame(predict(downsamp.lognorm.classifier.forHoch5k, 
-                                     hoch5k.adultDGCs.lognorm[, 1:(length(hoch5k.adultDGCs.lognorm)-1)], 
-                                     type = "prob"))
-
-levels(predictions.Hoch5k.lognorm$engramobserved) <- c(0,1)
-#Plotting ROC...
-roc.engramcell <- roc(downsamp.lognorm.predictions.forHoch5k$engramobserved, 
-                      as.numeric(downsamp.lognorm.predictions.forHoch5k$Fos_pos) )
-# there is an error here the predictions.Hoch5k.lognorm$engramobserved is showing only as 1 which cannot be true
-# seomthing is wrong with the code don't know where this comes from
-
-#roc.inactive <- roc(predictions$inactiveobserved, as.numeric(predictions$Fos_neg) )
-
-jpeg("ROC_lognorm.jpg", width = 350, height = "350")
-plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
-dev.off()
 
 
 
