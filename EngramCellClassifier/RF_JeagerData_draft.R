@@ -23,6 +23,8 @@ library(pROC)
 #library(CVXR)
 
 # Loading Lacar et al., (2016)
+
+setwd("/home/acampbell/PavLabEngrams/EngramCellClassifier")
 lacar2016_meta <- read.csv('Lacar2016_GSE77067/SraRunTable.txt', header = TRUE)
 lacar2016_snHC_counts <- read.table('Lacar2016_GSE77067/GSE77067_sn_hc_counts.txt.gz')
 lacar2016_snNE_counts <- read.table('Lacar2016_GSE77067/GSE77067_sn_ne_counts.txt.gz')
@@ -85,7 +87,7 @@ lacar2016_snHC_counts <-lacar2016_snHC_counts[rownames(lacar2016_snHC_counts) %i
 #lacar2016_snHC_counts <- lastcol.to.firstcol(lacar2016_snHC_counts)
 
 lacar2016_snNE_counts$gene <- as.character(rownames(lacar2016_snNE_counts))
-lacar2016_snNE_counts[rownames(lacar2016_snNE_counts) %in% shared.genes,]
+lacar2016_snNE_counts <-lacar2016_snNE_counts[rownames(lacar2016_snNE_counts) %in% shared.genes,]
 #lacar2016_snNE_counts <- lastcol.to.firstcol(lacar2016_snNE_counts)
 
 # we will remove the PTZ treated cells as well before matching its genes
@@ -216,6 +218,12 @@ assessment <- function(predictions.df){
 
 ### DOWNSAMPLING AND LORNORM FOR PREDICTING HOCHGERNER
 
+# mean center scale then log(x+1) for normalizing
+logplusone <- function(x){
+  return( log(x+1) )
+}
+
+
 #downsampling from the count data
 combined.meta$idx <- c(1:750)
 df.temp <- ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], n=175, strata=treatment, over=0)
@@ -231,19 +239,94 @@ downsamp.meta <- rbind(df.temp,
                        combined.meta[combined.meta$fos_status=="Fos-",]
 ) 
 
-# mean center scale then log(x+1) for normalizing
-logplusone <- function(x){
-  return( log(x+1) )
-}
+#logtramsform the Jeager data with all genes 
+allgenes.df  <- apply(downsamp.combinedcounts, 
+                                 MARGIN = 1, 
+                                 FUN = logplusone
+                      )
 
-#Binarize and transpose hochgerner adult p35 cells
-hoch5k.adultDGCs.lognorm <- apply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], MARGIN = 1, FUN = as.integer)
-hoch5k.adultDGCs.lognorm <- apply(hoch5k.adultDGCs.lognorm,
+allgenes.df   <- scale( t(allgenes.df ) ) #we need it transposed so that the scaling is done per gene not cell
+allgenes.df   <- data.frame( t(allgenes.df ) )
+
+
+allgenes.df$Engramcell <- as.factor( downsamp.meta$fos_status )
+  
+
+### Trying with all Jeager Genes before merging with Hochgerner
+
+split <- sample.split(allgenes.df$Engramcell, SplitRatio = 0.7)
+
+training_set.test = subset(allgenes.df, split == TRUE)
+validation_set.test = subset(allgenes.df, split == FALSE)
+
+rf.test = randomForest(x = training_set.test[,1:(length(training_set.test)-1)],
+                       y = training_set.test$Engramcell,
+                       ntree = 500)
+
+
+rf.test.predictions <- make.predictions.df(rf.test, validation_set.test)
+
+rf.performances$allgenes <- assessment( rf.test.predictions )
+
+rf.performances <- data.frame( allgenes = assessment( rf.test.predictions ) )
+rownames(rf.performances) <- c("F1 Score", "AUC", "Precision", "Recall",
+                               "FPR", "FNR", "True Positives", "False Negatives", 
+                               "True Negatives", "False Positives")
+
+importance.rf.test.df <- data.frame(gene = as.character( rownames(rf.test$importance) ),
+                            importance_score = as.numeric( rf.test$importance ) ) %>%
+  arrange(desc(importance_score))
+
+
+# > head(importance.rf.test.df,10)
+# gene importance_score
+# 1    Inhba        1.7147604
+# 2    Nptx2        1.0623350
+# 3   Lingo1        1.0594203
+# 4    Synpo        0.9782042
+# 5      Arc        0.9184942
+# 6   H2.T23        0.8468646
+# 7   Shank1        0.7821768
+# 8     Bdnf        0.7079833
+# 9    Spry2        0.6896615
+# 10 Sult2b1        0.6793700
+
+# > head(importance.rf.test.df,10)
+# gene importance_score
+# 1    Inhba        1.7147604
+# 2    Nptx2        1.0623350
+# 3   Lingo1        1.0594203
+# 4    Synpo        0.9782042
+# 5      Arc        0.9184942
+# 6   H2.T23        0.8468646
+# 7   Shank1        0.7821768
+# 8     Bdnf        0.7079833
+# 9    Spry2        0.6896615
+# 10 Sult2b1        0.6793700
+
+
+#longnorm Hochgerner data
+# > dim(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx])
+# [1] 14545  1014
+hoch5k.adultDGCs.lognorm <- apply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], 
+                                  MARGIN = 1, FUN = as.integer
+                                  )
+# > dim(hoch5k.adultDGCs.lognorm)
+# [1]  1014 14545
+
+hoch5k.adultDGCs.lognorm <- apply(t(hoch5k.adultDGCs.lognorm),
                                   MARGIN = 1,
                                   FUN = logplusone
-)
-hoch5k.adultDGCs.lognorm  <- scale( t(hoch5k.adultDGCs.lognorm ) ) #apply is transposing the data frame for some reason
-hoch5k.adultDGCs.lognorm  <- as.data.frame(hoch5k.adultDGCs.lognorm )
+                                  )
+# > dim(hoch5k.adultDGCs.lognorm)
+# [1]  1014 14545 [samples, features], this is what randomForest wants
+
+# scale https://www.statology.org/scale-function-in-r/
+hoch5k.adultDGCs.lognorm  <- scale( t(hoch5k.adultDGCs.lognorm)  ) #apply is transposing the data frame for some reason
+hoch5k.adultDGCs.lognorm  <- as.data.frame( t(hoch5k.adultDGCs.lognorm) )
+colnames(hoch5k.adultDGCs.lognorm) <- rownames(hochgerner5k_2018_counts)
+hoch5k.adultDGCs.lognorm[is.na(hoch5k.adultDGCs.lognorm)] <- 0
+
 #lastly we must filter for matching genes this will drop our list to 14296 genes
 
 
@@ -251,20 +334,23 @@ hoch5k.adultDGCs.lognorm  <- as.data.frame(hoch5k.adultDGCs.lognorm )
 downsamp.lognorm.counts <- apply(downsamp.combinedcounts, 
                                  MARGIN = 1, 
                                  FUN = logplusone
-)
+                                 )
 downsamp.lognorm.counts  <- scale( t(downsamp.lognorm.counts) ) #we need it transposed so that the scaling is done per gene not cell
 downsamp.lognorm.counts  <- data.frame( t(downsamp.lognorm.counts) ) 
-
+colnames(downsamp.lognorm.counts) <- rownames(downsamp.combinedcounts)
+downsamp.lognorm.counts[is.na(downsamp.lognorm.counts)] <- 0
 
 #restrict to matching genes
 shared.genes <- intersect( colnames(hoch5k.adultDGCs.lognorm), colnames(downsamp.lognorm.counts) )
-hoch5k.adultDGCs.lognorm  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs.lognorm) %in% shared.genes]
-downsamp.lognorm.counts <- downsamp.lognorm.counts[,rownames(downsamp.combinedcounts) %in% shared.genes]
+hoch5k.adultDGCs.lognorm  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs.lognorm) %in% shared.genes,]
+downsamp.lognorm.counts <- downsamp.lognorm.counts[,colnames(downsamp.lognorm.counts) %in% shared.genes,]
 
 hoch5k.adultDGCs.lognorm$Engramcell <- rep("Fos+", dim(hoch5k.adultDGCs.lognorm)[1])
+hoch5k.adultDGCs.lognorm[is.na(hoch5k.adultDGCs.lognorm)] <- 0
 #hoch5k.adultDGCs.lognorm$data.use <- rep("test",dim(hoch5k.adultDGCs.lognorm)[1]) 
 
 downsamp.lognorm.counts$Engramcell <- as.factor( downsamp.meta$fos_status )
+downsamp.lognorm.counts[is.na(downsamp.lognorm.counts)] <- 0
 #downsamp.lognorm.counts$data.use <- rep("train/validate",dim(downsamp.lognorm.counts)[1]) 
 
 
@@ -288,31 +374,71 @@ validation_set = subset(downsamp.lognorm.counts, split == FALSE)
 #make classifier
 downsamp.lognorm.classifier.forHoch5k = randomForest(x = training_set[,1:(length(training_set)-1)],
                                                      y = training_set$Engramcell,
-                                                     ntree = 500)
+                                                     ntree = 1000)
 
 
-downsamp.lognorm.predictions.forHoch5k <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k, validation_set)
+downsamp.lognorm.predictions.forHoch5k <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k, 
+                                                              validation_set)
 
-rf.performances <- data.frame( lognorm_forHoch5k = assessment(downsamp.lognorm.predictions.forHoch5k) )
-rownames(rf.performances) <- c("F1 Score", "AUC", "Precision", "Recall",
-                               "FPR", "FNR", "True Positives", "False Negatives", 
-                               "True Negatives", "False Positives")
+rf.performances$lognorm_forHoch5k <- assessment(downsamp.lognorm.predictions.forHoch5k) 
 
-df <- data.frame(Metrics = rf.performances$lognorm_forHoch5k)
-rownames(df) <- rownames(rf.performances)
+importance.df <- data.frame(gene = as.character( rownames(downsamp.lognorm.classifier.forHoch5k$importance) ),
+                            importance_score = as.numeric( downsamp.lognorm.classifier.forHoch5k$importance ) ) %>%
+  arrange(desc(importance_score))
+
+# > rf.performances
+#                  allgenes    lognorm_forHoch5k
+# F1 Score         0.9278351        0.94117647
+# AUC              0.9474852        0.98298817
+# Precision        1.0000000        0.96000000
+# Recall           0.8653846        0.92307692
+# FPR              0.0000000        0.03846154
+# FNR              0.1346154        0.07692308
+# True Positives  45.0000000       48.00000000
+# False Negatives  7.0000000        4.00000000
+# True Negatives  52.0000000       50.00000000
+# False Positives  0.0000000        2.00000000
+
+# > head(importance.df,10)
+# gene importance_score
+# 1   Inhba        1.9997179
+# 2     Arc        1.4385213
+# 3   Fmnl1        1.0695626
+# 4   Ptgs2        1.0350485
+# 5  Lingo1        1.0343618
+# 6  Epha10        1.0085155
+# 7  H2-T23        0.9617053
+# 8   Nptx2        0.8920429
+# 9  Sorcs3        0.8731119
+# 10 Mrpl13        0.8681066
+
 
 #classify new data
-hoch5k.adultDGCs.lognorm$Engramcell <- as.factor(rep("Fos-", dim(hoch5k.adultDGCs.lognorm)[1]))
+hoch5k.adultDGCs.lognorm$Engramcell <- as.factor(rep("Fos+", dim(hoch5k.adultDGCs.lognorm)[1]))
 hoch5k.adultDGCs.lognorm[is.na(hoch5k.adultDGCs.lognorm)] <- 0
 
 
 predictions.Hoch5k.lognorm <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k, 
                                                   hoch5k.adultDGCs.lognorm)
 
-importance.df <- data.frame(gene = as.character( rownames(downsamp.lognorm.classifier.forHoch5k$importance) ),
-                            importance_score = as.numeric( downsamp.lognorm.classifier.forHoch5k$importance ) ) %>%
-  arrange(desc(importance_score))
 
+table(predictions.Hoch5k.lognorm$predict)
+
+### EXPLORING PENK EXPRESSION IN TEST DATA TO VALIDATE PUTATIVE ENGRAM CELLS
+
+# > table(predictions.Hoch5k.lognorm$predict)
+# 
+# Fos- Fos+ 
+#   1004   10 
+
+putative.engramcells.idx <- which(predictions.Hoch5k.lognorm$predict=="Fos+")
+
+hoch5k.adultDGCs.lognorm$Engramcell <- "Putative Inactive"
+hoch5k.adultDGCs.lognorm$Engramcell[putative.engramcells.idx] <- "Putative Engram Cell"
+hoch5k.adultDGCs.lognorm$Engramcell <- as.factor(hoch5k.adultDGCs.lognorm$Engramcell)
+hoch5k.adultDGCs.lognorm$prob_engram <- predictions.Hoch5k.lognorm$Fos_pos
+
+which(rownames(hoch5k.adultDGCs.lognorm)=="Arc")
 
 
 # predictions <- as.data.frame(predict(downsamp.lognorm.classifier.forHoch5k, 
@@ -335,12 +461,15 @@ dev.off()
 
 #looking at penk expression in these cells
 putative.engramcells.idx <- which(predictions.Hoch5k.lognorm$predict == "Fos+")
-penkcckmalat1.idx <- which(colnames(hoch5k.adultDGCs.lognorm) == c("Cck","Penk", "Malat1"))
+penkcckmalat1.idx <- which(colnames(hoch5k.adultDGCs.lognorm) %in% c("Cck","Penk", "Malat1") )
                            
- df <- hoch5k.adultDGCs.lognorm[putative.engramcells.idx, penkcckmalat1.idx]
-sum(>0)
+dfpcm <- hoch5k.adultDGCs.lognorm[putative.engramcells.idx, penkcckmalat1.idx]
+colnames(dfpcm) <- c("Cck","Penk", "Malat1")
+sum(dfpcm$Malat1>0)
 
-
+#to plot df
+df <- data.frame(Metrics = rf.performances$lognorm_forHoch5k)
+rownames(df) <- rownames(rf.performances)
 
 
 ##### A MILLION CLASSIFIERS TRIED AND FAILED
