@@ -176,14 +176,15 @@ hoch5k.GC_Adult.p35.idx <- which(hoch5k.GC_Adult.p35.idx)
 
 
 
+
 ## These functions will save the assesments of the classifiers
 #this need changing, specifically test_set should not be a global, it is begging for issues
 make.predictions.df <- function(classifier.object, test_df){
   #generate predictions for making classifier summary
   predictions <- as.data.frame(predict(classifier.object, test_df[,1:(length(test_df)-1)], type = "prob"))
-  predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] 
-  colnames(predictions)[1:2] <- c("Fos_neg","Fos_pos") #1:2 for the number of classes
+  predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
   predictions$observed <- test_df$Engramcell #this should be changed if you want to make this functions more modular
+  colnames(predictions)[1:2] <- c("Fos_neg","Fos_pos")
   predictions$engramobserved <- ifelse(predictions$observed=="Fos+", 1, 0)
   predictions$inactiveobserved <- ifelse(predictions$observed=="Fos-", 1, 0)
   return(predictions)
@@ -192,26 +193,26 @@ make.predictions.df <- function(classifier.object, test_df){
 
 ## These functions will save the assesments of the classifiers
 #work in progress trying to adjust how thresholding works, which.max is not good for detecting specific threshold
-make.predictions.df <- function(classifier.object, test_df, threshold = "default"){
-  #generate predictions for making classifier summary
-  predictions <- as.data.frame(predict(classifier.object, test_df[,1:(length(test_df)-1)], type = "prob"))
-
-  
-  if(threshold != "default"){
-    #print("if condtion works")
-    offset <- abs(0.5-threshold)
-    predictions$Fos_pos <- predictions$Fos_pos + offset
-    predictions$Fos_neg <- predictions$Fos_neg - offset
-  }else{
-    predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
-  }
-  colnames(predictions)[1:2] <- c("Fos_neg","Fos_pos")
-  predictions$observed <- test_df$Engramcell #this should be changed if you want to make this functions more modular
-  
-  predictions$engramobserved <- ifelse(predictions$observed=="Fos+", 1, 0)
-  predictions$inactiveobserved <- ifelse(predictions$observed=="Fos-", 1, 0)
-  return(predictions)
-}
+# make.predictions.df <- function(classifier.object, test_df, threshold = "default"){
+#   #generate predictions for making classifier summary
+#   predictions <- as.data.frame(predict(classifier.object, test_df[,1:(length(test_df)-1)], type = "prob"))
+# 
+#   
+#   if(threshold != "default"){
+#     #print("if condtion works")
+#     offset <- abs(0.5-threshold)
+#     predictions$Fos_pos <- predictions$Fos_pos + offset
+#     predictions$Fos_neg <- predictions$Fos_neg - offset
+#   }else{
+#     predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
+#   }
+#   colnames(predictions)[1:2] <- c("Fos_neg","Fos_pos")
+#   predictions$observed <- test_df$Engramcell #this should be changed if you want to make this functions more modular
+#   
+#   predictions$engramobserved <- ifelse(predictions$observed=="Fos+", 1, 0)
+#   predictions$inactiveobserved <- ifelse(predictions$observed=="Fos-", 1, 0)
+#   return(predictions)
+# }
 
 
 assessment <- function(predictions.df){
@@ -598,13 +599,15 @@ dev.off()
 # 0.3355833 
 
 #We need to show the classifier still works well at this threshold though
-test.predictions <- 
+thresh = quantile(on.hoch5k$Fos_pos,0.98)
+#thresh = 0.5
+test.predictions$predict[test.predictions$Fos_pos>thresh] <- "Fos+"
+test.predictions$predict[test.predictions$Fos_pos<thresh] <- "Fos-"
 
-rf.performances$resampled_0.325<- assessment( make.predictions.df(test.classifier, 
-                                                                  validation_set, 
-                                                                  quantile(on.hoch5k$Fos_pos,0.95)) ) 
-
-
+rf.performances$resampled_0.325 <- assessment( test.predictions ) 
+# way too many false positives
+rf.performances
+sum(on.hoch5k$Fos_prob>thresh)
 
 
 
