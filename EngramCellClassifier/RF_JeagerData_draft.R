@@ -21,6 +21,8 @@ library(sampler)
 library(caTools)
 library(pROC)
 #library(CVXR)
+library(ggplot2)
+library(stats)
 
 # Loading Lacar et al., (2016)
 
@@ -179,16 +181,37 @@ hoch5k.GC_Adult.p35.idx <- which(hoch5k.GC_Adult.p35.idx)
 make.predictions.df <- function(classifier.object, test_df){
   #generate predictions for making classifier summary
   predictions <- as.data.frame(predict(classifier.object, test_df[,1:(length(test_df)-1)], type = "prob"))
-  predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
+  predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] 
+  colnames(predictions)[1:2] <- c("Fos_neg","Fos_pos") #1:2 for the number of classes
   predictions$observed <- test_df$Engramcell #this should be changed if you want to make this functions more modular
-  colnames(predictions)[1:2] <- c("Fos_neg","Fos_pos")
   predictions$engramobserved <- ifelse(predictions$observed=="Fos+", 1, 0)
   predictions$inactiveobserved <- ifelse(predictions$observed=="Fos-", 1, 0)
   return(predictions)
 }
 
 
+## These functions will save the assesments of the classifiers
+#work in progress trying to adjust how thresholding works, which.max is not good for detecting specific threshold
+make.predictions.df <- function(classifier.object, test_df, threshold = "default"){
+  #generate predictions for making classifier summary
+  predictions <- as.data.frame(predict(classifier.object, test_df[,1:(length(test_df)-1)], type = "prob"))
 
+  
+  if(threshold != "default"){
+    #print("if condtion works")
+    offset <- abs(0.5-threshold)
+    predictions$Fos_pos <- predictions$Fos_pos + offset
+    predictions$Fos_neg <- predictions$Fos_neg - offset
+  }else{
+    predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
+  }
+  colnames(predictions)[1:2] <- c("Fos_neg","Fos_pos")
+  predictions$observed <- test_df$Engramcell #this should be changed if you want to make this functions more modular
+  
+  predictions$engramobserved <- ifelse(predictions$observed=="Fos+", 1, 0)
+  predictions$inactiveobserved <- ifelse(predictions$observed=="Fos-", 1, 0)
+  return(predictions)
+}
 
 
 assessment <- function(predictions.df){
@@ -222,6 +245,22 @@ assessment <- function(predictions.df){
 logplusone <- function(x){
   return( log(x+1) )
 }
+
+log.norm <- function(df.in){
+  #performs the lognorm transform and scales the data, removes NA's first
+  if( sum(is.na(df.in)) ){
+    df.in[is.na(df.in)] <- 0
+  }
+  df.out <- apply(df.in,
+                  MARGIN = 1,
+                  FUN = logplusone
+                  )
+  df.out <- scale( t(df.out) ) #we need it transposed so that the scaling is done per gene not cell
+  df.out <- data.frame( t(df.out) )
+  colnames(df.out) <- rownames(df.in)
+  return(df.out)
+}
+
 
 
 #downsampling from the count data
@@ -311,34 +350,15 @@ importance.rf.test.df <- data.frame(gene = as.character( rownames(rf.test$import
 hoch5k.adultDGCs.lognorm <- apply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], 
                                   MARGIN = 1, FUN = as.integer
                                   )
-# > dim(hoch5k.adultDGCs.lognorm)
-# [1]  1014 14545
 
-hoch5k.adultDGCs.lognorm <- apply(t(hoch5k.adultDGCs.lognorm),
-                                  MARGIN = 1,
-                                  FUN = logplusone
-                                  )
-# > dim(hoch5k.adultDGCs.lognorm)
-# [1]  1014 14545 [samples, features], this is what randomForest wants
+hoch5k.adultDGCs.lognorm <- log.norm( t(hoch5k.adultDGCs.lognorm) )
 
-# scale https://www.statology.org/scale-function-in-r/
-hoch5k.adultDGCs.lognorm  <- scale( t(hoch5k.adultDGCs.lognorm)  ) #apply is transposing the data frame for some reason
-hoch5k.adultDGCs.lognorm  <- as.data.frame( t(hoch5k.adultDGCs.lognorm) )
-colnames(hoch5k.adultDGCs.lognorm) <- rownames(hochgerner5k_2018_counts)
-hoch5k.adultDGCs.lognorm[is.na(hoch5k.adultDGCs.lognorm)] <- 0
 
 #lastly we must filter for matching genes this will drop our list to 14296 genes
 
 
 #doing lognormalization for the training data
-downsamp.lognorm.counts <- apply(downsamp.combinedcounts, 
-                                 MARGIN = 1, 
-                                 FUN = logplusone
-                                 )
-downsamp.lognorm.counts  <- scale( t(downsamp.lognorm.counts) ) #we need it transposed so that the scaling is done per gene not cell
-downsamp.lognorm.counts  <- data.frame( t(downsamp.lognorm.counts) ) 
-colnames(downsamp.lognorm.counts) <- rownames(downsamp.combinedcounts)
-downsamp.lognorm.counts[is.na(downsamp.lognorm.counts)] <- 0
+downsamp.lognorm.counts <- log.norm(downsamp.combinedcounts)
 
 #restrict to matching genes
 shared.genes <- intersect( colnames(hoch5k.adultDGCs.lognorm), colnames(downsamp.lognorm.counts) )
@@ -374,7 +394,7 @@ validation_set = subset(downsamp.lognorm.counts, split == FALSE)
 #make classifier
 downsamp.lognorm.classifier.forHoch5k = randomForest(x = training_set[,1:(length(training_set)-1)],
                                                      y = training_set$Engramcell,
-                                                     ntree = 1000)
+                                                     ntree = 500)
 
 
 downsamp.lognorm.predictions.forHoch5k <- make.predictions.df(downsamp.lognorm.classifier.forHoch5k, 
@@ -423,6 +443,170 @@ predictions.Hoch5k.lognorm <- make.predictions.df(downsamp.lognorm.classifier.fo
 
 
 table(predictions.Hoch5k.lognorm$predict)
+summary(predictions.Hoch5k.lognorm$Fos_pos)
+
+
+count.df <- as.data.frame(t(hochgerner5k_2018_counts[,hoch5k.GC_Adult.p35.idx]) )
+
+df <- predictions.Hoch5k.lognorm[,2:3]
+df$Penk <- hoch5k.adultDGCs.lognorm$Penk
+df$Arc <- hoch5k.adultDGCs.lognorm$Arc
+df$Inhba <- hoch5k.adultDGCs.lognorm$Inhba
+df$Lingo1 <- hoch5k.adultDGCs.lognorm$Lingo1
+df$Synpo <- hoch5k.adultDGCs.lognorm$Synpo
+df$Mapk4 <- hoch5k.adultDGCs.lognorm$Mapk4
+df$penk_count <- as.numeric(count.df$Penk)
+df$prob_bin <- as.factor(floor(df$Fos_pos*10)/10)
+
+p <- ggplot(data = df, aes(x=prob_bin, y=penk_count) )
+
+
+jpeg("Penk_vs_EngramProbability.jpg", width = 350, height = "350")
+p + geom_bar(stat="identity")
+dev.off()
+
+
+### RESAMPLING ATTEMPT 2 without using the weird covarience matching of rf.classbalance
+#https://github.com/jeffreyevans/rfUtilities/blob/master/R/rf.classBalance.R
+
+resamp.combined.lognorm <-  log.norm(combined.counts)
+
+hoch5k.adultDGCs.lognorm <- apply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], 
+                                  MARGIN = 1, 
+                                  FUN = as.integer
+                                  )
+
+hoch5k.adultDGCs.lognorm <- log.norm( t(hoch5k.adultDGCs.lognorm) )
+
+#gene matching
+shared.genes <- intersect( colnames(hoch5k.adultDGCs.lognorm), colnames(resamp.combined.lognorm) )
+hoch5k.adultDGCs.lognorm  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs.lognorm) %in% shared.genes,]
+resamp.combined.lognorm <- resamp.combined.lognorm[,colnames(resamp.combined.lognorm) %in% shared.genes,]
+
+
+
+# creating our training and validation data, we will take 30% of the
+# baseline cells and and equvilent number of the engram cells to maintain balance in the
+# testing data
+combined.meta$idx <- c(1:750)
+df.temp <- rbind(ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], 
+                 n=52, strata=treatment, over=0
+                 ),
+                 ssamp(df=combined.meta[combined.meta$fos_status=="Fos-",], 
+                       n=52, strata=treatment, over=0)
+                 )# end of rbind
+                 
+
+resamp.combined.lognorm$Engramcell <- combined.meta$fos_status
+resamp.combined.lognorm$Engramcell <- as.factor(resamp.combined.lognorm$Engramcell)
+training_set <- resamp.combined.lognorm[which( !(combined.meta$idx %in% df.temp$idx) ), ]
+validation_set <- resamp.combined.lognorm[which(combined.meta$idx %in% df.temp$idx), ]
+
+
+training_set$treatment <- combined.meta$treatment[which( !(combined.meta$idx %in% df.temp$idx) ) ]
+#inputs
+#df = training_set
+
+resample.randomForest <-function( df.in, proportion,
+                                  batches, trees){
+  #this function resamples from our samples and retrains new models then combines them
+  # this is too prevent over fitting on cells
+  trees.per.batch <- as.integer(trees/batches)
+  n.cells <- trunc( sum(df.in$Engramcell=="Fos-")*proportion)
+  batches <- c(1:batches)
+  for( batch in batches){
+
+    resample.set <- rbind(ssamp(df=df.in[df.in$Engramcell=="Fos-",], n=n.cells,
+                                strata=treatment, over=0),
+                          ssamp(df=df.in[df.in$Engramcell=="Fos+",], n=n.cells,
+                                strata=treatment, over=0)
+    )
+    resample.set <- resample.set[,2:(length(resample.set))]
+    
+    # creates rf.model
+    if(batch==1){
+      rf.model <- randomForest(x = resample.set[,1:(length(resample.set)-1)],
+                               y = resample.set$Engramcell,
+                               ntree = trees.per.batch)
+    }
+    #trains new models in rf.fit and combines tham with rf.model
+    if(batch>1){
+      rf.fit = randomForest(x = resample.set[,1:(length(resample.set)-1)],
+                            y = resample.set$Engramcell,
+                            ntree = trees.per.batch)
+      rf.model <- randomForest::combine(rf.fit, rf.model)
+    }
+  }#end of for loop over batches
+  
+  return(rf.model)
+}
+
+#for loop
+ #outputs
+tic()
+test.classifier <- resample.randomForest( df.in = training_set, proportion = 0.8, 
+                               batches = 20, trees = 600)
+toc()
+
+test.predictions <- make.predictions.df(test.classifier, validation_set)
+
+rf.performances$resampled<- assessment(test.predictions) 
+
+importance.df.resamptest <- data.frame(gene = as.character( rownames(test.classifier$importance) ),
+                            importance_score = as.numeric( test.classifier$importance ) ) %>%
+  arrange(desc(importance_score))
+
+# head(importance.df.resamptest,10)
+hoch5k.adultDGCs.lognorm$Engramcell <- rep("Fos-", dim(hoch5k.adultDGCs.lognorm)[1])
+
+on.hoch5k <- make.predictions.df(test.classifier,
+                                 hoch5k.adultDGCs.lognorm)
+
+on.hoch5k$Fos_pos <- on.hoch5k$Fos_pos
+
+
+
+df <- on.hoch5k[,2:3]
+df$Penk <- hoch5k.adultDGCs.lognorm$Penk
+df$Arc <- hoch5k.adultDGCs.lognorm$Arc
+df$Inhba <- hoch5k.adultDGCs.lognorm$Inhba
+df$Lingo1 <- hoch5k.adultDGCs.lognorm$Lingo1
+df$Synpo <- hoch5k.adultDGCs.lognorm$Synpo
+df$Mapk4 <- hoch5k.adultDGCs.lognorm$Mapk4
+df$penk_count <- as.numeric(count.df$Penk)
+df$prob_bin <- as.factor(floor(df$Fos_pos*20)/20)
+
+p <- ggplot(data = on.hoch5k, aes(x=Fos_pos) )
+
+dev.off()
+jpeg("Penk_vs_EngramProbability.jpg", width = 350, height = "350")
+p + geom_histogram()
+dev.off()
+
+
+#the dsitribution of the probability looks very skewed as one would expect
+# makes me wonder if we could find a better cut off, 
+
+# > sum(on.hoch5k$Fos_pos>0.325)
+# [1] 47
+
+# > sum( on.hoch5k$Fos_pos>quantile(on.hoch5k$Fos_pos,0.95) )
+# [1] 51
+
+# > quantile(on.hoch5k$Fos_pos,0.95)
+# 95% 
+# 0.3355833 
+
+#We need to show the classifier still works well at this threshold though
+test.predictions <- 
+
+rf.performances$resampled_0.325<- assessment( make.predictions.df(test.classifier, 
+                                                                  validation_set, 
+                                                                  quantile(on.hoch5k$Fos_pos,0.95)) ) 
+
+
+
+
 
 ### EXPLORING PENK EXPRESSION IN TEST DATA TO VALIDATE PUTATIVE ENGRAM CELLS
 
@@ -430,6 +614,14 @@ table(predictions.Hoch5k.lognorm$predict)
 # 
 # Fos- Fos+ 
 #   1004   10 
+
+for(bin in levels(df$prob_bin)){
+  print(bin)
+  print(sum(df$penk_count[df$prob_bin==bin]>quantile(df$penk_count,0.75)))
+  print(sum(sum(df$penk_count[df$prob_bin==bin]>quantile(df$penk_count,0.75)))/sum(df$prob_bin==bin) )
+}
+
+
 
 putative.engramcells.idx <- which(predictions.Hoch5k.lognorm$predict=="Fos+")
 
@@ -470,6 +662,8 @@ sum(dfpcm$Malat1>0)
 #to plot df
 df <- data.frame(Metrics = rf.performances$lognorm_forHoch5k)
 rownames(df) <- rownames(rf.performances)
+
+
 
 
 ##### A MILLION CLASSIFIERS TRIED AND FAILED
