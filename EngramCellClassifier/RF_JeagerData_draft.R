@@ -24,6 +24,7 @@ library(pROC)
 library(ggplot2)
 library(stats)
 library(Dict)
+library(pheatmap)
 
 
 # Loading Lacar et al., (2016)
@@ -723,20 +724,76 @@ for(i in c(1:10) ){
   
   engram.dict[ run[i] ] <- which(on.hoch5k$predict=="Fos+")
   thresh <- as.numeric( quantile(on.hoch5k$Fos_pos,0.975) )
-  cells <- which( as.numeric(on.hoch5k$Fos_pos) > thresh )
-  ninetysevenpointfivequantile.dict[ run[i] ] <- cells
-  which( as.numeric(on.hoch5k$Fos_pos) > thresh )
+  ninetysevenpointfivequantile.dict[ run[i] ] <- which( as.numeric(on.hoch5k$Fos_pos) > thresh )
   thresh = as.numeric( quantile(on.hoch5k$Fos_pos,0.95) )
   ninetyfithquantile.dict[ run[i] ] <- which( as.numeric(on.hoch5k$Fos_pos) > thresh )
 }
 toc()
 
-shared.genes <- multi.intersect(list(rownames(jeager2018_counts),
-                                     rownames(lacar2016_wc_counts),
-                                     rownames(lacar2016_snHC_counts),
-                                     rownames(lacar2016_snNE_counts)
-)#closing list 
-)#closing multi.intersect
+shared.cells <- multi.intersect(list(ninetyfithquantile.dict["1"], ninetyfithquantile.dict["2"],
+                                     ninetyfithquantile.dict["3"], ninetyfithquantile.dict["4"],
+                                     ninetyfithquantile.dict["5"], ninetyfithquantile.dict["6"],
+                                     ninetyfithquantile.dict["7"], ninetyfithquantile.dict["8"],
+                                     ninetyfithquantile.dict["9"], ninetyfithquantile.dict["10"])
+                                )
+# > shared.cells
+# [1] 282 344 381 470 541 619 666 705 729 735 740 766 793
+
+shared.cells <- multi.intersect(list(ninetysevenpointfivequantile.dict["1"], ninetysevenpointfivequantile.dict["2"],
+                                     ninetysevenpointfivequantile.dict["3"], ninetysevenpointfivequantile.dict["4"],
+                                     ninetysevenpointfivequantile.dict["5"], ninetysevenpointfivequantile.dict["6"],
+                                     ninetysevenpointfivequantile.dict["7"], ninetysevenpointfivequantile.dict["8"],
+                                     ninetysevenpointfivequantile.dict["9"], ninetysevenpointfivequantile.dict["10"])
+                                )
+
+# > shared.cells
+# [1] 282 344 470 541 619 666 705 729 735 793
+
+#In the engram.dict cell 282 comes up 5 times, cell 793 and cell 619 also
+# got labelled with 282 twice and once on their own each on three runs no cells were labelled
+
+### Heatmap visualization
+
+#picking cell indeces for the heatmap
+stable.cells <- c(282, 344,470, 541, 619, 666, 705, 729, 735, 793)
+rand.cells <- which(!(c(1:1014) %in% stable.cells))
+rand.cells <- sample( rand.cells, 10, replace = FALSE)
+cells.idx <- c(stable.cells,rand.cells)
+
+# picking gene's for the heatmap, important genes vs random ones, 10 important 10 random
+head(importance.df.resamptest, 10)
+
+top.genes <- importance.df.resamptest$gene[1:20]
+
+rand.genes <- sample(importance.df.resamptest$gene[21:length(importance.df.resamptest$gene)],
+                     20, replace = FALSE)
+
+genes.idx <- c(top.genes, rand.genes)
+
+#convert our gene/cells to a matrix
+
+#convert to a matrix for pheatmap
+vis.matrix <- as.matrix(hoch5k.adultDGCs.lognorm[cells.idx, genes.idx])
+vis.matrix_scaled <- scale(vis.matrix)
+
+#label the genes
+gene_df <- data.frame ("Genes" = c(rep("Important Gene", 20), rep("Random Gene",20))
+                       )
+rownames(gene_df) <- genes.idx
+# label the cells
+cell_df <- data.frame ("Cells" = c(rep("Putative Engram Cell", 10), rep("Random Cell",10))
+)
+rownames(cell_df) <- cells.idx
+
+# make the image file
+dev.off()
+jpeg("Penk_vs_EngramProbability.jpg", width = 500, height = "500")
+pheatmap(t(vis.matrix), main = "Hochgerner Cells Activity State",
+         cluster_rows = F, cluster_cols=F, 
+         annotation_col = cell_df, annotation_row = gene_df,
+         show_colnames = F, annotation_names_col = F, annotation_names_row = F)
+dev.off()
+
 
 
 
