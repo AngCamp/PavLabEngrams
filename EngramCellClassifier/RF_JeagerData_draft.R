@@ -23,6 +23,8 @@ library(pROC)
 #library(CVXR)
 library(ggplot2)
 library(stats)
+library(Dict)
+
 
 # Loading Lacar et al., (2016)
 
@@ -496,7 +498,6 @@ df.temp <- rbind(ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",],
                  ssamp(df=combined.meta[combined.meta$fos_status=="Fos-",], 
                        n=52, strata=treatment, over=0)
                  )# end of rbind
-                 
 
 resamp.combined.lognorm$Engramcell <- combined.meta$fos_status
 resamp.combined.lognorm$Engramcell <- as.factor(resamp.combined.lognorm$Engramcell)
@@ -546,7 +547,7 @@ resample.randomForest <-function( df.in, proportion,
  #outputs
 tic()
 test.classifier <- resample.randomForest( df.in = training_set, proportion = 0.8, 
-                               batches = 20, trees = 600)
+                               batches = 20, trees = 1000)
 toc()
 
 test.predictions <- make.predictions.df(test.classifier, validation_set)
@@ -557,15 +558,50 @@ importance.df.resamptest <- data.frame(gene = as.character( rownames(test.classi
                             importance_score = as.numeric( test.classifier$importance ) ) %>%
   arrange(desc(importance_score))
 
+head(importance.df.resamptest, 10)
+
+#roc curve
+levels(predictions.Hoch5k.lognorm$engramobserved) <- c(0,1)
+#Plotting ROC...
+roc.engramcell <- roc(test.predictions$engramobserved, 
+                      as.numeric(test.predictions$Fos_pos) )
+# there is an error here the predictions.Hoch5k.lognorm$engramobserved is showing only as 1 which cannot be true
+# seomthing is wrong with the code don't know where this comes from
+
+#roc.inactive <- roc(predictions$inactiveobserved, as.numeric(predictions$Fos_neg) )
+
+dev.off()
+jpeg("ROC_lognorm.jpg", width = 350, height = "350")
+plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
+dev.off()
+
+
+
+dev.off()
+jpeg("ROC_lognorm.jpg", width = 350, height = "350")
+hist(as.numeric(on.hoch5k$Fos_prob), main = "Probability of Engram Cell")
+dev.off()
+
+
+
 # head(importance.df.resamptest,10)
 hoch5k.adultDGCs.lognorm$Engramcell <- rep("Fos-", dim(hoch5k.adultDGCs.lognorm)[1])
 
 on.hoch5k <- make.predictions.df(test.classifier,
                                  hoch5k.adultDGCs.lognorm)
 
-on.hoch5k$Fos_pos <- on.hoch5k$Fos_pos
+table(on.hoch5k$predict)
+summary(on.hoch5k$Fos_pos)
+
+dev.off()
+jpeg("ROC_lognorm.jpg", width = 350, height = "350")
+hist(roc.engramcell, col = "red", main = "ROC of RF Classifier")
+dev.off()
 
 
+
+
+count.df <- as.data.frame(t(hochgerner5k_2018_counts[,hoch5k.GC_Adult.p35.idx]) )
 
 df <- on.hoch5k[,2:3]
 df$Penk <- hoch5k.adultDGCs.lognorm$Penk
@@ -574,14 +610,14 @@ df$Inhba <- hoch5k.adultDGCs.lognorm$Inhba
 df$Lingo1 <- hoch5k.adultDGCs.lognorm$Lingo1
 df$Synpo <- hoch5k.adultDGCs.lognorm$Synpo
 df$Mapk4 <- hoch5k.adultDGCs.lognorm$Mapk4
-df$penk_count <- as.numeric(count.df$Penk)
+df$penk_count <- as.integer(count.df$Penk)
 df$prob_bin <- as.factor(floor(df$Fos_pos*20)/20)
 
-p <- ggplot(data = on.hoch5k, aes(x=Fos_pos) )
+p <- ggplot(data = df[df$penk_count>1,], aes(x=Fos_pos, y=penk_count) )
 
 dev.off()
 jpeg("Penk_vs_EngramProbability.jpg", width = 350, height = "350")
-p + geom_histogram()
+p + geom_point()
 dev.off()
 
 
@@ -598,16 +634,135 @@ dev.off()
 # 95% 
 # 0.3355833 
 
+test.predictions.newthresh <- test.predictions
 #We need to show the classifier still works well at this threshold though
-thresh = quantile(on.hoch5k$Fos_pos,0.98)
+thresh = as.numeric( quantile(on.hoch5k$Fos_pos,0.99) )
 #thresh = 0.5
-test.predictions$predict[test.predictions$Fos_pos>thresh] <- "Fos+"
-test.predictions$predict[test.predictions$Fos_pos<thresh] <- "Fos-"
+test.predictions.newthresh$predict[c(test.predictions.newthresh$Fos_pos)>thresh] <- "Fos+"
+test.predictions.newthresh$predict[c(test.predictions.newthresh$Fos_pos)<thresh] <- "Fos-"
 
-rf.performances$resampled_0.325 <- assessment( test.predictions ) 
+rf.performances$resampled_new_thresh <- assessment( test.predictions.newthresh ) 
 # way too many false positives
 rf.performances
-sum(on.hoch5k$Fos_prob>thresh)
+sum( as.numeric(on.hoch5k$Fos_pos) > thresh )
+
+
+newpredict <- c()
+for( val in c(on.hoch5k$Fos_prob) ){
+  newpredict<-c(newpredict, val>thresh)
+}
+sum(newpredict)
+sum(0.34 < on.hoch5k$Fos_prob )
+
+
+## Stability of Resampling RF on Hochgerner eta l., (2018)
+#install.packages("Dict")
+# Dict dcumnetaion on cran https://cran.r-project.org/web/packages/Dict/readme/README.html#:~:text=Overview,(key)%20like%20a%20dictionary.
+
+test.dict <- Dict$new(
+  a = c(1,2),
+  b = c(3,4,5)
+)
+
+key.vec = c("a","b","c")
+
+test.dict[ key.vec[3] ] <- c(6,7,8,9)
+test.dict["empty"] <- c()
+
+
+#set up dicts to be filled in for loop
+engram.dict <-Dict$new(
+  a = "Start"
+)
+
+ninetyfithquantile.dict <-Dict$new(
+  a = "Start"
+)
+
+ninetysevenpointfivequantile.dict <-Dict$new(
+  a = "Start"
+)
+
+temp.pred.dict <- Dict$new(
+  a = "start"
+)
+
+run <- as.character( c(1:10) )
+
+tic()
+for(i in c(1:10) ){
+  
+  #resample training and validation set
+  combined.meta$idx <- c(1:750)
+  df.temp <- rbind(ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], 
+                         n=52, strata=treatment, over=0
+  ),
+  ssamp(df=combined.meta[combined.meta$fos_status=="Fos-",], 
+        n=52, strata=treatment, over=0)
+  )# end of rbind
+  
+  resamp.combined.lognorm$Engramcell <- combined.meta$fos_status
+  resamp.combined.lognorm$Engramcell <- as.factor(resamp.combined.lognorm$Engramcell)
+  training_set <- resamp.combined.lognorm[which( !(combined.meta$idx %in% df.temp$idx) ), ]
+  validation_set <- resamp.combined.lognorm[which(combined.meta$idx %in% df.temp$idx), ]
+  
+  # reinstatiate classifier, validate save the results
+  training_set$treatment <- combined.meta$treatment[which( !(combined.meta$idx %in% df.temp$idx) ) ]
+  
+  test.classifier <- resample.randomForest( df.in = training_set, proportion = 0.8, 
+                                            batches = 20, trees = 600)
+  temp.pred.df <- make.predictions.df(test.classifier, validation_set)
+  temp.pred.dict[ run[i] ] <- temp.pred.df
+  
+  print(assessment(temp.pred.df))
+  
+  
+  # label hoch cells
+  on.hoch5k <- make.predictions.df(test.classifier,
+                                   hoch5k.adultDGCs.lognorm)
+  
+  engram.dict[ run[i] ] <- which(on.hoch5k$predict=="Fos+")
+  thresh <- as.numeric( quantile(on.hoch5k$Fos_pos,0.975) )
+  cells <- which( as.numeric(on.hoch5k$Fos_pos) > thresh )
+  ninetysevenpointfivequantile.dict[ run[i] ] <- cells
+  which( as.numeric(on.hoch5k$Fos_pos) > thresh )
+  thresh = as.numeric( quantile(on.hoch5k$Fos_pos,0.95) )
+  ninetyfithquantile.dict[ run[i] ] <- which( as.numeric(on.hoch5k$Fos_pos) > thresh )
+}
+toc()
+
+shared.genes <- multi.intersect(list(rownames(jeager2018_counts),
+                                     rownames(lacar2016_wc_counts),
+                                     rownames(lacar2016_snHC_counts),
+                                     rownames(lacar2016_snNE_counts)
+)#closing list 
+)#closing multi.intersect
+
+
+
+
+for (i in run){
+  print(engram.dict[i])
+  print(ninetysevenpointfivequantile.dict[ run ])
+  print(ninetyfithquantile.dict[ run ])
+}
+
+
+test.predictions <- make.predictions.df(test.classifier, validation_set)
+
+rf.performances$resampled<- assessment(test.predictions) 
+
+importance.df.resamptest <- data.frame(gene = as.character( rownames(test.classifier$importance) ),
+                                       importance_score = as.numeric( test.classifier$importance ) ) %>%
+  arrange(desc(importance_score))
+
+head(importance.df.resamptest, 10)
+
+on.hoch5k <- make.predictions.df(test.classifier,
+                                 hoch5k.adultDGCs.lognorm)
+
+table(on.hoch5k$predict)
+summary(on.hoch5k$Fos_pos)
 
 
 
