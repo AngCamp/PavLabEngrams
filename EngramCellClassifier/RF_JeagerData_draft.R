@@ -614,11 +614,34 @@ df$Mapk4 <- hoch5k.adultDGCs.lognorm$Mapk4
 df$penk_count <- as.integer(count.df$Penk)
 df$prob_bin <- as.factor(floor(df$Fos_pos*20)/20)
 
+# Penk expression vs Engram probability
 p <- ggplot(data = df[df$penk_count>1,], aes(x=Fos_pos, y=penk_count) )
 
 dev.off()
 jpeg("Penk_vs_EngramProbability.jpg", width = 350, height = "350")
 p + geom_point()
+dev.off()
+
+# Histogram of Engram Probability
+# http://www.sthda.com/english/wiki/ggplot2-histogram-plot-quick-start-guide-r-software-and-data-visualization
+thresh.df <- as.data.frame( ninetyfive= as.numeric( quantile(on.hoch5k$Fos_pos,0.95) ),
+                            ninetysevenpointfive = as.numeric( quantile(on.hoch5k$Fos_pos,0.975))
+                            )
+
+
+ninetyfive= as.numeric( quantile(on.hoch5k$Fos_pos,0.95) )
+ninetysevenpointfive = as.numeric( quantile(on.hoch5k$Fos_pos,0.975))
+p <- ggplot(data = df, aes(x=Fos_pos) )
+
+
+dev.off()
+jpeg("Penk_vs_EngramProbability.jpg", width = 350, height = "350")
+p + geom_histogram() + 
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed") +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed")+
+
 dev.off()
 
 
@@ -646,14 +669,6 @@ rf.performances$resampled_new_thresh <- assessment( test.predictions.newthresh )
 # way too many false positives
 rf.performances
 sum( as.numeric(on.hoch5k$Fos_pos) > thresh )
-
-
-newpredict <- c()
-for( val in c(on.hoch5k$Fos_prob) ){
-  newpredict<-c(newpredict, val>thresh)
-}
-sum(newpredict)
-sum(0.34 < on.hoch5k$Fos_prob )
 
 
 ## Stability of Resampling RF on Hochgerner eta l., (2018)
@@ -794,6 +809,28 @@ pheatmap(t(vis.matrix), main = "Hochgerner Cells Activity State",
          show_colnames = F, annotation_names_col = F, annotation_names_row = F)
 dev.off()
 
+
+# Histogram of Engram Probability
+# http://www.sthda.com/english/wiki/ggplot2-histogram-plot-quick-start-guide-r-software-and-data-visualization
+thresh.df <- as.data.frame( ninetyfive= as.numeric( quantile(on.hoch5k$Fos_pos,0.95) ),
+                            ninetysevenpointfive = as.numeric( quantile(on.hoch5k$Fos_pos,0.975))
+)
+
+ninetyfive= as.numeric( quantile(on.hoch5k$Fos_pos,0.95) )
+ninetysevenpointfive = as.numeric( quantile(on.hoch5k$Fos_pos,0.975))
+p <- ggplot(data = df, aes(x=Fos_pos) )
+
+dev.off()
+jpeg("Penk_vs_EngramProbability.jpg", width = 350, height = "350")
+p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed") +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed") +
+  xlab("Probability of being an Engram Cell")+
+  ylab("Counts") +
+  scale_linetype_discrete(name = "Thresholds", labels= c() )
+dev.off()
 
 
 
