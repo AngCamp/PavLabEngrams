@@ -604,7 +604,7 @@ dev.off()
 
 count.df <- as.data.frame(t(hochgerner5k_2018_counts[,hoch5k.GC_Adult.p35.idx]) )
 
-df <- on.hoch5k[,2:3]
+df <- on.hoch5k[,2:3] #counts of probability
 df$Penk <- hoch5k.adultDGCs.lognorm$Penk
 df$Arc <- hoch5k.adultDGCs.lognorm$Arc
 df$Inhba <- hoch5k.adultDGCs.lognorm$Inhba
@@ -788,13 +788,12 @@ genes.idx <- c(top.genes, rand.genes)
 #convert our gene/cells to a matrix
 
 #convert to a matrix for pheatmap
-vis.matrix <- as.matrix(hoch5k.adultDGCs.lognorm[cells.idx, genes.idx])
-vis.matrix_scaled <- scale(vis.matrix)
+vis.matrix <- as.matrix(hoch5k.adultDGCs.lognorm[cells.idx, top.genes])
 
 #label the genes
 gene_df <- data.frame ("Genes" = c(rep("Important Gene", 20), rep("Random Gene",20))
                        )
-rownames(gene_df) <- genes.idx
+rownames(gene_df) <- top.genes
 # label the cells
 cell_df <- data.frame ("Cells" = c(rep("Putative Engram Cell", 10), rep("Random Cell",10))
 )
@@ -805,9 +804,19 @@ dev.off()
 jpeg("Penk_vs_EngramProbability.jpg", width = 500, height = "500")
 pheatmap(t(vis.matrix), main = "Hochgerner Cells Activity State",
          cluster_rows = F, cluster_cols=F, 
-         annotation_col = cell_df, annotation_row = gene_df,
+         annotation_col = cell_df, annotation_col = cell_df,
          show_colnames = F, annotation_names_col = F, annotation_names_row = F)
 dev.off()
+
+
+# make the image file
+dev.off()
+jpeg("Penk_vs_EngramProbability.jpg", width = 500, height = "500")
+pheatmap(t(vis.matrix), main = "Hochgerner Cells Activity State",
+         cluster_rows = F, cluster_cols=F, annotation_names_col = F,
+         annotation_col = cell_df, show_colnames = F)
+dev.off()
+
 
 
 # Histogram of Engram Probability
@@ -829,7 +838,7 @@ p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
              linetype="dashed") +
   xlab("Probability of being an Engram Cell")+
   ylab("Counts") +
-  scale_linetype_discrete(name = "Thresholds", labels= c() )
+  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
 dev.off()
 
 
@@ -857,6 +866,124 @@ on.hoch5k <- make.predictions.df(test.classifier,
 
 table(on.hoch5k$predict)
 summary(on.hoch5k$Fos_pos)
+#----------------------------------------------
+
+
+
+
+
+
+### SHUFFLING GENES AND CELL ID FOR CONTROLS
+
+#run classifer on shuffled hochgerner dataset also train on shuffled combined.counts
+# then try shuffling cell ID in combined.counts and training the classifier and running it on hochgerner
+
+gene.shuffle <-function(dat){
+  #shuffles the genes valus within cells,
+  #intended to be applied before normalization
+  for ( cell in c(1:ncol(dat)) ){
+    rand <- sample(nrow(dat)) # generates random vector of numbers from colls
+    dat[,cell] <- dat[rand,cell] # shuffles the genes within cells
+    
+  }# end of loop over cells
+  return(dat)
+}
+
+
+
+## Shuffle genes in validation set
+
+hoch5k.shuffledgenes <- apply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], 
+                              MARGIN = 1, 
+                              FUN = as.integer
+)
+hoch5k.shuffledgenes <- t(hoch5k.shuffledgenes)
+hoch5k.shuffledgenes  <- hoch5k.shuffledgenes[,colnames(hoch5k.shuffledgenes) %in% shared.genes,]
+hoch5k.shuffledgenes <- gene.shuffle(hoch5k.shuffledgenes)
+hoch5k.shuffledgenes <- log.norm( hoch5k.shuffledgenes )
+
+hoch5k.shuffledgenes$Engramcell <- rep("Fos-", dim(hoch5k.shuffledgenes)[1])
+
+on.hoch5kshuffled <- make.predictions.df(test.classifier,
+                                         hoch5k.shuffledgenes)
+
+#make the counts histogram here
+
+p <- ggplot(data = df, aes(x=Fos_pos) )
+
+dev.off()
+jpeg("Penk_vs_EngramProbability.jpg", width = 350, height = "350")
+p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  xlab("Probability of being an Engram Cell")+
+  ylab("Counts") +
+  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
+dev.off()
+
+# Shuffled Genes in training data
+
+
+combined.shuffledgenes <-gene.shuffle(  combined.counts ) 
+combined.shuffledgenes <- combined.shuffledgenes[,colnames(combined.shuffledgenes) %in% shared.genes,]
+combined.shuffledgenes <- gene.shuffle()
+combined.shuffledgenes<-  log.norm(combined.shuffledgenes)
+
+
+
+
+
+# creating our training and validation data, we will take 30% of the
+# baseline cells and and equvilent number of the engram cells to maintain balance in the
+# testing data
+combined.meta$idx <- c(1:750)
+df.temp <- rbind(ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], 
+                       n=52, strata=treatment, over=0
+),
+ssamp(df=combined.meta[combined.meta$fos_status=="Fos-",], 
+      n=52, strata=treatment, over=0)
+)# end of rbind
+
+resamp.combined.lognorm$Engramcell <- combined.meta$fos_status
+resamp.combined.lognorm$Engramcell <- as.factor(resamp.combined.lognorm$Engramcell)
+training_set <- resamp.combined.lognorm[which( !(combined.meta$idx %in% df.temp$idx) ), ]
+validation_set <- resamp.combined.lognorm[which(combined.meta$idx %in% df.temp$idx), ]
+
+
+tic()
+test.classifier <- resample.randomForest( df.in = training_set, proportion = 0.8, 
+                                          batches = 20, trees = 1000)
+toc()
+
+test.predictions <- make.predictions.df(test.classifier, validation_set)
+
+rf.performances$resampled<- assessment(test.predictions) 
+
+importance.df.resamptest <- data.frame(gene = as.character( rownames(test.classifier$importance) ),
+                                       importance_score = as.numeric( test.classifier$importance ) ) %>%
+  arrange(desc(importance_score))
+
+head(importance.df.resamptest, 10)
+
+#roc curve
+levels(predictions.Hoch5k.lognorm$engramobserved) <- c(0,1)
+#Plotting ROC...
+roc.engramcell <- roc(test.predictions$engramobserved, 
+                      as.numeric(test.predictions$Fos_pos) )
+# there is an error here the predictions.Hoch5k.lognorm$engramobserved is showing only as 1 which cannot be true
+# seomthing is wrong with the code don't know where this comes from
+
+#roc.inactive <- roc(predictions$inactiveobserved, as.numeric(predictions$Fos_neg) )
+
+dev.off()
+jpeg("ROC_lognorm.jpg", width = 350, height = "350")
+plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
+dev.off()
+
+
+
+
+
+
+
 
 
 
