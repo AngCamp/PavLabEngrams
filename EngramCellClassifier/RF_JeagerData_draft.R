@@ -645,7 +645,7 @@ p + geom_histogram() +
 dev.off()
 
 
-#the dsitribution of the probability looks very skewed as one would expect
+#the distribution of the probability looks very skewed as one would expect
 # makes me wonder if we could find a better cut off, 
 
 # > sum(on.hoch5k$Fos_pos>0.325)
@@ -907,69 +907,73 @@ hoch5k.shuffledgenes$Engramcell <- rep("Fos-", dim(hoch5k.shuffledgenes)[1])
 on.hoch5kshuffled <- make.predictions.df(test.classifier,
                                          hoch5k.shuffledgenes)
 
-#make the counts histogram here
-
-p <- ggplot(data = df, aes(x=Fos_pos) )
+#HISTOGRAM OF SHUFFLED HOCHGERN ENGRAM CELL PROBABILITY
+df.shuffled <- on.hoch5kshuffled[,2:3]
+p <- ggplot(data = df.shuffled, aes(x=Fos_pos) )
 
 dev.off()
 jpeg("Penk_vs_EngramProbability.jpg", width = 350, height = "350")
 p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
-  xlab("Probability of being an Engram Cell")+
-  ylab("Counts") +
-  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
+  xlab("Probability of being an Engram Cell") +
+  ylab("Counts") 
 dev.off()
 
-# Shuffled Genes in training data
+## Shuffled Genes in training data
 
 
 combined.shuffledgenes <-gene.shuffle(  combined.counts ) 
-combined.shuffledgenes <- combined.shuffledgenes[,colnames(combined.shuffledgenes) %in% shared.genes,]
-combined.shuffledgenes <- gene.shuffle()
-combined.shuffledgenes<-  log.norm(combined.shuffledgenes)
-
-
-
+combined.shuffledgenes <- combined.shuffledgenes[rownames(combined.shuffledgenes) %in% shared.genes,]
+combined.shuffledgenes <- gene.shuffle(combined.shuffledgenes )
+combined.shuffledgenes <-  log.norm(combined.shuffledgenes)
 
 
 # creating our training and validation data, we will take 30% of the
-# baseline cells and and equvilent number of the engram cells to maintain balance in the
+# baseline cells and and equivalent number of the engram cells to maintain balance in the
 # testing data
-combined.meta$idx <- c(1:750)
-df.temp <- rbind(ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], 
-                       n=52, strata=treatment, over=0
-),
-ssamp(df=combined.meta[combined.meta$fos_status=="Fos-",], 
-      n=52, strata=treatment, over=0)
-)# end of rbind
 
-resamp.combined.lognorm$Engramcell <- combined.meta$fos_status
-resamp.combined.lognorm$Engramcell <- as.factor(resamp.combined.lognorm$Engramcell)
-training_set <- resamp.combined.lognorm[which( !(combined.meta$idx %in% df.temp$idx) ), ]
-validation_set <- resamp.combined.lognorm[which(combined.meta$idx %in% df.temp$idx), ]
+# we do not regenerate our training and test set but
+combined.shuffledgenes$Engramcell <- combined.meta$fos_status
+combined.shuffledgenes$Engramcell <- as.factor(combined.shuffledgenes$Engramcell)
+training_set.shuffled <- combined.shuffledgenes[which( !(combined.meta$idx %in% df.temp$idx) ), ]
+validation_set.shuffled <- combined.shuffledgenes[which(combined.meta$idx %in% df.temp$idx), ]
 
+
+training_set.shuffled$treatment <- combined.meta$treatment[which( !(combined.meta$idx %in% df.temp$idx) ) ]
 
 tic()
-test.classifier <- resample.randomForest( df.in = training_set, proportion = 0.8, 
+shuffledgenes.classifier <- resample.randomForest( df.in = training_set.shuffled, proportion = 0.8, 
                                           batches = 20, trees = 1000)
 toc()
 
-test.predictions <- make.predictions.df(test.classifier, validation_set)
+test.predictions.shuffled <- make.predictions.df(shuffledgenes.classifier , validation_set.shuffled)
 
-rf.performances$resampled<- assessment(test.predictions) 
+rf.performances$shuffled_genes <- assessment(test.predictions.shuffled) 
 
-importance.df.resamptest <- data.frame(gene = as.character( rownames(test.classifier$importance) ),
-                                       importance_score = as.numeric( test.classifier$importance ) ) %>%
+importance.df.shuffledgenes <- data.frame(gene = as.character( rownames(shuffledgenes.classifier$importance) ),
+                                       importance_score = as.numeric( shuffledgenes.classifier$importance ) ) %>%
   arrange(desc(importance_score))
 
-head(importance.df.resamptest, 10)
+head(importance.df.shuffledgenes, 10) # few of these genes make any sense, and the performance is low
+
+# > head(importance.df.shuffledgenes, 10)
+# gene importance_score
+# 1          Dusp9       0.08831070
+# 2  6330408A02Rik       0.08071013
+# 3          Tm2d1       0.07955446
+# 4            Msc       0.07487376
+# 5        Ccdc157       0.06941980
+# 6          Mylip       0.06885648
+# 7           Dtd2       0.06633179
+# 8           Tjp1       0.06617151
+# 9         Gtpbp8       0.06613198
+# 10         Synj2       0.06610811
+
 
 #roc curve
-levels(predictions.Hoch5k.lognorm$engramobserved) <- c(0,1)
+levels(test.predictions.shuffled$engramobserved) <- c(0,1)
 #Plotting ROC...
-roc.engramcell <- roc(test.predictions$engramobserved, 
-                      as.numeric(test.predictions$Fos_pos) )
-# there is an error here the predictions.Hoch5k.lognorm$engramobserved is showing only as 1 which cannot be true
-# seomthing is wrong with the code don't know where this comes from
+roc.engramcell <- roc(test.predictions.shuffled$engramobserved, 
+                      as.numeric(test.predictions.shuffled$Fos_pos) )
 
 #roc.inactive <- roc(predictions$inactiveobserved, as.numeric(predictions$Fos_neg) )
 
@@ -979,6 +983,73 @@ plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
 dev.off()
 
 
+##  Shuffle cell IDs
+
+
+combined.shuffledcells <- combined.counts 
+combined.shuffledcells <- combined.shuffledcells[rownames(combined.shuffledcells) %in% shared.genes, ]
+combined.shuffledcells <- log.norm(  combined.shuffledcells )
+combined.shuffledcells <- combined.shuffledcells[ sample( c(1:nrow(combined.shuffledcells)) ), ]
+
+
+
+
+# creating our training and validation data, we will take 30% of the
+# baseline cells and and equivalent number of the engram cells to maintain balance in the
+# testing data
+
+# we do not regenerate our training and test set but
+combined.shuffledcells$Engramcell <- combined.meta$fos_status
+combined.shuffledcells$Engramcell <- as.factor(combined.shuffledcells$Engramcell)
+training_set.shuffledcells <- combined.shuffledcells[which( !(combined.meta$idx %in% df.temp$idx) ), ]
+validation_set.shuffledcells <- combined.shuffledcells[which(combined.meta$idx %in% df.temp$idx), ]
+
+
+training_set.shuffledcells$treatment <- combined.meta$treatment[which( !(combined.meta$idx %in% df.temp$idx) ) ]
+
+tic()
+shuffledcells.classifier <- resample.randomForest( df.in = training_set.shuffledcells, proportion = 0.8, 
+                                                   batches = 20, trees = 1000)
+toc()
+
+
+
+test.predictions.shuffledcells <- make.predictions.df(shuffledcells.classifier , validation_set.shuffledcells)
+
+rf.performances$shuffled_cells <- assessment(test.predictions.shuffledcells) 
+
+importance.df.shuffledcells <- data.frame(gene = as.character( rownames(shuffledcells.classifier$importance) ),
+                                          importance_score = as.numeric( shuffledcells.classifier$importance ) ) %>%
+  arrange(desc(importance_score))
+
+head(importance.df.shuffledcells, 10) # few of these genes make any sense, and the performance is low
+
+# > head(importance.df.shuffledcells, 10) # few of these genes make any sense, and the performance is low
+# gene importance_score
+# 1     Tpx2       0.06932673
+# 2    Rsrc2       0.06425252
+# 3     Ostc       0.06281410
+# 4     Urm1       0.06144273
+# 5    Nudt5       0.05987852
+# 6  Heatr5a       0.05898927
+# 7  Tmem214       0.05861042
+# 8  Eif2s3y       0.05778846
+# 9     Dtd1       0.05724997
+# 10    Pax6       0.05715121
+
+
+#roc curve
+levels(test.predictions.shuffledcells$engramobserved) <- c(0,1)
+#Plotting ROC...
+roc.engramcell <- roc(test.predictions.shuffledcells$engramobserved, 
+                      as.numeric(test.predictions.shuffledcells$Fos_pos) )
+
+#roc.inactive <- roc(predictions$inactiveobserved, as.numeric(predictions$Fos_neg) )
+
+dev.off()
+jpeg("ROC_lognorm.jpg", width = 350, height = "350")
+plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
+dev.off()
 
 
 
