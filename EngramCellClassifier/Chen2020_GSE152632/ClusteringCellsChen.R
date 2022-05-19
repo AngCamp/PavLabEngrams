@@ -129,22 +129,70 @@ chen.markers <- FindAllMarkers(chen, only.pos = TRUE, min.pct = 0.25, logfc.thre
 top2.chen.markers <- chen.markers %>%
   group_by(cluster) %>%
   slice_max(n = 2, order_by = avg_log2FC)
-top2.chen.markers
 
-chen.markers %>%
-  group_by(cluster) %>%
-  slice_max(n = 1, order_by = avg_log2FC)
+top2.chen.markers <-  data.frame(top2.chen.markers)
+write.csv(chen.markers, "Chen2020_ClusterMarkers.csv")
 
-chen.markers %>%
-  group_by(cluster) %>%
-  top_n(n = 10, wt = avg_log2FC) -> top10
-DoHeatmap(pbmc, features = top10$gene) + NoLegend()
+#making list of top two markers to display on clustering graph
+two.mrkrs <- c() # the list we will use to label the graph
+j=0
+for(i in c(1:dim(top2.chen.markers)[1]) ){
+  j = j+1
+  if(j==1){
+    first.marker <- top2.chen.markers$gene[i]
+  }# end of if statement
 
+  if(j == 2){
+    # glue the markers together and...
+    this.clstr <- paste(as.character(first.marker),
+          as.character(top2.chen.markers$gene[i]),
+          sep = "-")
+    #...add to the list as a single entry
+    two.mrkrs <- c(two.mrkrs, this.clstr)
+    j = 0 # reset j
+  }# end of if statement
+}# end of for loop
 
+# > two.mrkrs
+# [1] "Rprm-Crym"            "Dkkl1-Ptn"            "Rgs4-Slc30a3"        
+# [4] "Myl4-Lypd1"           "Prkcg-Bdnf"           "3110035E14Rik-Rprm"  
+# [7] "Synpr-Vip"            "Nnat-Rasl10a"         "Vip-Penk"            
+# [10] "Rgs4-Nrn1"            "Sst-Crhbp"            "Ndnf-Gad1"           
+# [13] "Synpr-Crh"            "3110035E14Rik-Cxcl12" "Tac2-Npy"            
+# [16] "Sub1-Atpif1"          "Cnr1-Tac2"            "Rgs4-Nrep"           
+# [19] "Vip-Tac2"             "Lamp5-Wfs1"           "Pcp4-Tmsb10"
+
+#renaming cluster id's
+names(two.mrkrs) <- levels(chen)
+chen <- RenameIdents(chen, two.mrkrs)
+
+#Visualize Clusters
 dev.off()
-jpeg("DimplotTSNE_Chen.jpg", width = 1400, height = 700)
+jpeg("DimPlotTSNE_Chen.jpg", width = 700, height = 700)
+DimPlot(chen, reduction = "tsne", label = TRUE, pt.size = 0.5) + NoLegend()
+dev.off()
+
+
+#clusters vs Snap25
+dev.off()
+jpeg("ClustersVsSnap25.jpg", width = 1400, height = 700)
 DimPlot(chen, reduction = "tsne") + FeaturePlot(chen, reduction =  "tsne", feature = c("Snap25") )
 dev.off()
 
+#clusters vs engram label
+dev.off()
+jpeg("CellClustersTdplus.jpg", width = 1400, height = 700)
+DimPlot(chen, reduction = "tsne", 
+        label = TRUE, repel = TRUE, label.size = 5,
+        pt.size = 2.5,
+        shape.by = "engram_label") 
+dev.off()
 
-
+#clusters vs engram label
+dev.off()
+jpeg("EngramandConditionLabels.jpg", width = 1400, height = 700)
+DimPlot(chen, reduction = "tsne", 
+        pt.size = 2.5,
+        shape.by = "condition_label",
+        group.by = "engram_label") 
+dev.off()
