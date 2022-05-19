@@ -464,8 +464,8 @@ df$prob_bin <- as.factor(floor(df$Fos_pos*10)/10)
 
 p <- ggplot(data = df, aes(x=prob_bin, y=penk_count) )
 
-
-jpeg("Penk_vs_EngramProbability.jpg", width = 350, height = "350")
+dev.off()
+jpeg("Penk_vs_EngramProbability.jpg", width = 350, height = 350)
 p + geom_bar(stat="identity")
 dev.off()
 
