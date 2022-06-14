@@ -1501,6 +1501,8 @@ importance.df.jdegs <- data.frame(gene = as.character( rownames(downsamp.lognorm
 # mean center scale then log(x+1)
 
 logplusone <- function(x){
+  # mean center scale then log(x+1)
+  #used in lognorm
   return( log(x+1) )
 }
 
