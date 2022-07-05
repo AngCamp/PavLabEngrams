@@ -492,6 +492,7 @@ resamp.combined.lognorm <- resamp.combined.lognorm[,colnames(resamp.combined.log
 # creating our training and validation data, we will take 30% of the
 # baseline cells and and equvilent number of the engram cells to maintain balance in the
 # testing data
+# NOTE ssamp() unlike sample.split(), will preserve the proportion of treatment groups so
 combined.meta$idx <- c(1:750)
 df.temp <- rbind(ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], 
                  n=52, strata=treatment, over=0
@@ -1052,8 +1053,101 @@ plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
 dev.off()
 
 
+### CROSS VALIDATION --FINAL DRAFT
+
+# number of folds
+K <- 5 
+
+library (caret)
+# https://www.r-bloggers.com/2020/11/caretcreatefolds-vs-createmultifolds/
+# https://www.rdocumentation.org/packages/sail/versions/0.1.0/topics/createfolds
+flds <- createFolds(y, k = 10, list = TRUE, returnTrain = FALSE) 
+names(flds)[1] <- "train"
+
+# borrowed code from above needs some tweeking to turn it into cross validation
+# need to write a line combining models and  splitting the sets into seperate folds
+for(i in c(1:K) ){
+  
+  #resample training and validation set
+  combined.meta$idx <- c(1:750)
+  df.temp <- rbind(ssamp(df=combined.meta[combined.meta$fos_status=="Fos+",], 
+                         n=52, strata=treatment, over=0
+  ),
+  ssamp(df=combined.meta[combined.meta$fos_status=="Fos-",], 
+        n=52, strata=treatment, over=0)
+  )# end of rbind
+  
+  resamp.combined.lognorm$Engramcell <- combined.meta$fos_status
+  resamp.combined.lognorm$Engramcell <- as.factor(resamp.combined.lognorm$Engramcell)
+  training_set <- resamp.combined.lognorm[which( !(combined.meta$idx %in% df.temp$idx) ), ]
+  validation_set <- resamp.combined.lognorm[which(combined.meta$idx %in% df.temp$idx), ]
+  
+  # reinstatiate classifier, validate save the results
+  training_set$treatment <- combined.meta$treatment[which( !(combined.meta$idx %in% df.temp$idx) ) ]
+  
+  test.classifier <- resample.randomForest( df.in = training_set, proportion = 0.8, 
+                                            batches = 20, trees = 600)
+  temp.pred.df <- make.predictions.df(test.classifier, validation_set)
+  temp.pred.dict[ run[i] ] <- temp.pred.df
+  
+  print(assessment(temp.pred.df))
+  
+  
+  # label hoch cells
+  on.hoch5k <- make.predictions.df(test.classifier,
+                                   hoch5k.adultDGCs.lognorm)
+  
+  engram.dict[ run[i] ] <- which(on.hoch5k$predict=="Fos+")
+  thresh <- as.numeric( quantile(on.hoch5k$Fos_pos,0.975) )
+  ninetysevenpointfivequantile.dict[ run[i] ] <- which( as.numeric(on.hoch5k$Fos_pos) > thresh )
+  thresh = as.numeric( quantile(on.hoch5k$Fos_pos,0.95) )
+  ninetyfithquantile.dict[ run[i] ] <- which( as.numeric(on.hoch5k$Fos_pos) > thresh )
+}
 
 
+
+
+
+## Object oriented attempt
+
+# frome here: https://www.cyclismo.org/tutorial/R/s4Classes.html
+resampled.randomForest <- setClass(
+  #name of the class
+  "resampled.randomForest",
+  
+  # Define the slots
+  slots = c(
+    data = "data.frame",
+    rf.model = "randomForest",
+    assessment = "data.frame"
+    normalization = "character",
+    trained="character"
+  ),
+  
+
+  # Set the default values for the slots. (optional)
+  prototype=list(
+    x = 0.0,
+    y = 0.0
+  ),
+  
+  # Make a function that can test to see if the data is consistent.
+  # This is not called if you have an initialize function defined!
+  validity=function(object)
+  {
+    if((object@x < 0) || (object@y < 0)) {
+      return("A negative number for one of the coordinates was given.")
+    }
+    return(TRUE)
+  }
+)
+
+resampled.randomForest <- setClass("resampled.randomForest", 
+                                   
+                                   slots=list(data = "data.frame")
+                                   )
+
+test <- 
 
 
 
