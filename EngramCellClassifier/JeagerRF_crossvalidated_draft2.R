@@ -266,6 +266,7 @@ assessment <- function(predictions.df){
             TP, FN, TN, FP) )
 }
 
+#crossvalidated.resampled.randomforest
 
 # Actually running the code with cross validation
 
@@ -283,55 +284,71 @@ shared.genes <- intersect( colnames(hoch5k.adultDGCs.lognorm), colnames(resamp.c
 hoch5k.adultDGCs.lognorm  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs.lognorm) %in% shared.genes,]
 resamp.combined.lognorm <- resamp.combined.lognorm[,colnames(resamp.combined.lognorm) %in% shared.genes,]
 
-# create folds for cross validation
-data(mtcars) # call this with mtcars
-cars.df <- data.frame(mtcars)
-cars.df$gear <- as.factor(cars.df$gear)
-cars.df$carb <- as.factor(cars.df$carb)
-
-test <- createFolds(cars.df, k = 3, list = TRUE, returnTrain = FALSE)
 
 
 
-stratified(cars.df, group, size, select = NULL, replace = FALSE,
-           keep.rownames = TRUE, bothSets = FALSE, ...)
-# > str(test)
-# List of 3
-# $ Fold1: int [1:4] 1 2 3 6
-# $ Fold2: int [1:3] 4 8 9
-# $ Fold3: int [1:4] 5 7 10 11
-# > test$Fold1
-# [1] 1 2 3 6
-# > test[[1]] 
-# [1] 1 2 3 6
-# > test[[2]]
-# [1] 4 8 9
-# > test[[3]]
-# [1]  5  7 10 11
+resample.randomForest.crossvalidate <-function( data, 
+                                                metadata,
+                                                label.column,
+                                                meta.cols.to.stratify.by,
+                                                trees, 
+                                                folds, 
+                                                labelled.proportion = 0.8, 
+                                                batches.per.fold = 20 
+                                                ){
+  #buidling the resampling
+  folds = 3 #for debugging
+  trees.per.fold = floor(trees/folds)
+  
+  label.column = "fos_status"
+  meta.cols.to.stratify.by = c("treatment","experiment.label")
+  i <- 0
+  while (i < (folds-1) ) {
+    
+    #stratified takes a fraction of the sample,
+    # as we procede step wise we need to reajust the proportion to keep the
+    #number of samples taken the same, i.e. if we want 5 fold cross validation
+    # firs step we take 1/5th leaving 4/5ths so the next iteration we should take
+    # 1/4 of the remaining samples as 1/4*4/5=1/5 and so on and so forth,
+    # the last step takes place outside of this while loop and will get the remainder if there is some
+    over_n = 1/(folds-i)
+    # round down otherwise stratified takes 1 more sample than it should
+    over_n = floor(over_n*100)/100 
+    
+    temp.meta <- metadata[!(rownames(metadata) %in% used_samples), ]
+    #generates folds in a stratified way, we use this index to pull from data
+    temp.meta <- stratified(temp.meta, 
+                            c(label.column, meta.cols.to.stratify.by), 
+                            size = over_n, 
+                            keep.rownames = TRUE)
+    
+    used_samples <- c(used_samples,temp.meta$rn) #tracking used cells (samples)
+    #run resampling here with default parameters on data[,!(colnames(data) %in% temp.meta$rn)]
+    # trees here is set to trees per fold
+    rf.this_fold <- resample.randomForest(df.in = data[,!(colnames(data) %in% temp.meta$rn)],
+                                          proportion = labelled.proportion,
+                                          batches = 20, 
+                                          trees = trees.per.fold))
+    
+    #assess add to a dataframe on data[,temp.meta$rn]
+    #combine models together
+    
+    #update i
+    i = i+1
+  }# end of while loop
+  
+  # final fold has no need to redraw as we just take whats left
+  temp.meta <- combined.meta[!(rownames(combined.meta) %in% used_samples), ]
+  
+  #run resampling here with default parameters on data[,!(colnames(data) %in% temp.meta$rn)]
+  #assess add to a dataframe on data[,temp.meta$rn]
+  #combine models together
+  
+  #make an s3 object with the combined models and assessment dataframe
+  #return s3 model + assessment object
 
-# https://rdrr.io/cran/splitstackshape/man/stratified.html
-# this will work for us, just need to iterate through the samples take
+}
 
-set.seed(1)
-DF <- data.frame(
-     ID = 1:100,
-     A = sample(c("AA", "BB", "CC", "DD", "EE"), 100, replace = TRUE),
-     B = rnorm(100), C = abs(round(rnorm(100), digits=1)),
-     D = sample(c("CA", "NY", "TX"), 100, replace = TRUE),
-     E = sample(c("M", "F"), 100, replace = TRUE))
-
-stratified(DF, c("E", "D"), size = .15, keep.rownames = TRUE)
-
-#draft of the cross validation method here
-# we will create a stripped down jeager2018_meta, and use 
-# stratified to sample it,  then the indices will be removed
-
-# temp_meta <- jeager2018_meta[row,col]
-
-
-
-resample.randomForest.crossvalidate <-function( df.in, relevant_metadata, proportion,
-                                  batches, trees){
   #this function resamples from our samples and retrains new models then combines them
   # this is too prevent over fitting on cells
   
