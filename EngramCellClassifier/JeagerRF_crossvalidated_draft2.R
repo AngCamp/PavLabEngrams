@@ -192,61 +192,34 @@ log.norm <- function(df.in){
   return(df.out)
 }
 
-# needs re writing, second attempt in progress below
-# currently treatment is expected to be in count data but we have moved it to meta data,
-# we need to replace ssampl with stratify as we have done in cross validated version of this
-resample.randomForest <-function( df.in, 
-                                  meta.data,
-                                  label = c("Fos+","Fos-"), #default
-                                  label.column, 
-                                  stratify.by = c(),
+
+resample.randomForest <-function( df.in,
+                                  under_represented_class,
+                                  over_represented_class,
                                   proportion,
                                   batches, 
-                                  trees
-                                  ){
+                                  trees){
+  #NOTE: df.in should have a column called engram cell with the class labels i.e. postive or negative
+
   #this function resamples from our samples and retrains new models then combines them
   # this is too prevent over fitting on cells
   trees.per.batch <- as.integer(trees/batches)
-  n.cells <- trunc( sum(meta.data[,label.column]==label[1])*proportion)
+  n.cells <- trunc( sum(df.in$Engramcell==under_represented_classs)*proportion)
   batches <- c(1:batches)
-  print("batch loop starts")
   for( batch in batches){
-    print(batch)# for debugging
+    resample.set <- rbind(sample(which(df.in$Engramcell==under_represented_class), size = n.cells),
+                          sample(which(df.in$Engramcell==over_represented_class), size = n.cells)
+                          )
+    resample.set <- df.in[resample.set,]
     
-    # this needs to be replaced by stratify, chage fos to label
-    # good news is this is not so complicated, we are sampling with replacement :)
-    
-    #old method
-    # resample.set <- rbind(ssamp(df=df.in[df.in$Engramcell=="Fos-",], n=n.cells,
-    #                             strata=treatment, over=0),
-    #                       ssamp(df=df.in[df.in$Engramcell=="Fos+",], n=n.cells,
-    #                             strata=treatment, over=0)
-    # )
-    # resample.set <- resample.set[,2:(length(resample.set))]
-
-    #new method with stratify()
-    batch.meta <- stratified(meta.data, 
-                            c(label.column, stratify.by), 
-                            size = over_n, 
-                            keep.rownames = TRUE)
-    batch.meta <- data.frame(batch.meta) #otherwise late using label.column throws an error
-    rownames(batch.meta) <- batch.meta$rn
-    print("making resample set")# for debugging
-    print(length(batch.meta$rn))
-    print(sum(batch.meta$rn %in% rownames(df.in)) )# for debugging
-    resample.set <- df.in[batch.meta$rn,]
-    resample.set$Engramcell <- as.factor(batch.meta[,label.column])
-    print(sum(is.na(resample.set)) )# for debugging
     # creates rf.model
     if(batch==1){
-      print("training model") # for debugging
       rf.model <- randomForest(x = resample.set[,1:(length(resample.set)-1)],
                                y = resample.set$Engramcell,
                                ntree = trees.per.batch)
     }
-    #trains new models in rf.fit and combines than with rf.model
+    #trains new models in rf.fit and combines tham with rf.model
     if(batch>1){
-      print("training model")# for debugging
       rf.fit = randomForest(x = resample.set[,1:(length(resample.set)-1)],
                             y = resample.set$Engramcell,
                             ntree = trees.per.batch)
@@ -258,17 +231,14 @@ resample.randomForest <-function( df.in,
 }
 
 
+
+
 #### Testing modified random forest
 resamp.combined.lognorm <-  log.norm(combined.counts)
 
+labeled.data = resamp.combined.lognorm
+labeled.data$Engramcell <- as.factor(combined.meta$fos_status)
 
-test <- resample.randomForest(df.in = resamp.combined.lognorm,
-                                      meta.data = combined.meta,
-                                      label.column = "fos_status",
-                                      stratify.by = c("treatment","experiment.label"),
-                                      proportion = 0.8,
-                                      batches = 10, 
-                                      trees = 100)
 
 #for testing the predictions and assessment funcitons
 hoch5k.adultDGCs.lognorm <- apply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], 
@@ -327,152 +297,185 @@ assessment <- function(predictions.df,
             TP, FN, TN, FP) )
 }
 
-#crossvalidated.resampled.randomforest
-
-# Actually running the code with cross validation
-
-resamp.combined.lognorm <-  log.norm(combined.counts)
-
-hoch5k.adultDGCs.lognorm <- apply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], 
-                                  MARGIN = 1, 
-                                  FUN = as.integer
-                                  )
-
-hoch5k.adultDGCs.lognorm <- log.norm( t(hoch5k.adultDGCs.lognorm) )
-
-#gene matching
-shared.genes <- intersect( colnames(hoch5k.adultDGCs.lognorm), colnames(resamp.combined.lognorm) )
-hoch5k.adultDGCs.lognorm  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs.lognorm) %in% shared.genes,]
-resamp.combined.lognorm <- resamp.combined.lognorm[,colnames(resamp.combined.lognorm) %in% shared.genes,]
 
 
-# we need this object to produce output for this resampled.randomForest.crossvalidated funciton
-cv.resampled.rf <- setClass("cv.resampled.rf", slots=list(model="character", performance="data.frame") )
-
-
-resampled.randomForest.crossvalidated <-function( data= combined.counts, 
-                                                metadata = combined.meta,
-                                                label.column = "fos_status",
-                                                meta.cols.to.stratify.by = c(), 
-                                                trees, 
-                                                folds, 
-                                                downsampling.proportion = 0.8, # default
-                                                batches.per.fold = 20 #default
-                                                ){
-  #all inputs not marked as default are user set, they are set here for debugging
+resampled.randomForest.crossvalidated <-function(data,
+                                                 under.represented.class,
+                                                 over.represented.class,
+                                                 folds,
+                                                 trees.total,
+                                                 proportion.each.batch=0.8,
+                                                 batches.per.fold=20){
+  # takes a data frame with a label column assumed to be named Engramcell, data$Engramcell
+  # returns a model that has been k-fold cross validated, with an attribute called Assessment
+  # assessment has the performance metrics of all the folds and a column of means and SD's for each
+  # metric
+  #NOTE: ROC curve needs to be implemented
   
-  #Instantiating some variables
-  trees.per.fold = floor(trees/folds)
-  used_samples <- c()
-  i <- 0
-  while (i < (folds-1) ) {
+  folds.obj <- createFolds(data$Engramcell, k = folds)
+  loops <- c(1:folds)
+  for( i in loops ){
+    #create indices
+    test.idx <- folds.obj[[i]]
+    # needs to be a list so it can act as an index
+    train.idx <- which(!(rownames(data) %in% test.idx) )
     
-    #stratified takes a fraction of the sample,
-    # as we procede step wise we need to reajust the proportion to keep the
-    #number of samples taken the same, i.e. if we want 5 fold cross validation
-    # firs step we take 1/5th leaving 4/5ths so the next iteration we should take
-    # 1/4 of the remaining samples as 1/4*4/5=1/5 and so on and so forth,
-    # the last step takes place outside of this while loop and will get the remainder if there is some
-    over_n = 1/(folds-i)
-    # round down otherwise stratified takes 1 more sample than it should
-    over_n = floor(over_n*100)/100 
+    #split data for this fold
+    training_set <- data[train.idx,]
+    testing_set <- data[test.idx,]
     
-    temp.meta <- metadata[!(rownames(metadata) %in% used_samples), ]
-    #generates folds in a stratified way, we use this index to pull from data
-    temp.meta <- stratified(temp.meta, 
-                            c(label.column, meta.cols.to.stratify.by), 
-                            size = over_n, 
-                            keep.rownames = TRUE)
-    temp.meta <- data.frame(temp.meta)
-    used_samples <- c(used_samples,temp.meta$rn) #tracking used cells (samples)
-    #run resampling here with default parameters on data[,!(colnames(data) %in% temp.meta$rn)]
-    # trees here is set to trees per fold
-    print(head(data[!(rownames(data) %in% temp.meta$rn),]) )
-    print(is  )
-    rf.this_fold <- resample.randomForest(df.in = data[!(rownames(data) %in% temp.meta$rn),],
-                                          meta.data = temp.meta[,c(2:4)],
-                                          label.column = "fos_status",
-                                          stratify.by = meta.cols.to.stratify.by,
-                                          proportion = downsampling.proportion,
+    # divvies up number of trees
+    trees.in.the.fold = as.integer(trees.total/folds)
+    if ( ( trees.total%%(batches.per.fold*folds) )>0  ){ 
+      stop("Number of trees does not devide evenly by batches and folds.")
+    }
+    # we still need to settle on stuff to 
+    rf.this_fold <- resample.randomForest(df.in = training_set,
+                                          under_represented_class = under.represented.class,
+                                          over_represented_class = over.represented.class,
+                                          proportion= proportion.each.batch,
                                           batches = batches.per.fold, 
-                                          trees = trees.per.fold)
+                                          trees = trees.in.the.fold)
     
-    #assess add to a dataframe on data[,temp.meta$rn]
-    #combine models together
-    if(i ==0){
+    if(i == 1){
       rf.out <- rf.this_fold
-      fold.performance <- data.frame( assessment( make.predictions.df(rf.this_fold, data[,temp.meta$rn]) ) )
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance <- data.frame(assess )
+      rownames(fold.performance) <- c("F1 Score", "AUC", "Precision", "Recall",
+                                      "FPR", "FNR", "True Positives", "False Negatives", 
+                                      "True Negatives", "False Positives")
     }else{
       rf.out <- randomForest::combine(rf.out, rf.this_fold)
-      fold.performance[nrow(fold.performance) + 1,] <- data.frame( assessment( make.predictions.df(rf.this_fold, data[,temp.meta$rn]) ) )
+      # we need votes for all cells to calculate
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance[,ncol(fold.performance) + 1] <- assess
     }
     
-    #update i
-    i = i+1
-  }# end of while loop
+  }# end of for loop
+  colnames(fold.performance) <- names(folds.obj)
+  fold.performance$Mean <- apply(fold.performance,MARGIN=1,  FUN = mean)
+  fold.performance$SigDiff <- apply(fold.performance,MARGIN=1,  FUN = sd)
+  rf.out$Assessment <- fold.performance
   
-  # final fold has no need to redraw as we just take whats left
-  temp.meta <- combined.meta[!(rownames(combined.meta) %in% used_samples), ]
-  trees.per.fold <- trees.per.fold + (trees %% folds)
-  #run resampling here with default parameters 
-  rf.this_fold <- resample.randomForest(df.in = data[,!(colnames(data) %in% temp.meta$rn)],
-                                        proportion = downsampling.proportion,
-                                        batches = batches.per.fold, 
-                                        trees = trees.per.fold)
-  #assess add to a dataframe on data[,temp.meta$rn]
-  rf.out <- randomForest::combine(rf.out, rf.this_fold)
-  fold.performance[nrow(fold.performance) + 1,] <- data.frame( assessment( make.predictions.df(rf.this_fold, data[,temp.meta$rn]) ) )
-  #combine models together
-  
-  #make an s3 object with the combined models and assessment dataframe
-  #model.and.performance <- cv.resampled.rf(model = rf.out, performance = )
-  #return s3 model + assessment object
-  return(" this is where a model and assessment object would be")
+  #votes needs to be updated to make roc curve
+  rf.out$votes <- predict(object = classifier, newdata = labeled.data, type = 'vote', norm.votes = FALSE)
+  return(rf.out)
 }
 
 
-#testing crossvalidated
-resampled.randomForest.crossvalidated( data= combined.counts,
-                                       metadata = combined.meta,
-                                       label.column = "fos_status",
-                                       meta.cols.to.stratify.by = c("treatment","experiment.label"),
-                                       trees =  1000,
-                                       folds = 3,
-                                       downsampling.proportion = 0.8,
-                                       batches.per.fold = 20)
 
+#crossvalidated.resampled.randomforest
 
-#implement cross validation here
-tic()
-test.classifier <- resample.randomForest( df.in = combined.counts, proportion = 0.8, 
-                                          batches = 20, trees = 1000)
-toc()
+#testing cross-validated
+classifier <- resampled.randomForest.crossvalidated( data= labeled.data,
+                                       under.represented.class = "Fos-",
+                                       over.represented.class = "Fos+",
+                                       trees.total = 1000,
+                                       folds = 10,
+                                       proportion.each.batch=0.8,
+                                       batches.per.fold=20)
 
-test.predictions <- make.predictions.df(test.classifier, validation_set)
+classifier$votes <- predict(object = classifier, newdata = labeled.data, type = 'vote', norm.votes = FALSE)
 
-rf.performances$resampled<- assessment(test.predictions) 
-
-importance.df.resamptest <- data.frame(gene = as.character( rownames(test.classifier$importance) ),
-                                       importance_score = as.numeric( test.classifier$importance ) ) %>%
+importance.df.resamptest <- data.frame(gene = as.character( rownames(classifier$importance) ),
+                                       importance_score = as.numeric(classifier$importance ) ) %>%
   arrange(desc(importance_score))
 
 head(importance.df.resamptest, 10)
 
-#roc curve
-levels(predictions.Hoch5k.lognorm$engramobserved) <- c(0,1)
-#Plotting ROC...
-roc.engramcell <- roc(test.predictions$engramobserved, 
-                      as.numeric(test.predictions$Fos_pos) )
-# there is an error here the predictions.Hoch5k.lognorm$engramobserved is showing only as 1 which cannot be true
-# seomthing is wrong with the code don't know where this comes from
 
-#roc.inactive <- roc(predictions$inactiveobserved, as.numeric(predictions$Fos_neg) )
+roc.engramcell = roc(labeled.data$Engramcell, classifier$votes[,2], plot=TRUE, legacy.axes=TRUE, percent=TRUE,
+    xlab="False Positive Percentage", ylab="True Postive Percentage", 
+    col="firebrick4", lwd=4, print.auc=TRUE)
+
 
 dev.off()
-jpeg("ROC_lognorm.jpg", width = 350, height = "350")
-plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
+jpeg("ROCBinarized.jpg", width = 700, height = 700)
+plot(roc.engramcell, main = "ROC of RF Classifier")
 dev.off()
 
+
+
+### Now with Hochgernezz genes and running on hochgerner
+
+# Actually running the code with cross validation
+
+labeled.data.hochgerner2018_genes <-  log.norm(combined.counts)
+
+hoch5k.adultDGCs.lognorm <- apply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], 
+                                  MARGIN = 1, 
+                                  FUN = as.integer)
+
+hoch5k.adultDGCs.lognorm <- log.norm( t(hoch5k.adultDGCs.lognorm) )
+
+#gene matching
+shared.genes <- intersect( colnames(hoch5k.adultDGCs.lognorm), colnames(labeled.data.hochgerner2018_genes) )
+hoch5k.adultDGCs.lognorm  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs.lognorm) %in% shared.genes,]
+labeled.data.hochgerner2018_genes <- labeled.data.hochgerner2018_genes[,colnames(labeled.data.hochgerner2018_genes) %in% shared.genes,]
+labeled.data.hochgerner2018_genes$Engramcell <- as.factor(combined.meta$fos_status)
+
+
+classifier.hzochgerner2018_genes <- resampled.randomForest.crossvalidated( data= labeled.data.hochgerner2018_genes,
+                                                     under.represented.class = "Fos-",
+                                                     over.represented.class = "Fos+",
+                                                     trees.total = 1000,
+                                                     folds = 10,
+                                                     proportion.each.batch=0.8,
+                                                     batches.per.fold=20)
+
+
+importance.df.resamptest <- data.frame(gene = as.character( rownames(classifier.hochgerner2018_genes$importance) ),
+                                       importance_score = as.numeric(classifier.hochgerner2018_genes$importance ) ) %>%
+  arrange(desc(importance_score))
+
+head(importance.df.resamptest, 10)
+
+
+roc.engramcell = roc(labeled.data.hochgerner2018_genes$Engramcell,
+                     classifier.hochgerner2018_genes$votes[,2], 
+                     plot=TRUE, legacy.axes=TRUE, percent=TRUE,
+                     xlab="False Positive Percentage", ylab="True Postive Percentage", 
+                     col="firebrick4", lwd=4, print.auc=TRUE)
+
+
+dev.off()
+jpeg("ROCBinarized.jpg", width = 700, height = 700)
+plot(roc.engramcell, main = "ROC of RF Classifier")
+dev.off()
+
+#heatmap of hochgerner cells gene expression
+# make the image file
+dev.off()
+jpeg("Penk_vs_EngramProbability.jpg", width = 500, height = "500")
+pheatmap(t(vis.matrix), main = "Hochgerner Cells Activity State",
+         cluster_rows = F, cluster_cols=F, 
+         annotation_col = cell_df, annotation_col = cell_df,
+         show_colnames = F, annotation_names_col = F, annotation_names_row = F)
+dev.off()
+
+# Histogram of Engram Probability
+# http://www.sthda.com/english/wiki/ggplot2-histogram-plot-quick-start-guide-r-software-and-data-visualization
+thresh.df <- as.data.frame( ninetyfive= as.numeric( quantile(on.hoch5k$Fos_pos,0.95) ),
+                            ninetysevenpointfive = as.numeric( quantile(on.hoch5k$Fos_pos,0.975))
+)
+
+ninetyfive= as.numeric( quantile(on.hoch5k$Fos_pos,0.95) )
+ninetysevenpointfive = as.numeric( quantile(on.hoch5k$Fos_pos,0.975))
+p <- ggplot(data = df, aes(x=Fos_pos) )
+
+dev.off()
+jpeg("Penk_vs_EngramProbability.jpg", width = 350, height = "350")
+p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed") +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed") +
+  xlab("Probability of being an Engram Cell")+
+  ylab("Counts") +
+  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
+dev.off()
 
 
 

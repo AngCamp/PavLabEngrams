@@ -4,6 +4,11 @@ author: "Angus Campbell"
 date: "20/03/2022"
 output: html_document
 ---
+Definately worht reading:
+https://onlinelibrary.wiley.com/doi/full/10.1111/jne.13072
+Viho, Eva MG, et al. "Cell type specificity of glucocorticoid signaling in the adult mouse hippocampus." Journal of neuroendocrinology 34.2 (2022): e13072.
+-compilation of publicly available scRNA-seq data focusing on GC expression, could be useful for characterizing the other 
+end of the PC
 
 These PC's are from the full gene list of the Hochgerner post natal day P35.
 

@@ -4,6 +4,8 @@
 
 # 10x seq https://medicine.yale.edu/keck/ycga/sequencing/10x/singcellsequencing/
 
+# note this sequencing method will also work for rna velocity: http://velocyto.org/velocyto.py/tutorial/cli.html#run-dropest-run-on-dropseq-indrops-and-other-techniques
+
 ~/test_datasets/Hrvatin2018
 
 

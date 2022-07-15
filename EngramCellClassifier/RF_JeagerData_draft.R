@@ -511,8 +511,10 @@ training_set$treatment <- combined.meta$treatment[which( !(combined.meta$idx %in
 #inputs
 #df = training_set
 
-resample.randomForest <-function( df.in, proportion,
-                                  batches, trees){
+resample.randomForest <-function( df.in, 
+                                  proportion,
+                                  batches, 
+                                  trees){
   #this function resamples from our samples and retrains new models then combines them
   # this is too prevent over fitting on cells
   trees.per.batch <- as.integer(trees/batches)
