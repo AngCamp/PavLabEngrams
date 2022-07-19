@@ -6,6 +6,46 @@
 # human dataset from Allen
 # https://www.nature.com/articles/s41586-019-1506-7#data-availability
 
+# Papers to include:
+#   Wu, Y. E., Pan, L., Zuo, Y., Li, X., & Hong, W. (2017). Detecting activated cell populations using single-cell RNA-seq. Neuron, 96(2), 313-329.
+#   https://www.cell.com/neuron/fulltext/S0896-6273(17)30868-1?_returnURL=https%3A%2F%2Flinkinghub.elsevier.com%2Fretrieve%2Fpii%2FS0896627317308681%3Fshowall%3Dtrue#secsectitle0030
+#   GEO: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE103976
+#
+#   Hrvatin, S., Hochbaum, D. R., Nagy, M. A., Cicconet, M., Robertson, K., Cheadle, L., ... & Greenberg, M. E. (2018). Single-cell analysis of experience-dependent transcriptomic states in the mouse visual cortex. Nature neuroscience, 21(1), 120-129.
+#   https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5742025/
+#
+#   Kwon, D. Y., Xu, B., Hu, P., Zhao, Y. T., Beagan, J. A., Nofziger, J. H., ... & Zhou, Z. (2022).
+#   Neuronal Yin Yang1 in the prefrontal cortex regulates transcriptional and 
+#   behavioral responses to chronic stress in mice. Nature communications, 13(1), 1-19.
+#   GEO : https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE145970
+#
+#   Hu, P., Fabyanic, E., Kwon, D. Y., Tang, S., Zhou, Z., & Wu, H. (2017).
+#   Dissecting cell-type composition and activity-dependent transcriptional state in
+#   mammalian brains by massively parallel single-nucleus RNA-seq. 
+#   Molecular cell, 68(5), 1006-1015.
+#   https://www.sciencedirect.com/science/article/pii/S1097276517308766
+# 
+#   GEO: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE106678
+#
+# Possibly this one: Cheng, S., Butrus, S., Tan, L., Xu, R., Sagireddy, S., 
+# Trachtenberg, J. T., ... & Zipursky, S. L. (2022). Vision-dependent 
+# specification of cell types and function in the developing cortex. 
+# Cell, 185(2), 311-327.
+# https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE190940
+
+# could possibly use Tasic as cotnrols?  https://www.nature.com/articles/s41586-018-0654-5
+# 
+# Nice review article with a quote for justification of combining studies:
+#   Gil-Marti, B., Barredo, C. G., Pina-Flores, S., Trejo, J. L., Turiegano, E., 
+# & Martin, F. A. (2022). The elusive transcriptional memory trace. 
+# Oxford Open Neuroscience, 1.
+# https://academic.oup.com/oons/article/doi/10.1093/oons/kvac008/6609124?login=false
+# "Altogether, data suggest that most of transcriptional changes are cell- and 
+# memory type-specific, although we propose some hints to find the still elusive
+# transcriptional trace of memory. Comparing data from different types of memories
+# and animal models might be a sensible approach in order to find a common pattern."
+# 
+
 
 #libraries
 library(Seurat)

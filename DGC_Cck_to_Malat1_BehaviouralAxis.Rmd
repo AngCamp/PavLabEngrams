@@ -10,6 +10,11 @@ Viho, Eva MG, et al. "Cell type specificity of glucocorticoid signaling in the a
 -compilation of publicly available scRNA-seq data focusing on GC expression, could be useful for characterizing the other 
 end of the PC
 
+Fang, R., Xia, C., Close, J. L., Zhang, M., He, J., Huang, Z., ... & Zhuang, X. (2022). Conservation and divergence of cortical cell organization in human and mouse revealed by MERFISH. Science, 377(6601), 56-62.
+https://www.science.org/doi/full/10.1126/science.abm1741
+-spatial map of gene expression, could be useful for discerning if "reactivation" is really just
+differential spatial recruitment
+
 These PC's are from the full gene list of the Hochgerner post natal day P35.
 
 PC_ 1 
