@@ -46,6 +46,8 @@
 # and animal models might be a sensible approach in order to find a common pattern."
 # 
 
+# Possible test data set?  https://www.nature.com/articles/nmeth.4407
+
 
 #libraries
 library(Seurat)
@@ -65,7 +67,7 @@ library(Dict)
 library(pheatmap)
 
 
-
+wu2019_counts <- read.table('Wu2019_103976/GSE103976_MeA_Neurons_DGE.txt.gz', header = TRUE)
 # you need to load the data here, and filter genes accordingly
 
 #Hrvatin2018_counts
