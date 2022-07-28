@@ -651,6 +651,54 @@ plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
 dev.off()
 
 
+### Aplying it to human data
+
+library(Seurat)
+
+# 
+# Ayhan, F., Kulkarni, A., Berto, S., Sivaprakasam, K., Douglas, C., Lega, B. C.,
+# & Konopka, G. (2021). Resolving cellular and molecular diversity along the 
+# hippocampal anterior-to-posterior axis in humans. Neuron, 109(13), 2091-2105.
+# URL:https://pubmed.ncbi.nlm.nih.gov/34051145/
+# GEO: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE160189
+#
+# git here https://github.com/konopkalab/10x_scRNAseq_HippoAxisSeq
+# meta data is available here: https://cells.ucsc.edu/?ds=human-hippo-axis#
+# got to Info & Download button in top left of UMAP cell expression plot
+
+ayhan2021_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/GSE160189_Hippo_Counts.csv.gz")
+rownames(ayhan2021_counts) <- ayhan2021_counts$gene
+ayhan2021_counts[is.na(ayhan2021_counts)] <- 0
+ayhan2021_counts <- ayhan2021_counts[, c(2:dim(ayhan2021_counts)[2])]
+
+
+ayhan2021_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/meta.tsv",
+                           sep = '\t', header = TRUE)
+
+
+#note that genes are in the first column, might as well just leave it for when we
+# need to merge it with jeager anyway.
+# subject id's are in the cell_id i.e. "P57_AAAGTAGGTCCAGTAT" "P57_AACCATGGTAAACACA"
+
+# from alex's ortholog mapping
+
+# note as per Ayhan et al., 2021 we do not want Den.Gyr3 as it is mostly from a single subject
+ayhanDGC.idx <- ayhan2021_meta$Cell[(ayhan2021_meta$Cluster == "Den.Gyr2")|(ayhan2021_meta$Cluster == "Den.Gyr1")]
+ayhanDGC.idx <- colnames(ayhan2021_counts) %in% ayhanDGC.idx
+
+ayhanDGC_counts <- ayhan2021_counts[,ayhanDGC.idx]
+
+# Orthologue matching
+hg_to_mm <- read.table("hg_mm_1to1_ortho_genes_DIOPT-v8.tsv", sep = '\t', header = TRUE)
+# just run left join onto the appropriate column for each dataset
+
+
+present.orthologs.idx <- (hg_to_mm$Symbol_hg %in% rownames(ayhanDGC_counts))&(hg_to_mm$Symbol_mm %in% rownames(combined.counts) )
+hg_to_mm[present.orthologs.idx,] # filter for matches, ~ 14403 present between Ayhan and Jeager/Lacar
+
+combined.counts.hg <- 
+
+
 
 
 

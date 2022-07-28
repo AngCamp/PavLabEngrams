@@ -310,4 +310,56 @@ shared.genes <- multi.intersect(list(rownames(sample2), rownames(sample3), rowna
                                 )#closing multi.intersect
 length(shared.genes)
 
+
+# we then have to do theses steps for every set in Zhou
+lacar2016_snHC_counts$gene <- as.character(rownames(lacar2016_snHC_counts))
+lacar2016_snHC_counts <-lacar2016_snHC_counts[rownames(lacar2016_snHC_counts) %in% shared.genes,]
                                   
+library(stringr)
+derp <- "rownames(fscd), rownames(asdcs)"
+gsub(derp, "rownames", "length")
+
+
+str_replace_all(derp, "rownames", "length(rownames" )
+
+derp<- "c(rownames(sample2), rownames(sample3), rownames(sample4),
+     rownames(sample5), rownames(sample6lib1), rownames(sample6lib2), rownames(sample7plate1),
+     rownames(sample7plate2), rownames(sample8), rownames(sample9),
+     rownames(sample10), rownames(sample11lib1), rownames(sample11lib2),
+     rownames(sample12), rownames(sample13), rownames(sample14),
+     rownames(sample15), rownames(sample16lib1), rownames(sample16lib2),
+     rownames(sample17), rownames(sample18), rownames(sample19), 
+     rownames(sample20lib1), rownames(sample20lib2), rownames(sample21),
+     rownames(sample22lib1), rownames(sample39lib1), rownames(sample39lib2),
+     rownames(sample40), rownames(sample41) )"
+
+which.max()
+
+which.max( c(length(rownames(sample2)), length(rownames(sample3)), length(rownames(sample4)),
+length(rownames(sample5)), length(rownames(sample6lib1)), length(rownames(sample6lib2)),
+length(rownames(sample7plate1)),     length(rownames(sample7plate2)), length(rownames(sample8)),
+length(rownames(sample9)),  length(rownames(sample10)), length(rownames(sample11lib1)),
+length(rownames(sample11lib2)),     length(rownames(sample12)), length(rownames(sample13)),
+length(rownames(sample14)),     length(rownames(sample15)), length(rownames(sample16lib1)),
+length(rownames(sample16lib2)),     length(rownames(sample17)), length(rownames(sample18)),
+length(rownames(sample19)),     length(rownames(sample20lib1)), length(rownames(sample20lib2)),
+length(rownames(sample21)),   length(rownames(sample22lib1)), length(rownames(sample39lib1)),
+length(rownames(sample39lib2)), length(rownames(sample40)), length(rownames(sample41)) ) )
+
+# currently we need to add in the last samples from the third GSE lsit above
+# Identify the all the genes identified across all experiments, should be done by running the 
+# equivalent of python set() on all the gene lists.  Make a dataframe of one row with a bunch of zeros
+#left join onto this across all experiments.
+print( c(length(rownames(sample2)), length(rownames(sample3)), length(rownames(sample4)),
+             length(rownames(sample5)), length(rownames(sample6lib1)), length(rownames(sample6lib2)),
+             length(rownames(sample7plate1)),     length(rownames(sample7plate2)), length(rownames(sample8)),
+             length(rownames(sample9)),  length(rownames(sample10)), length(rownames(sample11lib1)),
+             length(rownames(sample11lib2)),     length(rownames(sample12)), length(rownames(sample13)),
+             length(rownames(sample14)),     length(rownames(sample15)), length(rownames(sample16lib1)),
+             length(rownames(sample16lib2)),     length(rownames(sample17)), length(rownames(sample18)),
+             length(rownames(sample19)),     length(rownames(sample20lib1)), length(rownames(sample20lib2)),
+             length(rownames(sample21)),   length(rownames(sample22lib1)), length(rownames(sample39lib1)),
+             length(rownames(sample39lib2)), length(rownames(sample40)), length(rownames(sample41)) ) )
+
+
+
