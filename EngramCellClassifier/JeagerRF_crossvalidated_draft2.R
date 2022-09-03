@@ -2,6 +2,9 @@
 # I will also include the controls here, this script can be used to generate the figures I will put into
 # the final version in R markdown for the results which will just call the figures and present the code as needed
 
+# consider running this: https://datacornering.com/how-to-run-r-script-from-another-r-script-and-use-as-a-source/#:~:text=You%20can%20execute%20R%20script,the%20file%20path%20contains%20space.
+# this way we could turn loading each of these datasets into a single line of code
+# or create a module that does this
 
 ## Libraries
 library(randomForest)
@@ -17,6 +20,7 @@ library(Dict)
 library(pheatmap)
 library(caret)
 library(data.table)
+library(dplyr)
 
 # Loading data
 
@@ -168,7 +172,6 @@ hoch5k.GC_Adult.p35.idx <- (hoch5k.GC_Adult.p35.idx) & (hochgerner5k_2018_meta$c
 hoch5k.GC_Adult.p35.idx <- which(hoch5k.GC_Adult.p35.idx)
 
 
-
 #### Functions
 
 #normalization functions, log.norm calls logplusone
@@ -204,7 +207,7 @@ resample.randomForest <-function( df.in,
   #this function resamples from our samples and retrains new models then combines them
   # this is too prevent over fitting on cells
   trees.per.batch <- as.integer(trees/batches)
-  n.cells <- trunc( sum(df.in$Engramcell==under_represented_classs)*proportion)
+  n.cells <- trunc( sum(df.in$Engramcell==under_represented_class)*proportion)
   batches <- c(1:batches)
   for( batch in batches){
     resample.set <- rbind(sample(which(df.in$Engramcell==under_represented_class), size = n.cells),
@@ -384,6 +387,81 @@ dev.off()
 jpeg("ROCBinarized.jpg", width = 700, height = 700)
 plot(roc.engramcell, main = "ROC of RF Classifier")
 dev.off()
+
+
+# Exploratory Analysis of Hochgerner
+# Making some plots showing long tails of cannonical IEGs
+# http://www.sthda.com/english/articles/24-ggpubr-publication-ready-plots/81-ggplot2-easy-way-to-mix-multiple-graphs-on-the-same-page/
+library(ggpubr)
+
+
+# > which(rownames(hochgerner5k_2018_counts)=="Arc")
+# [1] 1213
+# > which(rownames(hochgerner5k_2018_counts)=="Fos")
+# [1] 4716
+# > which(rownames(hochgerner5k_2018_counts)=="Inhba")
+# [1] 6470
+# > which(rownames(hochgerner5k_2018_counts)=="Nptx2")
+# [1] 8583
+
+df <- t(hochgerner5k_2018_counts[c(1213, 4716, 6470, 8583), hoch5k.GC_Adult.p35.idx])
+df <- apply(df, 2,as.numeric)
+df <- data.frame(df)
+
+p.fos <- ggplot(data = df, aes(x=Fos) )
+p.arc <- ggplot(data = df, aes(x=Arc) )
+p.inhba <- ggplot(data = df, aes(x=Inhba) )
+p.nptx2 <- ggplot(data = df, aes(x=Nptx2) )
+
+dev.off()
+jpeg("hochgernerDGCs_foscounts.jpg", width = 700, height = 700)
+p.fos + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  xlab("Reads") + ylab ("Number of Cells") + ggtitle("Fos") +
+  theme(axis.text.x=element_text(size=15, face = "bold")) + 
+  theme(axis.text.y=element_text(size=15, face = "bold")) +
+  theme(axis.title.x=element_text(size=20, face = "bold")) + 
+  theme(axis.title.y=element_text(size=20, face = "bold")) +
+  theme(plot.title = element_text(hjust = 0.5, size=22, face = "bold"))
+dev.off()
+
+
+dev.off()
+jpeg("hochgernerDGCs_ARCcounts.jpeg", width = 700, height = 700)
+p.arc + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  xlab("Reads") + ylab ("Number of Cells") + ggtitle("Arc") +
+  theme(axis.text.x=element_text(size=15, face = "bold")) + 
+  theme(axis.text.y=element_text(size=15, face = "bold")) +
+  theme(axis.title.x=element_text(size=20, face = "bold")) + 
+  theme(axis.title.y=element_text(size=20, face = "bold")) +
+  theme(plot.title = element_text(hjust = 0.5, size=22, face = "bold"))
+dev.off()
+
+
+dev.off()
+jpeg("hochgernerDGCs_Inhbacounts.jpeg", width = 700, height = 700)
+p.inhba + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  xlab("Reads") + ylab ("Number of Cells") + ggtitle("Inhba") +
+  theme(axis.text.x=element_text(size=15, face = "bold")) + 
+  theme(axis.text.y=element_text(size=15, face = "bold")) +
+  theme(axis.title.x=element_text(size=20, face = "bold")) + 
+  theme(axis.title.y=element_text(size=20, face = "bold")) +
+  theme(plot.title = element_text(hjust = 0.5, size=22, face = "bold"))
+dev.off()
+
+
+dev.off()
+jpeg("hochgernerDGCs_Nptx2counts.jpeg", width = 700, height = 700)
+p.nptx2 + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  xlab("Reads") + ylab ("Number of Cells") + ggtitle("Nptx2") +
+  theme(axis.text.x=element_text(size=15, face = "bold")) + 
+  theme(axis.text.y=element_text(size=15, face = "bold")) +
+  theme(axis.title.x=element_text(size=20, face = "bold")) + 
+  theme(axis.title.y=element_text(size=20, face = "bold")) +
+  theme(plot.title = element_text(hjust = 0.5, size=22, face = "bold"))
+dev.off()
+
+
+
 
 
 
@@ -694,12 +772,371 @@ hg_to_mm <- read.table("hg_mm_1to1_ortho_genes_DIOPT-v8.tsv", sep = '\t', header
 
 
 present.orthologs.idx <- (hg_to_mm$Symbol_hg %in% rownames(ayhanDGC_counts))&(hg_to_mm$Symbol_mm %in% rownames(combined.counts) )
-hg_to_mm[present.orthologs.idx,] # filter for matches, ~ 14403 present between Ayhan and Jeager/Lacar
+hg_to_mm <- hg_to_mm[present.orthologs.idx,] # filter for matches, ~ 14403 present between Ayhan and Jeager/Lacar
 
-combined.counts.hg <- 
+# filter using left join and swithc out mm for hg in jeager/lacar data
+combined.counts.hg <- combined.counts
+combined.counts.hg$Symbol_mm <- rownames(combined.counts.hg)
+
+# filtering for orthologs present in both data sets
+combined.counts.hg <- left_join(x = hg_to_mm, y = combined.counts.hg, by = "Symbol_mm" )
+rownames(combined.counts.hg) <- combined.counts.hg$Symbol_hg
+combined.counts.hg <- combined.counts.hg[,c(4:(dim(combined.counts.hg)[2]) )]
+
+ayhanDGC_counts$Symbol_hg <- rownames(ayhanDGC_counts)
+ayhanDGC_counts <- left_join(x = hg_to_mm, y = ayhanDGC_counts, by = "Symbol_hg" )
+rownames(ayhanDGC_counts) <- ayhanDGC_counts$Symbol_hg
+ayhanDGC_counts <- ayhanDGC_counts[,c(4:dim(ayhanDGC_counts)[2])]
+
+
+# Training model based on mouse expression using orthologos
+
+# Normalize
+
+labeled.data.hg <-  log.norm(combined.counts.hg)
+#add label column for training
+labeled.data.hg$Engramcell <- as.factor(combined.meta$fos_status)
+
+#human data
+ayhanDGCs.lognorm <- apply(ayhanDGC_counts, 
+                                  MARGIN = 1, 
+                                  FUN = as.integer)
+
+ayhanDGCs.lognorm <- log.norm( t(ayhanDGCs.lognorm) )
 
 
 
+# train classifier
+classifier.hg <- resampled.randomForest.crossvalidated( data = labeled.data.hg,
+                                                        under.represented.class = "Fos-",
+                                                        over.represented.class = "Fos+",
+                                                        trees.total = 500,
+                                                        folds = 5,
+                                                        proportion.each.batch=0.8,
+                                                        batches.per.fold=20)
+
+# Importance
+importance.df.hg <- data.frame(gene = as.character( rownames(classifier.hg$importance) ),
+                                importance_score = as.numeric(classifier.hg$importance ) ) %>%
+  arrange(desc(importance_score))
+
+head(importance.df.hg, 20)
+
+
+roc.engramcell = roc(labeled.data.hg$Engramcell,
+                     classifier.hg$votes[,2], 
+                     plot=TRUE, legacy.axes=TRUE, percent=TRUE,
+                     xlab="False Positive Percentage", ylab="True Postive Percentage", 
+                     col="firebrick4", lwd=4, print.auc=TRUE)
+
+
+dev.off()
+jpeg("ROCBinarized_hg_to_mm_orthologs.jpg", width = 700, height = 700)
+plot(roc.engramcell, main = "ROC of RF Classifier")
+dev.off()
+
+# add plot of engram cell activity like in hochgerner data
+# make predictions on hochgerner2018 DGCs
+bogus.factor <- labeled.data.hg$Engramcell
+bogus.factor[751:1014] <- labeled.data.hg$Engramcell[1:264]
+bogus.factor[1:dim(ayhanDGC_counts)[2]] <- levels(bogus.factor)[1]
+
+ayhanDGC.predictions <- make.predictions.df(classifier.hg,
+                                            ayhanDGCs.lognorm,
+                                            meta.data.label.column = bogus.factor)
+
+
+which(rownames(ayhanDGC_counts)=="NPTX2")
+
+dev.off()
+hist( as.numeric(ayhanDGCs.lognorm[4789,]) ) + xlab("log(INHBA)") + ylab("Counts")
+dev.off()
+
+
+# Histogram of Engram Probability
+# http://www.sthda.com/english/wiki/ggplot2-histogram-plot-quick-start-guide-r-software-and-data-visualization
+
+df <- ayhanDGC.predictions[,2:3] #counts of probability
+
+ninetyfive= as.numeric( quantile(ayhanDGC.predictions$label_pos,0.95) )
+ninetysevenpointfive = as.numeric( quantile(ayhanDGC.predictions$label_pos,0.975))
+p <- ggplot(data = df, aes(x=label_pos) )
+
+dev.off()
+jpeg("HumanDGC_ENGRAM_Prob_distribution.jpg", width = 350, height = "350")
+p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed") +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed") +
+  xlab("Probability of Human DGC being an Engram Cell")+
+  ylab("Counts") +
+  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
+dev.off()
+
+mean(apply(ayhan2021_counts, MARGIN = 2, sum))
+
+dev.off()
+jpeg("~/PavLabEngrams/HumanDGC_EGRAMProb_distribution.jpg", width = 350, height = "350")
+p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  xlab("Probability of Human DGC being an Engram Cell")+
+  ylab("Counts")
+dev.off()
+
+# Making IEGs plots for Ayhan
+
+# > which(rownames(ayhanDGC_counts)=="ARC")
+# [1] 219
+# > 
+#   > which(rownames(ayhanDGC_counts)=="FOS")
+# [1] 1267
+# > 
+#   > which(rownames(ayhanDGC_counts)=="INHBA")
+# [1] 1800
+# > 
+#   > which(rownames(ayhanDGC_counts)=="NPTX2")
+# [1] 4789
+
+df <- t(ayhanDGC_counts[c(219, 1267, 1800, 4789), ])
+df <- apply(df, 2,as.numeric)
+df <- data.frame(df)
+
+p.fos <- ggplot(data = df, aes(x=FOS) )
+p.arc <- ggplot(data = df, aes(x=ARC) )
+p.inhba <- ggplot(data = df, aes(x=INHBA) )
+p.nptx2 <- ggplot(data = df, aes(x=NPTX2) )
+
+dev.off()
+jpeg("ayhan2021DGCs_foscounts.jpg", width = 700, height = 700)
+p.fos + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  xlab("Reads") + ylab ("Number of Cells") + ggtitle("FOS") +
+  theme(axis.text.x=element_text(size=15, face = "bold")) + 
+  theme(axis.text.y=element_text(size=15, face = "bold")) +
+  theme(axis.title.x=element_text(size=20, face = "bold")) + 
+  theme(axis.title.y=element_text(size=20, face = "bold")) +
+  theme(plot.title = element_text(hjust = 0.5, size=22, face = "bold"))
+dev.off()
+
+
+dev.off()
+jpeg("ayhan2021DGCs_ARCcounts.jpeg", width = 700, height = 700)
+p.arc + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  xlab("Reads") + ylab ("Number of Cells") + ggtitle("ARC") +
+  theme(axis.text.x=element_text(size=15, face = "bold")) + 
+  theme(axis.text.y=element_text(size=15, face = "bold")) +
+  theme(axis.title.x=element_text(size=20, face = "bold")) + 
+  theme(axis.title.y=element_text(size=20, face = "bold")) +
+  theme(plot.title = element_text(hjust = 0.5, size=22, face = "bold"))
+dev.off()
+
+
+dev.off()
+jpeg("ayhan2021DGCs_Inhbacounts.jpeg", width = 700, height = 700)
+p.inhba + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  xlab("Reads") + ylab ("Number of Cells") + ggtitle("INHBA") +
+  theme(axis.text.x=element_text(size=15, face = "bold")) + 
+  theme(axis.text.y=element_text(size=15, face = "bold")) +
+  theme(axis.title.x=element_text(size=20, face = "bold")) + 
+  theme(axis.title.y=element_text(size=20, face = "bold")) +
+  theme(plot.title = element_text(hjust = 0.5, size=22, face = "bold"))
+dev.off()
+
+
+dev.off()
+jpeg("ayhan2021DGCs_Nptx2counts.jpeg", width = 700, height = 700)
+p.nptx2 + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  xlab("Reads") + ylab ("Number of Cells") + ggtitle("NPTX2") +
+  theme(axis.text.x=element_text(size=15, face = "bold")) + 
+  theme(axis.text.y=element_text(size=15, face = "bold")) +
+  theme(axis.title.x=element_text(size=20, face = "bold")) + 
+  theme(axis.title.y=element_text(size=20, face = "bold")) +
+  theme(plot.title = element_text(hjust = 0.5, size=22, face = "bold"))
+dev.off()
+
+
+#  Attempt number 2, integration with seurat
+# Relvant reading, good review
+# 
+# Shafer, M. E. (2019). Cross-species analysis of single-cell transcriptomic data.
+# Frontiers in cell and developmental biology, 7, 175.
+# https://www.frontiersin.org/articles/10.3389/fcell.2019.00175/full
+
+# Affinati, A. H., Sabatini, P. V., True, C., Tomlinson, A. J., Kirigiti, M., 
+# Lindsley, S. R., ... & Rupp, A. C. (2021). Cross-species analysis defines the 
+# conservation of anatomically segregated VMH neuron populations. Elife, 10, e69065.
+# https://elifesciences.org/articles/69065
+
+#We need to load jeager, hochgerner and ayna and check for which genes are present
+
+#then we can put hochgerner and ayhan  together
+
+
+ayhan2021_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/GSE160189_Hippo_Counts.csv.gz")
+rownames(ayhan2021_counts) <- ayhan2021_counts$gene
+ayhan2021_counts[is.na(ayhan2021_counts)] <- 0
+ayhan2021_counts <- ayhan2021_counts[, c(2:dim(ayhan2021_counts)[2])]
+
+
+ayhan2021_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/meta.tsv",
+                           sep = '\t', header = TRUE)
+
+# note as per Ayhan et al., 2021 we do not want Den.Gyr3 as it is mostly from a single subject
+ayhanDGC.idx <- ayhan2021_meta$Cell[(ayhan2021_meta$Cluster == "Den.Gyr2")|(ayhan2021_meta$Cluster == "Den.Gyr1")]
+ayhanDGC.idx <- colnames(ayhan2021_counts) %in% ayhanDGC.idx
+
+ayhanDGC_counts <- ayhan2021_counts[,ayhanDGC.idx]
+
+hg_to_mm <- read.table("hg_mm_1to1_ortho_genes_DIOPT-v8.tsv", sep = '\t', header = TRUE)
+# just run left join onto the appropriate column for each dataset
+
+# filter out genes not present in all datasets
+present.orthologs.idx <- (hg_to_mm$Symbol_hg %in% rownames(ayhanDGC_counts))&(hg_to_mm$Symbol_mm %in% rownames(combined.counts) )
+present.orthologs.idx <- present.orthologs.idx & (hg_to_mm$Symbol_mm %in% rownames(hochgerner5k_2018_counts) )
+
+hg_to_mm <- hg_to_mm[present.orthologs.idx,] # filter for matches, ~ 14403 present between Ayhan and Jeager/Lacar
+
+
+
+# filtering for orthologs present in all data sets
+ayhanDGC_counts$Symbol_hg <- rownames(ayhanDGC_counts) # for bringing to 
+ayhanDGC_counts <- left_join(x = hg_to_mm, y = ayhanDGC_counts, by = "Symbol_hg" )
+rownames(ayhanDGC_counts) <- ayhanDGC_counts$Symbol_hg
+ayhanDGC_counts <- ayhanDGC_counts[,c(4:dim(ayhanDGC_counts)[2])]
+
+
+combined.counts.hg <- combined.counts
+combined.counts.hg$Symbol_mm <- rownames(combined.counts.hg)
+combined.counts.hg <- left_join(x = hg_to_mm, y = combined.counts.hg, by = "Symbol_mm" )
+rownames(combined.counts.hg) <- combined.counts.hg$Symbol_hg
+combined.counts.hg <- combined.counts.hg[,c(4:(dim(combined.counts.hg)[2]) )]
+
+
+hochgernerDGC_counts <- hochgerner5k_2018_counts[, hochgerner5k_2018_meta$cluster_name == "Granule-mature"]
+hochgernerDGC_counts$Symbol_mm <- rownames(hochgernerDGC_counts)
+hochgernerDGC_counts <- left_join(x = hg_to_mm, y = hochgernerDGC_counts, by = "Symbol_mm" )
+rownames(hochgernerDGC_counts) <- hochgernerDGC_counts$Symbol_hg
+hochgernerDGC_counts <- hochgernerDGC_counts[,c(4:dim(hochgernerDGC_counts)[2])]
+
+# species label, we are going to integrate using hochgerner and 
+all.cells <- cbind(ayhanDGC_counts, combined.counts.hg)
+all.cells <- cbind(all.cells, hochgernerDGC_counts)
+
+# making meta data and label to split data by
+species.idx <- rep("human", dim(ayhanDGC_counts)[2]) 
+species.idx <- c(species.idx, rep("mouse", dim(combined.counts.hg)[2]+dim(hochgernerDGC_counts)[2]) )
+
+experiment <- rep("ayhan2021", dim(ayhanDGC_counts)[2])
+experiment <- c( experiment, rep("jeager2018", dim(combined.counts.hg)[2]) )
+experiment <- c( experiment, rep("hochgerner2018", dim(hochgernerDGC_counts)[2]) )
+
+
+activity <- rep("unlabelled", dim(ayhanDGC_counts)[2]) 
+activity <- c(activity, combined.meta$fos_status)
+activity <- c( activity, rep("unlabelled", dim(hochgernerDGC_counts)[2]) )
+
+
+all.cells.meta <- data.frame(experiment)
+all.cells.meta$species <- species.idx
+all.cells.meta$activity <- activity
+
+rownames(all.cells.meta) <- colnames(all.cells)
+
+#making a seurat object to normalize using their anchors,
+# could potentially do clustering later in order to observe if cells are clustering together
+integration_obj <- CreateSeuratObject(counts = all.cells, 
+                                      min.cells = 0, 
+                                      min.features = 0, 
+                                      meta.data = all.cells.meta)
+
+integration_obj@meta.data$species <- all.cells.meta$species
+
+# split the dataset into a list of two seurat objects (by species)
+DGC.list <- SplitObject(integration_obj, split.by = "species")
+
+# normalize and identify variable features for each dataset independently
+# may have to play with number of genes to include, so we will include more
+# genes than seurat recomends becuase we may find them of use
+# we will use all the genes 
+DGC.list <- lapply(X = DGC.list, FUN = function(x) {
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = dim(hg_to_mm)[1])
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = DGC.list )
+
+DGC.anchors <- FindIntegrationAnchors(object.list = DGC.list, anchor.features = features)
+
+# this command creates an 'integrated' data assay
+DGC.combined <- IntegrateData(anchorset = DGC.anchors)
+
+DGC.combined <- ScaleData(DGC.combined , verbose = FALSE)
+DGC.combined <- RunPCA(DGC.combined , npcs = 30, verbose = FALSE)
+DGC.combined <- RunUMAP(DGC.combined, reduction = "pca", dims = 1:30)
+DGC.combined <- FindNeighbors(DGC.combined, reduction = "pca", dims = 1:30)
+DGC.combined <- FindClusters(DGC.combined , resolution = 0.5)
+
+# this guives us 15 clusters which is kinda weird
+
+#plotting
+
+#p2 <- DimPlot(DGC.combined, reduction = "umap", label = TRUE, repel = TRUE)
+
+
+integration_obj@meta.data$activity <- all.cells.meta$activity
+integration_obj@meta.data$experiment <- all.cells.meta$experiment
+
+#plotting
+p1 <- DimPlot(DGC.combined, reduction = "umap", group.by = "species")
+p2 <- DimPlot(DGC.combined, reduction = "umap", group.by = "activity",
+              pt.size = 1.5)
+
+dev.off()
+jpeg("Human_and_mouse_DGCs_activity.jpg", width = 1400, height = 700)
+p1 + p2
+dev.off()
+
+
+#plotting
+p3 <- DimPlot(DGC.combined, reduction = "umap", group.by = "experiment", pt.size = 1.5)
+
+dev.off()
+jpeg("Human_and_mouse_DGCs_experiemnt.jpg", width = 1400, height = 700)
+p1 + p3
+dev.off()
+
+
+#plotting genes
+p4 <- FeaturePlot(DGC.combined, features = c("CCK", "PENK"), 
+                  pt.size = 1, blend = TRUE)
+
+dev.off()
+jpeg("CCKvsPENK_DGCs_human_mouse.jpg", width = 1400, height = 700)
+p4
+dev.off()
+
+#plotting genes
+p5 <- FeaturePlot(DGC.combined, features = c("NPAS4"), 
+                  pt.size = 1, split.by ="species")
+
+dev.off()
+jpeg("IEGs_human_mouseDGC.jpg", width = 1400, height = 700)
+p5
+dev.off()
+
+
+DGC.integrated.list <- SplitObject(DGC.combined, split.by = "species")
+humans.seurat <- DGC.integrated.list$human
+
+derp <- as.matrix(GetAssayData(object = humans.seurat, slot = "counts")) # this is not working
+# returns 0x0 matrix
+
+# getting a dataframe back out
+# https://jspaezp.github.io/sctree/reference/as.data.frame.Seurat.html
+# this should help: https://satijalab.org/seurat/articles/essential_commands.html
+
+test <- as.data.frame(DGC.integrated.list$human@assays$integrated)
+test <- as.data.frame(DGC.combined)
 
 
 
