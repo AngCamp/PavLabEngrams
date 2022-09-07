@@ -16,6 +16,7 @@ library(caTools)
 library(pROC)
 library(stats)
 library(caret)
+library(groupdata2)
 
 
 #Loading data
@@ -27,6 +28,7 @@ chen2020_counts <- read.csv('Chen2020_GSE152632/GSE152632_GEO_mberkchen_TRAP2_co
 rownames(chen2020_counts) <- chen2020_counts$X
 chen2020_counts <- chen2020_counts[,2:3531]
 chen2020_meta <- read.csv( 'Chen2020_GSE152632/SraRunTable.txt', header = TRUE)
+chen2020_meta$clusters <- as.factor(cellmarkers.col[,2])
 
 #add engram label
 chen2020_meta$engram_label <-  as.factor(sapply(as.character(colnames(chen2020_counts)), function(y) if (grepl("_pos_", y, fixed=TRUE)) "tdT+" else "tdT-"))
@@ -121,11 +123,20 @@ gene.shuffle <-function(dat){
 
 # balanced cross validation random forest
 
+testdf <- chen2020_meta[,c('mpg','cyl')]
+
 balanced.crossvalidated.rf <- function(){
   
 }
 
 
+# tests of partitioning
+parts <- partition(df, p = 0.2, id_col = "participant", cat_col = 'diagnosis')
+
+# p determines how much of the data each partiction should have so 5 fold
+# would have p =0.2 10 fold p=0.1 etc etc
+# for use we wantour id_col to be cell type then we can consider condtion etc
+# in cat_col
 
 
 
