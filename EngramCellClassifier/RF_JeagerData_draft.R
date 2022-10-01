@@ -285,8 +285,7 @@ downsamp.meta <- rbind(df.temp,
 #logtramsform the Jeager data with all genes 
 allgenes.df  <- apply(downsamp.combinedcounts, 
                                  MARGIN = 1, 
-                                 FUN = logplusone
-                      )
+                                 FUN = logplusone)
 
 allgenes.df   <- scale( t(allgenes.df ) ) #we need it transposed so that the scaling is done per gene not cell
 allgenes.df   <- data.frame( t(allgenes.df ) )
@@ -992,6 +991,7 @@ dev.off()
 combined.shuffledcells <- combined.counts 
 combined.shuffledcells <- combined.shuffledcells[rownames(combined.shuffledcells) %in% shared.genes, ]
 combined.shuffledcells <- log.norm(  combined.shuffledcells )
+# this line does the ID shuffling
 combined.shuffledcells <- combined.shuffledcells[ sample( c(1:nrow(combined.shuffledcells)) ), ]
 
 

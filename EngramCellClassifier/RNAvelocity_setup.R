@@ -2,7 +2,12 @@
 #  We are using the velocyto package here: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6130801/
 #    package is here: http://velocyto.org/
 # 
-#    
+# 
+
+# YOUTUBE TUTORIAL BY THE LAB
+# https://www.youtube.com/watch?v=AUiYxtGJYtg
+
+
 # although later this publication may be of interest as well. https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1009762
 # 
 # 

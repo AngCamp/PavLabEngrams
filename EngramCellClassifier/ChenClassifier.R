@@ -135,7 +135,7 @@ parts <- partition(df, p = 0.2, id_col = "participant", cat_col = 'diagnosis')
 
 # p determines how much of the data each partiction should have so 5 fold
 # would have p =0.2 10 fold p=0.1 etc etc
-# for use we wantour id_col to be cell type then we can consider condtion etc
+# for use we wantour id_col to be cell type then we can consider condition etc
 # in cat_col
 
 

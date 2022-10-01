@@ -1,0 +1,44 @@
+Notes on some new data from here: https://academic.oup.com/bib/advance-article/doi/10.1093/bib/bbac412/6713514?login=true
+
+Luginbühl, J., Kouno, T., Nakano, R., Chater, T. E., Sivaraman, D. M., Kishima, M., ... & Shin, J. W. (2021). Decoding neuronal diversification by multiplexed single-cell RNA-Seq. Stem cell reports, 16(4), 810-824.
+
+
+They list some new studies these are done using single cell coleciton methods,
+but many have been bulked or pooled
+(manual cell sorting and sorting but many have then been bulked)
+
+1) de los Santos, M. R., Rivalan, M., David, F. S., Stumpf, A., Pitsch, J., Tsortouktzidis, D., ... & Krawitz, P. M. (2020). A CRISPR-Cas9–engineered mouse model for GPI-anchor deficiency mirrors human phenotypes and exhibits hippocampal synaptic dysfunctions. bioRxiv.
+GEO: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE147722
+
+-pooled cells and single cell
+-no mention of labelling, no memory task
+-potentialy use as control?
+
+2) Chen https://pubmed.ncbi.nlm.nih.gov/33177708/
+-single cell labelled but like days afterwards
+
+3) Rattner, A., Terrillion, C. E., Jou, C., Kleven, T., Hu, S. F., Williams, J., ... & Nathans, J. (2020). Developmental, cellular, and behavioral phenotypes in a mouse model of congenital hypoplasia of the dentate gyrus. Elife, 9, e62766.
+
+GEO: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE157983
+
+-single nucleus and bulk but no flourescent labelling,
+-there is a training paradigm but they don't sequence them between groups as far as I could tell
+
+4) Hrvatin 2018
+Hrvatin, S., Hochbaum, D. R., Nagy, M. A., Cicconet, M., Robertson, K., Cheadle, L., ... & Greenberg, M. E. (2018). Single-cell analysis of experience-dependent transcriptomic states in the mouse visual cortex. Nature neuroscience, 21(1), 120-129.
+
+5) Cho, J. H., Huang, B. S., & Gray, J. M. (2016). RNA sequencing from neural ensembles activated during fear conditioning in the mouse temporal association cortex. Scientific reports, 6(1), 1-10.
+
+-patch seq collection then pooled
+-very small number of cells
+
+6) 
+Crocker, A., Guan, X. J., Murphy, C. T., & Murthy, M. (2016). Cell-type-specific transcriptome analysis in the Drosophila mushroom body reveals memory-related changes in gene expression. Cell reports, 15(7), 1580-1596.
+
+-patch collection, fruit flies
+
+
+
+
+
+-
