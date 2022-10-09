@@ -232,12 +232,17 @@ hochgerner5k_2018_meta <- hochgerner5k_2018_counts %>%
 hochgerner5k_2018_counts <- hochgerner5k_2018_counts %>% 
   dplyr::select(-cellid) %>% 
   dplyr::slice(-c(1:3))
+hochgerner5k_2018_counts[is.na(hochgerner5k_2018_counts)] <- 0
 
 #get index locations of adult p35 DGCs
 hoch5k.GC_Adult.p35.idx <- (hochgerner5k_2018_meta$age.days.=="35") | (hochgerner5k_2018_meta$age.days.=="35*")
 hoch5k.GC_Adult.p35.idx <- (hoch5k.GC_Adult.p35.idx) & (hochgerner5k_2018_meta$cluster_name == "Granule-mature")
 hoch5k.GC_Adult.p35.idx <- which(hoch5k.GC_Adult.p35.idx)
 
+# we use this later
+hochgernerDGC_counts <-hochgerner5k_2018_counts[, hochgerner5k_2018_meta$cluster_name == "Granule-mature"]
+hochgernerDGC_counts <- data.frame( lapply(hochgernerDGC_counts,as.numeric) ) # this data is for some reason all strings
+colnames(hochgernerDGC_counts) <- colnames(hochgerner5k_2018_counts)[hochgerner5k_2018_meta$cluster_name == "Granule-mature"]
 
 #### Functions
 
@@ -410,8 +415,6 @@ resampled.randomForest.crossvalidated <-function(data,
   return(rf.out)
 }
 
-
-
 resample.regularizedRF <- function( df.in,
                                     under_represented_class,
                                     over_represented_class,
@@ -555,60 +558,101 @@ hoch5k.adultDGCs.lognorm  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs
 labeled.data.hochgerner2018_genes <- labeled.data.hochgerner2018_genes[,colnames(labeled.data.hochgerner2018_genes) %in% shared.genes]
 labeled.data.hochgerner2018_genes$Engramcell <- as.factor(combined.meta$ActivityStatus)
 
-# resampled.regularizedRF.crossvalidated
-# resampled.randomForest.crossvalidated
-classifier.hochgerner2018_genes <- resampled.randomForest.crossvalidated( data= labeled.data.hochgerner2018_genes,
+# RRFclassifier.hoch <- resampled.regularizedRF.crossvalidated
+# classifier.hoch.normal <- resampled.randomForest.crossvalidated 
+classifier.hochgerner2018_genes <- RRFclassifier.hoch <- resampled.regularizedRF.crossvalidated( data= labeled.data.hochgerner2018_genes,
                                                      under.represented.class = "Inactive",
                                                      over.represented.class = "Active",
                                                      trees.total = 1000,
-                                                     folds = 5,
+                                                     folds = 10,
                                                      proportion.each.batch=0.8,
                                                      batches.per.fold=20)
 
 # Importance
+classifier.hochgerner2018_genes <- classifier.hoch.normal
 importance.df.hoch<- data.frame(gene = as.character( rownames(classifier.hochgerner2018_genes$importance) ),
                                 importance_score = as.numeric(classifier.hochgerner2018_genes$importance ) ) %>%
   arrange(desc(importance_score))
 
-head(importance.df.hoch, 20)
+head(importance.df.hoch, 1000) # don't forget to run this before gettng  the regularized
 
+
+write_csv(importance.df.hoch, "JeagerNoReg_Importance_matchedtoHochgerner.csv")
 # Importance without regularization
-# > head(importance.df.hoch, 10)
 # gene importance_score
-# 1    Inhba         1.765510
-# 2   Lingo1         1.595288
-# 3   Adgrl3         1.517609
-# 4      Arc         1.392626
-# 5    Fmnl1         1.279754
-# 6    Pcdh8         1.185785
-# 7    Nptx2         1.176467
-# 8     Bdnf         1.107434
-# 9  Rtn4rl1         1.093423
-# 10   Synpo         1.089924
+# 1   Lingo1        1.9641651
+# 2    Inhba        1.9381943
+# 3      Arc        1.4624443
+# 4    Synpo        1.4025699
+# 5   Adgrl3        1.2974050
+# 6     Plk2        1.2607054
+# 7    Spry2        1.1584135
+# 8    Mapk4        1.1555400
+# 9    Pcdh8        1.1433587
+# 10    Bdnf        1.1265872
+# 11     Abr        1.1164898
+# 12   Ptgs2        1.1157099
+# 13  H2-T23        1.1053527
+# 14   Nptx2        1.0128181
+# 15   Fmnl1        0.9381681
+# 16    Chgb        0.8938230
+# 17    Nrn1        0.6753464
+# 18 Rtn4rl1        0.6647070
+# 19  Epha10        0.6534157
+# 20  Shank1        0.6147683
 
-# With regularization
+# Sans regularization performance
+# > classifier.hochgerner2018_genes$Assessment[,c(11,12)]
+# Mean      SigDiff
+# F1 Score         0.95706375 0.0199746947
+# AUC              0.99964236 0.0005634191
+# Precision        1.00000000 0.0000000000
+# Recall           0.91836056 0.0364454166
+# FPR              0.00000000 0.0000000000
+# FNR              0.08163944 0.0364454166
+# True Positives  52.90000000 2.2113344387
+# False Negatives  4.70000000 2.1000000000
+# True Negatives  17.40000000 0.4898979486
+# False Positives  0.00000000 0.0000000000
+
+# importance with regularization
 # > head(importance.df.hoch, 20)
 # gene importance_score
-# 1  Lingo1        8.0611919
-# 2     Arc        3.7980735
-# 3  Adgrl3        3.7849085
-# 4   Inhba        3.2623807
-# 5   Nptx2        2.8711930
-# 6    Plk2        2.6418497
-# 7   Spry2        2.5131482
-# 8   Synpo        2.4320699
-# 9   Ptgs2        2.3288322
-# 10   Bdnf        2.2020860
-# 11   Chgb        1.8812916
-# 12  Fmnl1        1.6097765
-# 13  Pcdh8        1.5279121
-# 14   Per3        1.2941786
-# 15 Shank1        1.1487521
-# 16    Npy        1.1362666
-# 17 Brinp1        1.1069199
-# 18  Mapk4        1.0801682
-# 19 H2-T23        1.0114923
-# 20  Fbxw7        0.9832152
+# 1  Lingo1        7.8737083
+# 2   Inhba        5.0797660
+# 3   Synpo        4.2159676
+# 4   Nptx2        4.1663379
+# 5   Mapk4        4.0700417
+# 6     Arc        3.6015545
+# 7  Adgrl3        3.0335451
+# 8   Fmnl1        2.5432460
+# 9   Ptgs2        2.3351065
+# 10   Plk2        2.2557475
+# 11   Chgb        1.8660928
+# 12 Brinp1        1.4450246
+# 13 Epha10        1.2512286
+# 14   Bdnf        1.0985766
+# 15  Pcdh8        1.0265999
+# 16   Acan        0.9969457
+# 17    Npy        0.9793275
+# 18    Abr        0.9715940
+# 19 Hpcal4        0.8472109
+# 20  Tmem2        0.8265166
+
+# Regularized Performance
+#                        Mean      SigDiff
+# F1 Score         0.95489177 0.0294354607
+# AUC              0.99964992 0.0007140612
+# Precision        1.00000000 0.0000000000
+# Recall           0.91515426 0.0524665641
+# FPR              0.00000000 0.0000000000
+# FNR              0.08484574 0.0524665641
+# True Positives  52.70000000 2.8301943396
+# False Negatives  4.90000000 3.0479501308
+# True Negatives  17.40000000 0.4898979486
+# False Positives  0.00000000 0.0000000000
+
+
 
 roc.engramcell = roc(labeled.data.hochgerner2018_genes$Engramcell,
                      classifier.hochgerner2018_genes$votes[,2], 
@@ -672,7 +716,8 @@ dev.off()
 
 
 ## Controls  -- SHUFFLING GENES
-
+# don't forget to use the unshuffled data labels when doing prediction
+# otherwise it looks like it's still doing perfect
 
 #run classifer on shuffled hochgerner dataset also train on shuffled combined.counts
 # then try shuffling cell ID in combined.counts and training the classifier and running it on hochgerner
@@ -684,7 +729,6 @@ combined.shuffledgenes <- gene.shuffle(  combined.counts )
 combined.shuffledgenes <- combined.shuffledgenes[rownames(combined.shuffledgenes) %in% shared.genes,]
 combined.shuffledgenes <- gene.shuffle(combined.shuffledgenes )
 combined.shuffledgenes <- log.norm(combined.shuffledgenes)
-
 
 # creating our training and validation data, we will take 30% of the
 # baseline cells and and equivalent number of the engram cells to maintain balance in the
@@ -700,8 +744,13 @@ validation_set.shuffled <- combined.shuffledgenes[which(combined.meta$idx %in% d
 training_set.shuffled$treatment <- combined.meta$treatment[which( !(combined.meta$idx %in% df.temp$idx) ) ]
 
 tic()
-shuffledgenes.classifier <- resample.randomForest.crossvalidated( df.in = training_set.shuffled, proportion = 0.8, 
-                                                   batches = 20, trees = 1000)
+shuffledgenes.classifier <- resample.randomForest.crossvalidated( df.in = training_set.shuffled,
+                                                                  under.represented.class = "Inactive",
+                                                                  over.represented.class = "Active",
+                                                                  trees.total = 1000,
+                                                                  folds = 10,
+                                                                  proportion.each.batch=0.8,
+                                                                  batches.per.fold=20)
 toc()
 
 
@@ -739,7 +788,8 @@ plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
 dev.off()
 
 
-## Shuffle genes in validation set
+## Shuffle genes in discovery set
+# Normally we see a long tailed distribution of the activity score
 
 hoch5k.shuffledgenes <- apply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], 
                               MARGIN = 1, 
@@ -752,11 +802,12 @@ hoch5k.shuffledgenes <- log.norm( hoch5k.shuffledgenes )
 
 hoch5k.shuffledgenes$Engramcell <- rep("Inactive", dim(hoch5k.shuffledgenes)[1])
 
-on.hoch5kshuffled <- make.predictions.df(test.classifier,
+# run with a classifier that works on regular data
+on.hoch5kshuffled <- make.predictions.df(classifier.hochgerner2018_genes,
                                          hoch5k.shuffledgenes)
 
 #HISTOGRAM OF SHUFFLED HOCHGERN ENGRAM CELL PROBABILITY
-df.shuffled <- on.hoch5kshuffled[,2:3]
+df.shuffled <- on.hoch5kshuffled[,c(1,3)]
 p <- ggplot(data = df.shuffled, aes(x=Fos_pos) )
 
 dev.off()
@@ -840,10 +891,6 @@ dev.off()
 
 
 
-
-
-
-
 ########################################
 ### APPLYING THIS TO HUMAN DATA
 ##################################################
@@ -861,29 +908,46 @@ library(Seurat)
 # meta data is available here: https://cells.ucsc.edu/?ds=human-hippo-axis#
 # got to Info & Download button in top left of UMAP cell expression plot
 
-ayhan2021_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/GSE160189_Hippo_Counts.csv.gz")
-rownames(ayhan2021_counts) <- ayhan2021_counts$gene
-ayhan2021_counts[is.na(ayhan2021_counts)] <- 0
-ayhan2021_counts <- ayhan2021_counts[, c(2:dim(ayhan2021_counts)[2])]
+##############
+# GETTING DGCS OUT OF AYHAN, COMMENTED OUT SO SCRIPT CAN RUN FAST
+##########
 
+# ayhan2021_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/GSE160189_Hippo_Counts.csv.gz")
+# rownames(ayhan2021_counts) <- ayhan2021_counts$gene
+# ayhan2021_counts[is.na(ayhan2021_counts)] <- 0
+# ayhan2021_counts <- ayhan2021_counts[, c(2:dim(ayhan2021_counts)[2])]
+# # 
 
-ayhan2021_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/meta.tsv",
-                           sep = '\t', header = TRUE)
+# ayhan2021_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/meta.tsv",
+#                            sep = '\t', header = TRUE)
 
 
 #note that genes are in the first column, might as well just leave it for when we
 # need to merge it with jeager anyway.
 # subject id's are in the cell_id i.e. "P57_AAAGTAGGTCCAGTAT" "P57_AACCATGGTAAACACA"
 
-# from alex's ortholog mapping
 
 # note as per Ayhan et al., 2021 we do not want Den.Gyr3 as it is mostly from a single subject
-ayhanDGC.idx <- ayhan2021_meta$Cell[(ayhan2021_meta$Cluster == "Den.Gyr2")|(ayhan2021_meta$Cluster == "Den.Gyr1")]
-ayhanDGC.idx <- colnames(ayhan2021_counts) %in% ayhanDGC.idx
+# ayhanDGC.idx <- ayhan2021_meta$Cell[(ayhan2021_meta$Cluster == "Den.Gyr2")|(ayhan2021_meta$Cluster == "Den.Gyr1")]
+# ayhanDGC.idx <- colnames(ayhan2021_counts) %in% ayhanDGC.idx
 
-ayhanDGC_counts <- ayhan2021_counts[,ayhanDGC.idx]
+# ayhanDGC_counts <- ayhan2021_counts[,ayhanDGC.idx]
+# 
+# write_csv(ayhanDGC_counts, "~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_counts.csv")
+# 
+# write_csv(ayhan2021_meta[ayhanDGC.idx,],"~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_meta.csv")
+
+
+# note that the third kind of DGCs they found were ignored
+ayhanDGC_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_counts.csv", header = TRUE)
+rownames(ayhanDGC_counts) <- ayhanDGC_counts$gene
+# the OG data has na but we switched them to zeros
+ayhanDGC_counts <- ayhanDGC_counts[, c(1:dim(ayhanDGC_counts)[2]-1)]
+ayhanDGC_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_meta.csv", header = TRUE)
 
 # Orthologue matching
+# from alex's ortholog mapping
+
 hg_to_mm <- read.table("hg_mm_1to1_ortho_genes_DIOPT-v8.tsv", sep = '\t', header = TRUE)
 # just run left join onto the appropriate column for each dataset
 
@@ -905,100 +969,6 @@ ayhanDGC_counts <- left_join(x = hg_to_mm, y = ayhanDGC_counts, by = "Symbol_hg"
 rownames(ayhanDGC_counts) <- ayhanDGC_counts$Symbol_hg
 ayhanDGC_counts <- ayhanDGC_counts[,c(4:dim(ayhanDGC_counts)[2])]
 
-
-# Training model based on mouse expression using orthologos
-
-# Normalize
-
-labeled.data.hg <-  log.norm(combined.counts.hg)
-#add label column for training
-labeled.data.hg$Engramcell <- as.factor(combined.meta$ActivityStatus)
-
-#human data
-ayhanDGCs.lognorm <- apply(ayhanDGC_counts, 
-                                  MARGIN = 1, 
-                                  FUN = as.integer)
-
-ayhanDGCs.lognorm <- log.norm( t(ayhanDGCs.lognorm) )
-
-
-
-# train classifier
-classifier.hg <- resampled.randomForest.crossvalidated( data = labeled.data.hg,
-                                                        under.represented.class = "Inactive",
-                                                        over.represented.class = "Active",
-                                                        trees.total = 500,
-                                                        folds = 5,
-                                                        proportion.each.batch=0.8,
-                                                        batches.per.fold=20)
-
-# Importance
-importance.df.hg <- data.frame(gene = as.character( rownames(classifier.hg$importance) ),
-                                importance_score = as.numeric(classifier.hg$importance ) ) %>%
-  arrange(desc(importance_score))
-
-head(importance.df.hg, 20)
-
-
-roc.engramcell = roc(labeled.data.hg$Engramcell,
-                     classifier.hg$votes[,2], 
-                     plot=TRUE, legacy.axes=TRUE, percent=TRUE,
-                     xlab="False Positive Percentage", ylab="True Postive Percentage", 
-                     col="firebrick4", lwd=4, print.auc=TRUE)
-
-
-dev.off()
-jpeg("ROCBinarized_hg_to_mm_orthologs.jpg", width = 700, height = 700)
-plot(roc.engramcell, main = "ROC of RF Classifier")
-dev.off()
-
-# add plot of engram cell activity like in hochgerner data
-# make predictions on hochgerner2018 DGCs
-bogus.factor <- labeled.data.hg$Engramcell
-bogus.factor[751:1014] <- labeled.data.hg$Engramcell[1:264]
-bogus.factor[1:dim(ayhanDGC_counts)[2]] <- levels(bogus.factor)[1]
-
-ayhanDGC.predictions <- make.predictions.df(classifier.hg,
-                                            ayhanDGCs.lognorm,
-                                            meta.data.label.column = bogus.factor)
-
-
-which(rownames(ayhanDGC_counts)=="NPTX2")
-
-dev.off()
-hist( as.numeric(ayhanDGCs.lognorm[4789,]) ) + xlab("log(INHBA)") + ylab("Counts")
-dev.off()
-
-
-# Histogram of Engram Probability
-# http://www.sthda.com/english/wiki/ggplot2-histogram-plot-quick-start-guide-r-software-and-data-visualization
-
-df <- ayhanDGC.predictions[,2:3] #counts of probability
-
-ninetyfive= as.numeric( quantile(ayhanDGC.predictions$label_pos,0.95) )
-ninetysevenpointfive = as.numeric( quantile(ayhanDGC.predictions$label_pos,0.975))
-p <- ggplot(data = df, aes(x=label_pos) )
-
-dev.off()
-jpeg("HumanDGC_ENGRAM_Prob_distribution.jpg", width = 350, height = "350")
-p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
-  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
-             linetype="dashed") +
-  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
-             linetype="dashed") +
-  xlab("Probability of Human DGC being an Engram Cell")+
-  ylab("Counts") +
-  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
-dev.off()
-
-mean(apply(ayhan2021_counts, MARGIN = 2, sum))
-
-dev.off()
-jpeg("~/PavLabEngrams/HumanDGC_EGRAMProb_distribution.jpg", width = 350, height = "350")
-p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
-  xlab("Probability of Human DGC being an Engram Cell")+
-  ylab("Counts")
-dev.off()
 
 # Making IEGs plots for Ayhan
 
@@ -1071,56 +1041,11 @@ p.nptx2 + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_class
 dev.off()
 
 
-#  Attempt number 2, integration with seurat
-# Relvant reading, good review
-# 
-# Shafer, M. E. (2019). Cross-species analysis of single-cell transcriptomic data.
-# Frontiers in cell and developmental biology, 7, 175.
-# https://www.frontiersin.org/articles/10.3389/fcell.2019.00175/full
+########## WINNER WINNER CHICKEN DINNER SELECTINTEGRATIONFEATURES IS THE BEST WAY
+########## WINNER WINNER CHICKEN DINNER SELECTINTEGRATIONFEATURES IS THE BEST WAY
+########## WINNER WINNER CHICKEN DINNER SELECTINTEGRATIONFEATURES IS THE BEST WAY
 
-# Affinati, A. H., Sabatini, P. V., True, C., Tomlinson, A. J., Kirigiti, M., 
-# Lindsley, S. R., ... & Rupp, A. C. (2021). Cross-species analysis defines the 
-# conservation of anatomically segregated VMH neuron populations. Elife, 10, e69065.
-# https://elifesciences.org/articles/69065
-
-#We need to load jeager, hochgerner, and ayna and check for which genes are present
-
-#then we can put hochgerner and ayhan  together
-
-
-ayhan2021_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/GSE160189_Hippo_Counts.csv.gz")
-rownames(ayhan2021_counts) <- ayhan2021_counts$gene
-ayhan2021_counts[is.na(ayhan2021_counts)] <- 0
-ayhan2021_counts <- ayhan2021_counts[, c(2:dim(ayhan2021_counts)[2])]
-
-
-ayhan2021_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/meta.tsv",
-                           sep = '\t', header = TRUE)
-
-# note as per Ayhan et al., 2021 we do not want Den.Gyr3 as it is mostly from a single subject
-ayhanDGC.idx <- ayhan2021_meta$Cell[(ayhan2021_meta$Cluster == "Den.Gyr2")|(ayhan2021_meta$Cluster == "Den.Gyr1")]
-ayhanDGC.idx <- colnames(ayhan2021_counts) %in% ayhanDGC.idx
-
-ayhanDGC_counts <- ayhan2021_counts[,ayhanDGC.idx]
-
-hg_to_mm <- read.table("hg_mm_1to1_ortho_genes_DIOPT-v8.tsv", sep = '\t', header = TRUE)
-# just run left join onto the appropriate column for each dataset
-
-# filter out genes not present in all datasets
-present.orthologs.idx <- (hg_to_mm$Symbol_hg %in% rownames(ayhanDGC_counts))&(hg_to_mm$Symbol_mm %in% rownames(combined.counts) )
-present.orthologs.idx <- present.orthologs.idx & (hg_to_mm$Symbol_mm %in% rownames(hochgerner5k_2018_counts) )
-
-hg_to_mm <- hg_to_mm[present.orthologs.idx,] # filter for matches, ~ 14403 present between Ayhan and Jeager/Lacar
-
-
-
-# filtering for orthologs present in all data sets
-ayhanDGC_counts$Symbol_hg <- rownames(ayhanDGC_counts) # for bringing to 
-ayhanDGC_counts <- left_join(x = hg_to_mm, y = ayhanDGC_counts, by = "Symbol_hg" )
-rownames(ayhanDGC_counts) <- ayhanDGC_counts$Symbol_hg
-ayhanDGC_counts <- ayhanDGC_counts[,c(4:dim(ayhanDGC_counts)[2])]
-
-
+# first we do gene matching between all datasets
 combined.counts.hg <- combined.counts
 combined.counts.hg$Symbol_mm <- rownames(combined.counts.hg)
 combined.counts.hg <- left_join(x = hg_to_mm, y = combined.counts.hg, by = "Symbol_mm" )
@@ -1128,54 +1053,68 @@ rownames(combined.counts.hg) <- combined.counts.hg$Symbol_hg
 combined.counts.hg <- combined.counts.hg[,c(4:(dim(combined.counts.hg)[2]) )]
 
 
-hochgernerDGC_counts <- hochgerner5k_2018_counts[, hochgerner5k_2018_meta$cluster_name == "Granule-mature"]
-hochgernerDGC_counts <- data.frame( lapply(hochgernerDGC_counts,as.numeric) ) # this data is for some reason all strings
-colnames(hochgernerDGC_counts) <- colnames(hochgerner5k_2018_counts)[hochgerner5k_2018_meta$cluster_name == "Granule-mature"]
-hochgernerDGC_counts$Symbol_mm <- rownames(hochgerner5k_2018_counts)
-hochgernerDGC_counts <- left_join(x = hg_to_mm, y = hochgernerDGC_counts, by = "Symbol_mm" )
-rownames(hochgernerDGC_counts) <- hochgernerDGC_counts$Symbol_hg
-hochgernerDGC_counts <- hochgernerDGC_counts[,c(4:dim(hochgernerDGC_counts)[2])]
+hochgernerDGC_counts.hg <- hochgernerDGC_counts
+colnames(hochgernerDGC_counts.hg) <- colnames(hochgerner5k_2018_counts)[hochgerner5k_2018_meta$cluster_name == "Granule-mature"]
+hochgernerDGC_counts.hg$Symbol_mm <- rownames(hochgernerDGC_counts.hg)
+hochgernerDGC_counts.hg <- left_join(x = hg_to_mm, y = hochgernerDGC_counts.hg, by = "Symbol_mm" )
+rownames(hochgernerDGC_counts.hg) <- hochgernerDGC_counts.hg$Symbol_hg
+hochgernerDGC_counts.hg <- hochgernerDGC_counts.hg[,c(4:dim(hochgernerDGC_counts.hg)[2])]
+
+ayhanDGC_counts$Symbol_hg <- rownames(ayhanDGC_counts) # for bringing to 
+ayhanDGC_counts <- left_join(x = hg_to_mm, y = ayhanDGC_counts, by = "Symbol_hg" )
+rownames(ayhanDGC_counts) <- ayhanDGC_counts$Symbol_hg
+ayhanDGC_counts <- ayhanDGC_counts[,c(4:dim(ayhanDGC_counts)[2])]
+
+gene.list <- list(rownames(hochgernerDGC_counts.hg),
+                  rownames(hochgernerDGC_counts.hg),
+                  rownames(ayhanDGC_counts) )
+shared.genes <- multi.intersect(gene.list )
+rm(gene.list)
+
+# all the datasets share genes now no need for a script that matches genes
+ayhanDGC_counts.integrated <- ayhanDGC_counts %>% 
+  rownames_to_column() %>%
+  filter(rowname %in% shared.genes) %>%
+  select( -rowname)
 
 
-
-########## WINNER WINNER CHICKEN DINNER SELECTINTEGRATIONFEATURES IS THE BEST WAY
-########## WINNER WINNER CHICKEN DINNER SELECTINTEGRATIONFEATURES IS THE BEST WAY
-########## WINNER WINNER CHICKEN DINNER SELECTINTEGRATIONFEATURES IS THE BEST WAY
-
+#Feature selection based on shared variability
+# in a thousand classifiers tried and failed there is a way to do it with
+# hochgerner instead
 
 # species label, we are going to integrate using hochgerner and 
-all.cells <- cbind(ayhanDGC_counts, combined.counts.hg)
-all.cells <- cbind(all.cells, hochgernerDGC_counts)
+all.cells <- cbind(ayhanDGC_counts, hochgernerDGC_counts.hg)
+all.cells <- cbind(all.cells, combined.counts.hg)
 
 # making meta data and label to split data by
 species.idx <- rep("human", dim(ayhanDGC_counts)[2]) 
-species.idx <- c(species.idx, rep("mouse", dim(combined.counts.hg)[2]+dim(hochgernerDGC_counts)[2]) )
+species.idx <- c(species.idx, rep("mouse", dim(combined.counts.hg)[2]) )
+species.idx <- c(species.idx, rep("mouse", dim(hochgernerDGC_counts.hg)[2]) )
 
 experiment <- rep("ayhan2021", dim(ayhanDGC_counts)[2])
 experiment <- c( experiment, rep("jeager2018", dim(combined.counts.hg)[2]) )
-experiment <- c( experiment, rep("hochgerner2018", dim(hochgernerDGC_counts)[2]) )
+experiment <- c( experiment, rep("hochgerner2018", dim(hochgernerDGC_counts.hg)[2]) )
 
 
-activity <- rep("unlabelled", dim(ayhanDGC_counts)[2]) 
-activity <- c(activity, combined.meta$ActivityStatus)
-activity <- c(activity, rep("unlabelled", dim(hochgernerDGC_counts)[2]) )
+#activity <- rep("unlabelled", dim(ayhanDGC_counts)[2]) 
+#activity <- c(activity, combined.meta$ActivityStatus)
+
 
 
 all.cells.meta <- data.frame(experiment)
 all.cells.meta$species <- species.idx
-all.cells.meta$activity <- activity
+#all.cells.meta$activity <- activity
 
-rownames(all.cells.meta) <- colnames(all.cells)
-
+#rownames(all.cells.meta) <- c(colnames(ayhanDGC_counts), colnames(hochgernerDGC_counts.hg) )
+rownames(all.cells.meta) <- c(colnames(ayhanDGC_counts), colnames(combined.counts.hg), colnames(hochgernerDGC_counts.hg) )
+all.cells <- cbind(ayhanDGC_counts, hochgernerDGC_counts.hg)
 
 # making a seurat object to normalize using their anchors,
 # could potentially do clustering later in order to observe if cells are clustering together
 integration_obj <- CreateSeuratObject(counts = all.cells, 
-                                      min.cells = 0, 
-                                      min.features = 0, 
+                                      min.cells = 3, 
+                                      min.features = 100, 
                                       meta.data = all.cells.meta)
-
-integration_obj@meta.data$species <- all.cells.meta$species
 
 # split the dataset into a list of two seurat objects (by species)
 DGC.list <- SplitObject(integration_obj, split.by = "species")
@@ -1190,7 +1129,7 @@ DGC.list <- lapply(X = DGC.list, FUN = function(x) {
 })
 
 # select features that are repeatedly variable across datasets for integration
-features <- SelectIntegrationFeatures( object.list = DGC.list, nfeatures = 8000 )
+features <- SelectIntegrationFeatures( object.list = DGC.list, nfeatures = 2000 )
 
 ########## WINNER WINNER CHICKEN DINNER SELECTINTEGRATIONFEATURES IS THE BEST WAY
 ########## WINNER WINNER CHICKEN DINNER SELECTINTEGRATIONFEATURES IS THE BEST WAY
@@ -1207,33 +1146,89 @@ int.feats.df <- data.frame(Symbol_hg = features)
 int.feats.df <- left_join(x = int.feats.df, y = hg_to_mm, by = "Symbol_hg" )
   
 
-combinedcounts.integrated <- combined.counts
-combinedcounts.integrated$Symbol_mm <- rownames(combinedcounts.integrated)
-combinedcounts.integrated <- left_join(x = int.feats.df, y = combinedcounts.integrated, by = "Symbol_mm" )
+combinedcounts.integrated <- combined.counts.hg
+combinedcounts.integrated$Symbol_hg <- rownames(combinedcounts.integrated)
+combinedcounts.integrated <- left_join(x = int.feats.df, y = combinedcounts.integrated, by = "Symbol_hg" )
 rownames(combinedcounts.integrated) <- combinedcounts.integrated$Symbol_hg
 combinedcounts.integrated <- combinedcounts.integrated[,c(4:(dim(combinedcounts.integrated)[2]) )]
-combinedcounts.integrated <- log.norm(combinedcounts.integrated)
+
+
+hochgernerDGC_counts.integrated <-  hochgernerDGC_counts.hg
+hochgernerDGC_counts.integrated$Symbol_hg <- rownames(hochgernerDGC_counts.integrated)
+hochgernerDGC_counts.integrated <- left_join(x = int.feats.df, y = hochgernerDGC_counts.integrated, by = "Symbol_hg" )
+rownames(hochgernerDGC_counts.integrated) <- hochgernerDGC_counts.integrated$Symbol_hg
+hochgernerDGC_counts.integrated <- hochgernerDGC_counts.integrated[,c(4:(dim(hochgernerDGC_counts.integrated)[2]) )]
+
 
 ayhan2021.integrated <- ayhanDGC_counts
 ayhan2021.integrated$Symbol_hg <- rownames(ayhan2021.integrated) # for bringing to 
 ayhan2021.integrated <- left_join(x = int.feats.df, y = ayhan2021.integrated, by = "Symbol_hg" )
 rownames(ayhan2021.integrated) <- ayhan2021.integrated$Symbol_hg
 ayhan2021.integrated <- ayhan2021.integrated[,c(4:dim(ayhan2021.integrated)[2])]
-ayhan2021.integrated <- log.norm(ayhan2021.integrated)
+
+
+
 
 ## training classifier for human data
 # add
+
+#normalizations
+
+# vst transform from seurat
+# https://cran.r-project.org/web/packages/sctransform/sctransform.pdf
+# https://github.com/satijalab/sctransform
+# Publications on this method: https://genomebiology.biomedcentral.com/articles/10.1186/s13059-021-02584-9
+# https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1874-1#Sec8
+
+
+
+
+# top quantile
+# has serious issues as the counts are a serious problem 
+topquantile.binarize <-function(scRNAseq_data, percentile, reference_scRNAseq_data = 'None'){
+  #takes in data that is gene by cell
+  # returns dataframe of cell by gene
+  # calculates quantile for each gene
+  # if a gene in a cell is in the top xth percentile (example above 90th percentiles)
+  # that gene is accepted
+  # refernce scRNAseq data may be used 
+  if(reference_scRNAseq_data!= 'None'){
+    baseline_data <- reference_scRNAseq_data
+  }else{
+    baseline_data <- scRNAseq_data
+  }
+  
+  binarized <- t(+(scRNAseq_data > matrixStats::rowQuantiles(as.matrix(baseline_data), probs=percentile)))
+  binarized <- data.frame(binarized)
+  
+  return(binarized)
+}
+
+# ayhan2021.integrated <- topquantile.binarize(ayhan2021.integrated, threshold)
+# combinedcounts.integrated <- opquantile.binarize(combinedcounts.integrated)
+# combinedcounts.integrated$Engramcell <- as.factor(combined.meta$ActivityStatus)
+
+
+
+# Log - Norma Normalisations
+combinedcounts.integrated <- log.norm(combinedcounts.integrated)
 combinedcounts.integrated$Engramcell <- as.factor(combined.meta$ActivityStatus)
 
+ayhan2021.integrated <- log.norm(ayhan2021.integrated)
+
 # train classifier
-classifier.integrated <- resampled.randomForest.crossvalidated( data = combinedcounts.integrated,
+# RRFclassifier.integrated <- resampled.regularizedRF.crossvalidated
+# classifier.integrated.normal <- resampled.randomForest.crossvalidated 
+classifier.integrated  <- resampled.regularizedRF.crossvalidated( 
+                                                        data = combinedcounts.integrated,
                                                         under.represented.class = "Inactive",
                                                         over.represented.class = "Active",
                                                         trees.total = 1000,
-                                                        folds = 5,
+                                                        folds = 10,
                                                         proportion.each.batch=0.8,
                                                         batches.per.fold=20)
 
+RRFclassifier.integrated <- classifier.integrated
 # Importance
 importance.integrated <- data.frame(gene = as.character( rownames(classifier.integrated$importance) ),
                                importance_score = as.numeric(classifier.integrated$importance ) ) %>%
@@ -1265,22 +1260,28 @@ dev.off()
 # this bogus factor is just here so make.predictions.df function works
 bogus.factor <- combinedcounts.integrated$Engramcell
 bogus.factor[751:1014] <- combinedcounts.integrated$Engramcell[1:264]
-bogus.factor[1:dim(ayhan2021.integrated)[1]] <- levels(bogus.factor)[1]
+bogus.factor[1:dim(ayhan2021.integrated)[2]] <- levels(bogus.factor)[1]
+ayhan2021.integrated$Engramcell <- bogus.factor
 
 ayhan.integrated.predictions <- make.predictions.df(classifier.integrated,
                                             ayhan2021.integrated,
                                             meta.data.label.column = bogus.factor)
+
+test <- predict(classifier.integrated, ayhan2021.integrated, type = 'prob')
 
 ### MAKING FIGURES ON HUMAN DATA
 
 # Histogram of Engram Probability
 # http://www.sthda.com/english/wiki/ggplot2-histogram-plot-quick-start-guide-r-software-and-data-visualization
 
-ayhan.prob.count <- ayhan.integrated.predictions[,2:3] #counts of probability
+ayhan.prob.count <- data.frame(predict(classifier.integrated, ayhan2021.integrated, type = 'prob') )
+ayhan.prob.count$predict <- predict(classifier.integrated, ayhan2021.integrated)
 
-ninetyfive= as.numeric( quantile(ayhan.integrated.predictions$label_pos,0.95) )
-ninetysevenpointfive = as.numeric( quantile(ayhan.integrated.predictions$label_pos,0.975))
-p <- ggplot(data = ayhan.prob.count, aes(x=label_pos) )
+#counts of probability
+
+ninetyfive= as.numeric( quantile(ayhan.prob.count$Active,0.95) )
+ninetysevenpointfive = as.numeric( quantile(ayhan.prob.count$Active,0.975))
+p <- ggplot(data = ayhan.prob.count, aes(x=Active) )
 
 dev.off()
 jpeg("HumanDGC_ENGRAM_Prob_distribution_seuratintegration.jpg", width = 350, height = "350")
@@ -1521,6 +1522,20 @@ hochtest <- log.norm(hochgernerDGC_counts) # neeeds to be lonormed???? check
 # https://www.nature.com/articles/s41467-019-12924-w
 
 # Seurats addModuleScore?
+
+# Review of interneurons discusses methods of calculating conservation
+# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7064158/
+# this paper has a method for calculating conservation in scRNAseq
+# Tosches, M. A., Yamawaki, T. M., Naumann, R. K., Jacobi, A. A., Tushev, G., &
+#   Laurent, G. (2018). Evolution of pallium, hippocampus, and cortical cell types
+# revealed by single-cell transcriptomics in reptiles. Science, 360(6391), 881-888.
+# https://www.science.org/doi/pdf/10.1126/science.aar4237 (turtles to mice)
+
+# another paper 
+# Hodge, R. D., Bakken, T. E., Miller, J. A., Smith, K. A., Barkan, E. R., 
+# Graybuck, L. T., ... & Lein, E. S. (2018). Conserved cell types with divergent 
+# features between human and mouse cortex. BioRxiv, 384826.
+# https://www.biorxiv.org/content/10.1101/384826v1.abstract
 
 # Liu, Y., Wang, T., Zhou, B., & Zheng, D. (2021). Robust integration of multiple 
 # single-cell RNA sequencing datasets using a single reference space. Nature 

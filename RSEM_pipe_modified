@@ -1,0 +1,85 @@
+files=`cat list.txt`
+
+########################
+## 1) Download the files
+########################
+#for file in $files;
+#do
+#   wget $file
+#done
+
+########################
+## 2) Trim the files
+########################
+files=`ls *fastq.gz`
+
+#for file in $files;
+#do
+#        echo "Running dynamictrim on $file ..."
+#        prefix=`echo $file | sed s/.fastq.gz//`
+#        /raid/LOG-G/slinker/tools/SolexaQA++/SolexaQA++ dynamictrim $file
+        ##Remove TSO adapter
+#       file=`echo $file | sed s/fastq/fastq.trimmed/`
+#       out=`echo $file | sed s/trimmed/TSOtrimmed/`
+#       ~/.local/bin/cutadapt -b AAGCAGTGGTATCAACGCAGAGTAC -m 30 -f fastq -o $out $file
+
+# testing
+SolexaQA++ dynamictrim SRR7611869.fastq -b -m 30 -f fastq -o
+SolexaQA++ dynamictrim SRR7611869.fastq -b -d /space/scratch/jeagertest -m 30 
+
+#this below works!
+SolexaQA++ dynamictrim <input untrimmed.fastq> -b AAGCAGTGGTATCAACGCAGAGTAC -m 30 -f fastq -o <output dir>
+bowtie2 -x /mm10 -U SRR7611869.fastq.trimmed -S /space/scratch/jeagertest_sam/SRR7611869_bow.sam
+# the -U indicates we are using unpaired reads, and the -S path and name of output file
+# we could not get m38 to work so instead we downloaded m39 because it is current and
+# we are now generating the index files from m39 in /space/scratch/mouse_test
+# after the reference genome 
+#done
+
+########################
+## 3) Unzip trimmed files
+########################
+
+#gunzip *.TSOtrimmed.gz
+
+########################
+## 4) Align with RSEM
+########################
+# before this can be run i need to prep the ref for RSEM to use
+# https://deweylab.github.io/RSEM/rsem-prepare-reference.html
+# command line....
+#  rsem-prepare-reference [options] reference_fasta_file(s) reference_name
+# use the --gft option
+# youtube guide for alignment with STAR https://www.youtube.com/watch?v=9D1dToIQqls
+
+
+# this determines what file extension the files variable will be filled with
+# their original script had .TSOtrimmed
+files=`ls *.TSOtrimmed`
+#genome reference
+refname=`echo /raid/LOG-G/slinker/libraries/rsem_ref/mm10_bow/mm10_bow`
+#refname=`echo /raid/LOG-G/slinker/libraries/rsem_ref/grch38_bow/GrCh38_bow`
+
+for file in $files;
+do
+    samplename=`echo $file | awk '{split($0,a,".fastq"); print a[1]"_se"}'`
+    echo  "Aligning $file to $samplename" 
+    rsem-calculate-expression --output-genome-bam --keep-intermediate-files $file $refname $samplename 
+
+    statfile=`echo $samplename".stat"`
+    bamfiles=`echo $samplename"*.bam*"`
+    bamdir=`echo $samplename"_bam"`
+    mkdir $bamdir
+    mv $bamfiles $bamdir
+    mv $statfile $bamdir
+done
+
+########################
+## 5) Summarize Results
+########################
+#
+bash ~/shell/RSEM_summary_output.sh
+
+
+
+/space/scratch/Jeager2018_GSE98679

@@ -184,3 +184,125 @@ test.identitymatrix <- ginv(mouse.coordindates.cca) %*% mouse.coordindates.cca
 
 # project jeager into CCA space
 # combined.counts.hg
+
+
+
+
+
+############  Combining hochgerner and ayhan AND jeager/lacar
+#  Attempt number 2, integration with seurat
+# Relvant reading, good review
+# 
+# Shafer, M. E. (2019). Cross-species analysis of single-cell transcriptomic data.
+# Frontiers in cell and developmental biology, 7, 175.
+# https://www.frontiersin.org/articles/10.3389/fcell.2019.00175/full
+
+# Affinati, A. H., Sabatini, P. V., True, C., Tomlinson, A. J., Kirigiti, M., 
+# Lindsley, S. R., ... & Rupp, A. C. (2021). Cross-species analysis defines the 
+# conservation of anatomically segregated VMH neuron populations. Elife, 10, e69065.
+# https://elifesciences.org/articles/69065
+
+#We need to load jeager, hochgerner, and ayna and check for which genes are present
+
+#then we can put hochgerner and ayhan  together
+
+
+ayhan2021_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/GSE160189_Hippo_Counts.csv.gz")
+rownames(ayhan2021_counts) <- ayhan2021_counts$gene
+ayhan2021_counts[is.na(ayhan2021_counts)] <- 0
+ayhan2021_counts <- ayhan2021_counts[, c(2:dim(ayhan2021_counts)[2])]
+
+
+ayhan2021_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/meta.tsv",
+                           sep = '\t', header = TRUE)
+
+# note as per Ayhan et al., 2021 we do not want Den.Gyr3 as it is mostly from a single subject
+ayhanDGC.idx <- ayhan2021_meta$Cell[(ayhan2021_meta$Cluster == "Den.Gyr2")|(ayhan2021_meta$Cluster == "Den.Gyr1")]
+ayhanDGC.idx <- colnames(ayhan2021_counts) %in% ayhanDGC.idx
+
+ayhanDGC_counts <- ayhan2021_counts[,ayhanDGC.idx]
+
+hg_to_mm <- read.table("hg_mm_1to1_ortho_genes_DIOPT-v8.tsv", sep = '\t', header = TRUE)
+# just run left join onto the appropriate column for each dataset
+
+# filter out genes not present in all datasets
+present.orthologs.idx <- (hg_to_mm$Symbol_hg %in% rownames(ayhanDGC_counts))&(hg_to_mm$Symbol_mm %in% rownames(combined.counts) )
+present.orthologs.idx <- present.orthologs.idx & (hg_to_mm$Symbol_mm %in% rownames(hochgerner5k_2018_counts) )
+
+hg_to_mm <- hg_to_mm[present.orthologs.idx,] # filter for matches, ~ 14403 present between Ayhan and Jeager/Lacar
+
+
+
+# filtering for orthologs present in all data sets
+ayhanDGC_counts$Symbol_hg <- rownames(ayhanDGC_counts) # for bringing to 
+ayhanDGC_counts <- left_join(x = hg_to_mm, y = ayhanDGC_counts, by = "Symbol_hg" )
+rownames(ayhanDGC_counts) <- ayhanDGC_counts$Symbol_hg
+ayhanDGC_counts <- ayhanDGC_counts[,c(4:dim(ayhanDGC_counts)[2])]
+
+
+combined.counts.hg <- combined.counts
+combined.counts.hg$Symbol_mm <- rownames(combined.counts.hg)
+combined.counts.hg <- left_join(x = hg_to_mm, y = combined.counts.hg, by = "Symbol_mm" )
+rownames(combined.counts.hg) <- combined.counts.hg$Symbol_hg
+combined.counts.hg <- combined.counts.hg[,c(4:(dim(combined.counts.hg)[2]) )]
+
+
+hochgernerDGC_counts <- hochgerner5k_2018_counts[, hochgerner5k_2018_meta$cluster_name == "Granule-mature"]
+hochgernerDGC_counts <- data.frame( lapply(hochgernerDGC_counts,as.numeric) ) # this data is for some reason all strings
+colnames(hochgernerDGC_counts) <- colnames(hochgerner5k_2018_counts)[hochgerner5k_2018_meta$cluster_name == "Granule-mature"]
+hochgernerDGC_counts$Symbol_mm <- rownames(hochgerner5k_2018_counts)
+hochgernerDGC_counts <- left_join(x = hg_to_mm, y = hochgernerDGC_counts, by = "Symbol_mm" )
+rownames(hochgernerDGC_counts) <- hochgernerDGC_counts$Symbol_hg
+hochgernerDGC_counts <- hochgernerDGC_counts[,c(4:dim(hochgernerDGC_counts)[2])]
+
+
+# feature selection
+# species label, we are going to integrate using hochgerner and 
+all.cells <- cbind(ayhanDGC_counts, combined.counts.hg)
+#all.cells <- cbind(all.cells, hochgernerDGC_counts)
+
+# making meta data and label to split data by
+species.idx <- rep("human", dim(ayhanDGC_counts)[2]) 
+species.idx <- c(species.idx, rep("mouse", dim(combined.counts.hg)[2]+dim(hochgernerDGC_counts)[2]) )
+
+
+experiment <- rep("ayhan2021", dim(ayhanDGC_counts)[2])
+experiment <- c( experiment, rep("jeager2018", dim(combined.counts.hg)[2]) )
+experiment <- c( experiment, rep("hochgerner2018", dim(hochgernerDGC_counts)[2]) )
+
+
+activity <- rep("unlabelled", dim(ayhanDGC_counts)[2]) 
+activity <- c(activity, combined.meta$ActivityStatus)
+activity <- c(activity, rep("unlabelled", dim(hochgernerDGC_counts)[2]) )
+
+
+all.cells.meta <- data.frame(experiment)
+all.cells.meta$species <- species.idx
+all.cells.meta$activity <- activity
+
+rownames(all.cells.meta) <- colnames(all.cells)
+
+
+# making a seurat object to normalize using their anchors,
+# could potentially do clustering later in order to observe if cells are clustering together
+integration_obj <- CreateSeuratObject(counts = all.cells, 
+                                      min.cells = 0, 
+                                      min.features = 0, 
+                                      meta.data = all.cells.meta)
+
+integration_obj@meta.data$species <- all.cells.meta$species
+
+# split the dataset into a list of two seurat objects (by species)
+DGC.list <- SplitObject(integration_obj, split.by = "species")
+
+# normalize and identify variable features for each dataset independently
+# may have to play with number of genes to include, so we will include more
+# genes than seurat recommends because we may find them of use
+# we will use all the genes 
+DGC.list <- lapply(X = DGC.list, FUN = function(x) {
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = dim(hg_to_mm)[1])
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures( object.list = DGC.list, nfeatures = 8000 )

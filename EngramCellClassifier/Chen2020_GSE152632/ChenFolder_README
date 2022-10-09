@@ -1,0 +1,21 @@
+Chen2020 folder read me
+
+Initially I clusterd just within the chen data.  
+
+There are various images geenrated to mimic the figures in the original plublication
+
+SraRunTable.txt is the official metadata from SRA
+
+counts data is here in the compressed .csv same name as the file from the geo accession.
+
+ClusteringCellsChen.R geenrates the figures and also contains a naive clustering approach.
+
+Chen2020_ClusterMarkers.csv is the result of the seurat clustering which was intedented to 
+reproduce the original clustering from the publication.
+
+Seurat numbering has been provided in seurat_clusters_num column, layer markers column
+are the clusters containing the laminar specific markers from Chen, note though that
+these genes while present as statistically significant markers are not always the top
+markers in the cluster.  I also included labels from the top 2 genes which had the largest
+avg_log2FC which were also statistically significant after bonferroni correction as per normal
+seurat cluster DEG work flow the FindAllMarkers() function.

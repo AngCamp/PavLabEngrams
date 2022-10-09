@@ -51,10 +51,10 @@ library(caret)
 setwd("/home/acampbell/PavLabEngrams/EngramCellClassifier")
 
 #Load the data and Metadata
-chen2020_counts <- read.csv('Chen2020_GSE152632/GSE152632_GEO_mberkchen_TRAP2_counts.csv.gz', header = TRUE)
+chen2020_counts <- read.csv('~/PavLabEngrams/EngramCellClassifier/Chen2020_GSE152632/GSE152632_GEO_mberkchen_TRAP2_counts.csv.gz', header = TRUE)
 rownames(chen2020_counts) <- chen2020_counts$X
 chen2020_counts <- chen2020_counts[,2:3531]
-chen2020_meta <- read.csv( 'Chen2020_GSE152632/SraRunTable.txt', header = TRUE)
+chen2020_meta <- read.csv( '~/PavLabEngrams/EngramCellClassifier/Chen2020_GSE152632/SraRunTable.txt', header = TRUE)
 
 #add engram label
 chen2020_meta$engram_label <-  as.factor(sapply(as.character(colnames(chen2020_counts)), function(y) if (grepl("_pos_", y, fixed=TRUE)) "tdT+" else "tdT-"))
@@ -144,7 +144,7 @@ chen <- AddMetaData(chen, chen2020_meta)
 #clustering usign the top 20 PCs as they did in Chen
 chen <- FindNeighbors(chen, reduction = "tsne", dims = 1:2)
 chen <- FindClusters(chen, 
-                     resolution = 0.03) #setting this parameter to 0.03 gets 6 clusters, at default 0.5 we find 21
+                     resolution = 0.03) #setting this parameter to 0.03 gets 7 clusters, at default 0.5 we find 21
 
 #Plotting the clusters
 dev.off()
@@ -159,7 +159,8 @@ dev.off()
 # https://satijalab.org/seurat/reference/dotplot
 
 #Finding Markers
-chen.markers <- FindAllMarkers(chen, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+chen.markers <- FindAllMarkers(chen, only.pos = TRUE)
+# adding threshold will mean losing the laminar markers
 
 
 #checking for the markers described in chen
@@ -167,11 +168,13 @@ test <- chen.markers %>%
   group_by(cluster)
 
 test <- data.frame(test)
-test <- test[,test$p_val_adj<0.05]
+test <- test[test$p_val_adj<0.05,]
 layer.markers <- c("Dkkl1","Rprm","Calb2","Tesc","Tnfaip8l3","Tshz2","Lhx6")
-layer.markers.idx <- which(test$gene %in% layer.markers)
+layer.markers.idx <- which(test$gene %in% "Lhx6")
 test$cluster[layer.markers.idx]
 
+test <- select(test, c(6,7))
+test[layer.markers.idx,]
 #they are there and match the cluster assignments from chen
 # > test$cluster[layer.markers.idx]
 # [1] 0 1 2 3 4 5 6
@@ -183,7 +186,9 @@ test$p_val_adj[layer.markers.idx]
 # [1]  0.000000e+00  0.000000e+00  0.000000e+00 6.459740e-244 1.979667e-140
 # [6] 8.827732e-301  0.000000e+00
 
-
+top.chen.markers <- chen.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 10, order_by = avg_log2FC)
 
 
 top2.chen.markers <- chen.markers %>%
@@ -191,7 +196,6 @@ top2.chen.markers <- chen.markers %>%
   slice_max(n = 2, order_by = avg_log2FC)
 
 top2.chen.markers <-  data.frame(top2.chen.markers)
-write.csv(chen.markers, "Chen2020_ClusterMarkers.csv")
 
 top5 <- chen.markers %>%
   group_by(cluster) %>%
@@ -235,9 +239,19 @@ for(i in c(1:dim(top2.chen.markers)[1]) ){
 # [16] "Sub1-Atpif1"          "Cnr1-Tac2"            "Rgs4-Nrep"           
 # [19] "Vip-Tac2"             "Lamp5-Wfs1"           "Pcp4-Tmsb10"
 
-#renaming cluster id's
-names(two.mrkrs) <- levels(chen)
-chen <- RenameIdents(chen, two.mrkrs)
+chen.markers <- data.frame(seurat_cluster_num = chen@meta.data$seurat_clusters)
+rownames(chen.markers) <- rownames(chen2020_meta)
+colnames(chen.markers)
+
+chen.markers$ChenLayerMarkers <- as.character(lapply(as.numeric(chen.markers$seurat_cluster_num), function(x) layer.markers[x]))
+chen.markers$TopTwoMarkers <- as.character(lapply(as.numeric(chen.markers$seurat_cluster_num), function(x) names(two.mrkrs)[x]))
+
+broad.cell.types <- c("Excitatory","Excitatory","Inhibitory" ,"Excitatory",
+                     "Inhibitory" ,"Excitatory","Inhibitory" )
+chen.markers$BroadCellTypes <- as.character(lapply(as.numeric(chen.markers$seurat_cluster_num), function(x) broad.cell.types[x]))
+
+write.csv(chen.markers, "~/PavLabEngrams/EngramCellClassifier/Chen2020_GSE152632/Chen2020_ClusterMarkers.csv")
+
 
 #Visualize Clusters
 dev.off()

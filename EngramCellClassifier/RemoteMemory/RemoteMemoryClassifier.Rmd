@@ -1,0 +1,345 @@
+---
+title: "Chen_to_Kwon_Classifier"
+author: "Angus Campbell"
+date: "2022-10-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+# libraries used
+library(randomForest)
+library(rfUtilities)
+library(Seurat)
+library(stringr)
+library(sampler)
+library(caTools)
+library(pROC)
+library(ggplot2)
+library(stats)
+library(Dict)
+library(pheatmap)
+library(caret)
+library(data.table)
+library(dplyr)
+```
+
+
+
+
+
+```{r include=FALSE}
+# FUNCTIONS
+
+#normalization functions, log.norm calls logplusone
+# mean center scale then log(x+1) for normalizing
+logplusone <- function(x){
+  return( log(x+1) )
+}
+
+log.norm <- function(df.in){
+  #performs the lognorm transform and scales the data, removes NA's first
+  if( sum(is.na(df.in)) ){
+    df.in[is.na(df.in)] <- 0
+  }
+  df.out <- apply(df.in,
+                  MARGIN = 1,
+                  FUN = logplusone
+  )
+  df.out <- scale( t(df.out) ) #we need it transposed so that the scaling is done per gene not cell
+  df.out <- data.frame( t(df.out) )
+  colnames(df.out) <- rownames(df.in)
+  return(df.out)
+}
+
+
+resample.randomForest <-function( df.in,
+                                  under_represented_class,
+                                  over_represented_class,
+                                  proportion,
+                                  batches, 
+                                  trees){
+  #NOTE: df.in should have a column called engram cell with the class labels i.e. postive or negative
+  
+  #this function resamples from our samples and retrains new models then combines them
+  # this is too prevent over fitting on cells
+  trees.per.batch <- as.integer(trees/batches)
+  n.cells <- trunc( sum(df.in$Engramcell==under_represented_class)*proportion)
+  batches <- c(1:batches)
+  for( batch in batches){
+    resample.set <- rbind(sample(which(df.in$Engramcell==under_represented_class), size = n.cells),
+                          sample(which(df.in$Engramcell==over_represented_class), size = n.cells)
+    )
+    resample.set <- df.in[resample.set,]
+    
+    # creates rf.model
+    if(batch==1){
+      rf.model <- randomForest(x = resample.set[,1:(length(resample.set)-1)],
+                               y = resample.set$Engramcell,
+                               ntree = trees.per.batch)
+    }
+    #trains new models in rf.fit and combines tham with rf.model
+    if(batch>1){
+      rf.fit = randomForest(x = resample.set[,1:(length(resample.set)-1)],
+                            y = resample.set$Engramcell,
+                            ntree = trees.per.batch)
+      rf.model <- randomForest::combine(rf.fit, rf.model)
+    }
+  }#end of for loop over batches
+  
+  return(rf.model)
+}
+
+
+make.predictions.df <- function(classifier.object, 
+                                test_df,
+                                meta.data.label.column,
+                                label = c("Active","Inactive")
+){
+  #generate predictions for making classifier summary
+  predictions <- as.data.frame(predict(classifier.object, test_df[,1:(length(test_df))], type = "prob"))
+  predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
+  predictions$observed <- meta.data.label.column #this should be changed if you want to make this functions more modular
+  colnames(predictions)[1:2] <- c("label_pos","label_neg")
+  predictions$engramobserved <- ifelse(predictions$observed==label[1], 1, 0)
+  predictions$inactiveobserved <- ifelse(predictions$observed==label[2], 1, 0)
+  return(predictions)
+}
+
+
+# assess a single run of resampled.randomforest
+assessment <- function(predictions.df, 
+                       label = c("Active","Inactive") 
+){
+  # returns a vector of assessments to be used to make dataframe summarizing classifiers performance
+  # can be used to make df of all calssifiers trained in a single run
+  TP <- sum((predictions.df$predict == label[1])&(predictions.df$observed == label[1]))
+  TN <- sum((predictions.df$predict == label[2])&(predictions.df$observed == label[2]))
+  FN <- sum((predictions.df$predict == label[2])&(predictions.df$observed == label[1]))
+  FP <- sum((predictions.df$predict == label[1])&(predictions.df$observed == label[2]))
+  
+  #precision and recall as well as sumamry stats F1
+  precision <- TP/(TP+FP)
+  recall <- TP/(TP+FN)
+  F1.score = 2 * (precision * recall) / (precision + recall)
+  FPR <- FP/(TN+FP)
+  FNR <- FN/(TP+FN)
+  
+  #getting auc
+  roc.engramcell <- roc(predictions.df$engramobserved, as.numeric(predictions.df$label_pos) )
+  AUC <- auc(roc.engramcell)
+  
+  return( c(F1.score, AUC, precision, recall, FPR, FNR,
+            TP, FN, TN, FP) )
+}
+
+
+
+resampled.randomForest.crossvalidated <-function(data,
+                                                 under.represented.class,
+                                                 over.represented.class,
+                                                 folds,
+                                                 trees.total,
+                                                 proportion.each.batch=0.8,
+                                                 batches.per.fold=20){
+  # takes a data frame with a label column assumed to be named Engramcell, data$Engramcell
+  # returns a model that has been k-fold cross validated, with an attribute called Assessment
+  # assessment has the performance metrics of all the folds and a column of means and SD's for each
+  # metric
+  #NOTE: ROC curve needs to be implemented
+  
+  folds.obj <- createFolds(data$Engramcell, k = folds)
+  loops <- c(1:folds)
+  for( i in loops ){
+    #create indices
+    test.idx <- folds.obj[[i]]
+    # needs to be a list so it can act as an index
+    train.idx <- which(!(rownames(data) %in% test.idx) )
+    
+    #split data for this fold
+    training_set <- data[train.idx,]
+    testing_set <- data[test.idx,]
+    
+    # divvies up number of trees
+    trees.in.the.fold = as.integer(trees.total/folds)
+    if ( ( trees.total%%(batches.per.fold*folds) )>0  ){ 
+      stop("Number of trees does not devide evenly by batches and folds.")
+    }
+    # we still need to settle on stuff to 
+    rf.this_fold <- resample.randomForest(df.in = training_set,
+                                          under_represented_class = under.represented.class,
+                                          over_represented_class = over.represented.class,
+                                          proportion= proportion.each.batch,
+                                          batches = batches.per.fold, 
+                                          trees = trees.in.the.fold)
+    
+    if(i == 1){
+      rf.out <- rf.this_fold
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance <- data.frame(assess )
+      rownames(fold.performance) <- c("F1 Score", "AUC", "Precision", "Recall",
+                                      "FPR", "FNR", "True Positives", "False Negatives", 
+                                      "True Negatives", "False Positives")
+    }else{
+      rf.out <- randomForest::combine(rf.out, rf.this_fold)
+      # we need votes for all cells to calculate
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance[,ncol(fold.performance) + 1] <- assess
+    }
+    
+  }# end of for loop
+  colnames(fold.performance) <- names(folds.obj)
+  fold.performance$Mean <- apply(fold.performance,MARGIN=1,  FUN = mean)
+  fold.performance$SigDiff <- apply(fold.performance,MARGIN=1,  FUN = sd)
+  rf.out$Assessment <- fold.performance
+  
+  #votes needs to be updated to make roc curve
+  rf.out$votes <- predict(object = rf.out, newdata = data, type = 'vote', norm.votes = FALSE)
+  return(rf.out)
+}
+
+resample.regularizedRF <- function( df.in,
+                                    under_represented_class,
+                                    over_represented_class,
+                                    proportion,
+                                    batches, 
+                                    trees){
+  #NOTE: df.in should have a column called engram cell with the class labels i.e. postive or negative
+  
+  #this function resamples from our samples and retrains new models then combines them
+  # this is too prevent over fitting on cells
+  trees.per.batch <- as.integer(trees/batches)
+  n.cells <- trunc( sum(df.in$Engramcell==under_represented_class)*proportion)
+  batches <- c(1:batches)
+  for( batch in batches){
+    resample.set <- rbind(sample(which(df.in$Engramcell==under_represented_class), size = n.cells),
+                          sample(which(df.in$Engramcell==over_represented_class), size = n.cells)
+    )
+    resample.set <- df.in[resample.set,]
+    
+    # creates rf.model
+    if(batch==1){
+      rf.model <- RRF(x = resample.set[,1:(length(resample.set)-1)],
+                      y = resample.set$Engramcell,
+                      ntree = trees.per.batch)
+    }
+    #trains new models in rf.fit and combines tham with rf.model
+    if(batch>1){
+      rf.fit = RRF(x = resample.set[,1:(length(resample.set)-1)],
+                   y = resample.set$Engramcell,
+                   ntree = trees.per.batch)
+      rf.model <- RRF::combine(rf.fit, rf.model)
+    }
+  }#end of for loop over batches
+  
+  return(rf.model)
+}
+
+#
+resampled.regularizedRF.crossvalidated <-function(data,
+                                                  under.represented.class,
+                                                  over.represented.class,
+                                                  folds,
+                                                  trees.total,
+                                                  proportion.each.batch=0.8,
+                                                  batches.per.fold=20){
+  # takes a data frame with a label column assumed to be named Engramcell, data$Engramcell
+  # returns a model that has been k-fold cross validated, with an attribute called Assessment
+  # assessment has the performance metrics of all the folds and a column of means and SD's for each
+  # metric
+  #NOTE: ROC curve needs to be implemented
+  
+  folds.obj <- createFolds(data$Engramcell, k = folds)
+  loops <- c(1:folds)
+  for( i in loops ){
+    #create indices
+    test.idx <- folds.obj[[i]]
+    # needs to be a list so it can act as an index
+    train.idx <- which(!(rownames(data) %in% test.idx) )
+    
+    #split data for this fold
+    training_set <- data[train.idx,]
+    testing_set <- data[test.idx,]
+    
+    # divvies up number of trees
+    trees.in.the.fold = as.integer(trees.total/folds)
+    if ( ( trees.total%%(batches.per.fold*folds) )>0  ){ 
+      stop("Number of trees does not devide evenly by batches and folds.")
+    }
+    # we still need to settle on stuff to 
+    rf.this_fold <- resample.regularizedRF(df.in = training_set,
+                                           under_represented_class = under.represented.class,
+                                           over_represented_class = over.represented.class,
+                                           proportion= proportion.each.batch,
+                                           batches = batches.per.fold, 
+                                           trees = trees.in.the.fold)
+    
+    if(i == 1){
+      rf.out <- rf.this_fold
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance <- data.frame(assess )
+      rownames(fold.performance) <- c("F1 Score", "AUC", "Precision", "Recall",
+                                      "FPR", "FNR", "True Positives", "False Negatives", 
+                                      "True Negatives", "False Positives")
+    }else{
+      rf.out <- RRF::combine(rf.out, rf.this_fold)
+      # we need votes for all cells to calculate
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance[,ncol(fold.performance) + 1] <- assess
+    }
+    
+  }# end of for loop
+  colnames(fold.performance) <- names(folds.obj)
+  fold.performance$Mean <- apply(fold.performance,MARGIN=1,  FUN = mean)
+  fold.performance$SigDiff <- apply(fold.performance,MARGIN=1,  FUN = sd)
+  rf.out$Assessment <- fold.performance
+  
+  #votes needs to be updated to make roc curve
+  rf.out$votes <- predict(object = rf.out, newdata = data, type = 'vote', norm.votes = FALSE)
+  return(rf.out)
+}
+
+
+
+
+
+gene.shuffle <-function(dat){
+  #shuffles the genes valus within cells,
+  #intended to be applied before normalization
+  for ( cell in c(1:ncol(dat)) ){
+    rand <- sample(nrow(dat)) # generates random vector of numbers from colls
+    dat[,cell] <- dat[rand,cell] # shuffles the genes within cells
+    
+  }# end of loop over cells
+  return(dat)
+}
+
+
+
+
+
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
