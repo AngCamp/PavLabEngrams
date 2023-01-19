@@ -1,0 +1,1762 @@
+---
+title: "High IEG expressing cells in Human Datasets"
+author: "Angus Campbell"
+date: "2022-12-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(randomForest)
+library(rfUtilities)
+library(Seurat) # not really needed for this analysis and may interfere with Summarized experiment which we need 
+library(stringr)
+library(sampler) # provides ssamp
+library(caTools)
+library(pROC)
+library(ggplot2)
+library(stats)
+library(Dict)
+library(pheatmap)
+library(caret)
+library(data.table)
+library(dplyr)
+library(groupdata2) # gives us partition
+#library(SCnorm) # install this one from github
+#may require restarting session to run
+#library(devtools)
+#devtools::install_github("rhondabacher/SCnorm")
+library(janitor) # some fucntions for data cleaning
+#library(SummarizedExperiment) # may interfere with seurat
+library(tibble)
+library(amlpmpsupport) # installed via remotes from thier github 2021
+library(affy) # for making density plots : 
+#https://mkempenaar.github.io/gene_expression_analysis/chapter-3.html
+library(smotefamily) # for making smote from data, smote is a common algoirhtm for unbalanced data calssification preprocessing
+library(scrime) # provides rowscale
+```
+
+
+```{r, include=FALSE}
+# paul prefers a log base that's easy to do headmath with so no eulers numebr
+pseudocount_log2p1_transform <- function(x, scale_factor = 10000, UMI.provided = NULL){
+  if(is.null(UMI.provided)){
+    counts <- sum(x)}else{
+      counts <- UMI.provided
+    }
+  x <- (x+1)/counts
+  x <- x/scale_factor
+  return(log2(x))
+}
+
+pavlab.normalize <- function(df, UMI = NULL){
+  df.cols <- colnames(df)
+  df.rows <- rownames(df)
+  if( is.null(UMI)){
+    df <- data.frame(apply(df,  MARGIN = 2, pseudocount_log2p1_transform))
+  }else{
+    df <- data.frame(apply(df,  MARGIN = 2, pseudocount_log2p1_transform(UMI.provided=UMI)))
+  }
+  colnames(df) <- df.cols
+  rownames(df)<- df.rows
+  return(df)
+}
+
+#normalization functions, log.norm calls logplusone
+seurat_log1p_transform <- function(x, scale_factor = 10000, UMI.provided = NULL){
+  if(is.null(UMI.provided)){
+    counts <- sum(x)}else{
+      counts <- UMI.provided
+    }
+  x <- (x+1)/counts
+  x <- x/scale_factor
+  return(log(x))
+}
+
+
+seurat.normalize <- function(df, UMI = NULL){
+    df.cols <- colnames(df)
+    df.rows <- rownames(df)
+    if( is.null(UMI)){
+      df <- data.frame(apply(df,  MARGIN = 2, seurat_log1p_transform))
+    }else{
+      df <- data.frame(apply(df,  MARGIN = 2, seurat_log1p_transform(UMI.provided=UMI)))
+    }
+    colnames(df) <- df.cols
+    rownames(df)<- df.rows
+    return(df)
+}
+
+#functions
+logplusone <- function(x){
+  if (sum(x)==0){
+  y <- x}else{
+  y <- log(x+1)}    
+  return( y )
+}
+
+# this gives zeros don't use it
+log.norm <- function(df.in){
+  #performs the lognorm transform and scales the data, removes NA's first
+  if( sum(is.na(df.in)) ){
+    df.in[is.na(df.in)] <- 0
+  }
+  df.out <- apply(df.in,
+                  MARGIN = 1,
+                  FUN = logplusone
+  )
+  df.out <- scale( t(df.out) ) #we need it transposed so that the scaling is done per gene not cell
+  df.out <- data.frame( t(df.out) )
+  colnames(df.out) <- rownames(df.in)
+  return(df.out)
+}
+
+#modified original is in ChenClassifier.R in the EngramCellClassifier folder
+celltype.lognorm <-function(countsdata, celltype.labels){
+  #log normalizes within cell types in counts data
+  #celltype labels and colnames of countsdata must have same order
+  
+  #retunrs a transposed and normalize dataframe 
+  
+  print("Normalizing cell type...")
+  
+  celltypes <- unique(celltype.labels)
+  df.out <- data.frame(gene = rownames(countsdata))
+  #df.out <- t(df.out)
+  #colnames(df.out) <- rownames(countsdata)
+  
+  cell_names <- c('gene',colnames(countsdata)) # keep this for reorganizing later
+  df.out.rownames <- c()
+  for(type in celltypes){
+    print(type[1])
+    normalized.within.type <- log.norm(countsdata[,celltype.labels==type])
+    normalized.within.type <- t(normalized.within.type) # lognorm flips its data
+    normalized.within.type <- data.frame(normalized.within.type)
+    normalized.within.type <- rownames_to_column(normalized.within.type, var ="gene")
+    df.out <- left_join( df.out, normalized.within.type, by = 'gene' )
+  }
+  
+  #df.out <- df.out[,2:dim(df.out)[2]]  # to keep original order
+  df.out <- df.out[cell_names] %>% 
+    select_if(~ !any(is.na(.))) %>%
+    column_to_rownames(var = 'gene')
+    
+  return( data.frame(df.out) ) 
+}
+
+resample.randomForest <-function( df.in,
+                                  under_represented_class,
+                                  over_represented_class,
+                                  proportion,
+                                  batches, 
+                                  trees){
+  #NOTE: df.in should have a column called engram cell with the class labels i.e. postive or negative
+
+  #this function resamples from our samples and retrains new models then combines them
+  # this is too prevent over fitting on cells
+  trees.per.batch <- as.integer(trees/batches)
+  n.cells <- trunc( sum(df.in$Engramcell==under_represented_class)*proportion)
+  batches <- c(1:batches)
+  for( batch in batches){
+    resample.set <- rbind(sample(which(df.in$Engramcell==under_represented_class), size = n.cells),
+                          sample(which(df.in$Engramcell==over_represented_class), size = n.cells)
+                          )
+    resample.set <- df.in[resample.set,]
+    
+    # creates rf.model
+    if(batch==1){
+      rf.model <- randomForest(x = resample.set[,1:(length(resample.set)-1)],
+                               y = resample.set$Engramcell,
+                               ntree = trees.per.batch)
+    }
+    #trains new models in rf.fit and combines tham with rf.model
+    if(batch>1){
+      rf.fit = randomForest(x = resample.set[,1:(length(resample.set)-1)],
+                            y = resample.set$Engramcell,
+                            ntree = trees.per.batch)
+      rf.model <- randomForest::combine(rf.fit, rf.model)
+    }
+  }#end of for loop over batches
+  
+  return(rf.model)
+}
+
+
+make.predictions.df <- function(classifier.object, 
+                                test_df,
+                                meta.data.label.column,
+                                label = c("Active","Inactive")
+                                ){
+  #generate predictions for making classifier summary
+  predictions <- as.data.frame(predict(classifier.object, test_df[,1:(length(test_df))], type = "prob"))
+  predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
+  predictions$observed <- meta.data.label.column #this should be changed if you want to make this functions more modular
+  colnames(predictions)[1:2] <- c("label_pos","label_neg")
+  predictions$engramobserved <- ifelse(predictions$observed==label[1], 1, 0)
+  predictions$inactiveobserved <- ifelse(predictions$observed==label[2], 1, 0)
+  return(predictions)
+}
+
+
+# assess a single run of resampled.randomforest
+assessment <- function(predictions.df, 
+                       label = c("Active","Inactive") 
+                       ){
+  # returns a vector of assessments to be used to make dataframe summarizing classifiers performance
+  # can be used to make df of all calssifiers trained in a single run
+  TP <- sum((predictions.df$predict == label[1])&(predictions.df$observed == label[1]))
+  TN <- sum((predictions.df$predict == label[2])&(predictions.df$observed == label[2]))
+  FN <- sum((predictions.df$predict == label[2])&(predictions.df$observed == label[1]))
+  FP <- sum((predictions.df$predict == label[1])&(predictions.df$observed == label[2]))
+  
+  #precision and recall as well as sumamry stats F1
+  precision <- TP/(TP+FP)
+  recall <- TP/(TP+FN)
+  F1.score = 2 * (precision * recall) / (precision + recall)
+  FPR <- FP/(TN+FP)
+  FNR <- FN/(TP+FN)
+  
+  #getting auc
+  roc.engramcell <- roc(predictions.df$engramobserved, as.numeric(predictions.df$label_pos) )
+  AUC <- auc(roc.engramcell)
+  
+  return( c(F1.score, AUC, precision, recall, FPR, FNR,
+            TP, FN, TN, FP) )
+}
+
+
+
+resampled.randomForest.crossvalidated <-function(data,
+                                                 under.represented.class,
+                                                 over.represented.class,
+                                                 folds,
+                                                 trees.total,
+                                                 proportion.each.batch=0.8,
+                                                 batches.per.fold=20){
+  # takes a data frame with a label column assumed to be named Engramcell, data$Engramcell
+  # returns a model that has been k-fold cross validated, with an attribute called Assessment
+  # assessment has the performance metrics of all the folds and a column of means and SD's for each
+  # metric
+  #NOTE: ROC curve needs to be implemented
+  
+  folds.obj <- createFolds(data$Engramcell, k = folds)
+  loops <- c(1:folds)
+  for( i in loops ){
+    #create indices
+    test.idx <- folds.obj[[i]]
+    # needs to be a list so it can act as an index
+    train.idx <- which(!(rownames(data) %in% test.idx) )
+    
+    #split data for this fold
+    training_set <- data[train.idx,]
+    testing_set <- data[test.idx,]
+    
+    # divvies up number of trees
+    trees.in.the.fold = as.integer(trees.total/folds)
+    if ( ( trees.total%%(batches.per.fold*folds) )>0  ){ 
+      stop("Number of trees does not devide evenly by batches and folds.")
+    }
+    # we still need to settle on stuff to 
+    rf.this_fold <- resample.randomForest(df.in = training_set,
+                                          under_represented_class = under.represented.class,
+                                          over_represented_class = over.represented.class,
+                                          proportion= proportion.each.batch,
+                                          batches = batches.per.fold, 
+                                          trees = trees.in.the.fold)
+    
+    if(i == 1){
+      rf.out <- rf.this_fold
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance <- data.frame(assess )
+      rownames(fold.performance) <- c("F1 Score", "AUC", "Precision", "Recall",
+                                      "FPR", "FNR", "True Positives", "False Negatives", 
+                                      "True Negatives", "False Positives")
+    }else{
+      rf.out <- randomForest::combine(rf.out, rf.this_fold)
+      # we need votes for all cells to calculate
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance[,ncol(fold.performance) + 1] <- assess
+    }
+    
+  }# end of for loop
+  colnames(fold.performance) <- names(folds.obj)
+  fold.performance$Mean <- apply(fold.performance,MARGIN=1,  FUN = mean)
+  fold.performance$SigDiff <- apply(fold.performance,MARGIN=1,  FUN = sd)
+  rf.out$Assessment <- fold.performance
+  
+  #votes needs to be updated to make roc curve
+  rf.out$votes <- predict(object = rf.out, newdata = data, type = 'vote', norm.votes = FALSE)
+  return(rf.out)
+}
+
+resample.regularizedRF <- function( df.in,
+                                    under_represented_class,
+                                    over_represented_class,
+                                    proportion,
+                                    batches, 
+                                    trees){
+  #NOTE: df.in should have a column called engram cell with the class labels i.e. postive or negative
+  
+  #this function resamples from our samples and retrains new models then combines them
+  # this is too prevent over fitting on cells
+  trees.per.batch <- as.integer(trees/batches)
+  n.cells <- trunc( sum(df.in$Engramcell==under_represented_class)*proportion)
+  batches <- c(1:batches)
+  for( batch in batches){
+    resample.set <- rbind(sample(which(df.in$Engramcell==under_represented_class), size = n.cells),
+                          sample(which(df.in$Engramcell==over_represented_class), size = n.cells)
+    )
+    resample.set <- df.in[resample.set,]
+    
+    # creates rf.model
+    if(batch==1){
+      rf.model <- RRF(x = resample.set[,1:(length(resample.set)-1)],
+                      y = resample.set$Engramcell,
+                      ntree = trees.per.batch)
+    }
+    #trains new models in rf.fit and combines tham with rf.model
+    if(batch>1){
+      rf.fit = RRF(x = resample.set[,1:(length(resample.set)-1)],
+                   y = resample.set$Engramcell,
+                   ntree = trees.per.batch)
+      rf.model <- RRF::combine(rf.fit, rf.model)
+    }
+  }#end of for loop over batches
+  
+  return(rf.model)
+}
+
+#
+resampled.regularizedRF.crossvalidated <-function(data,
+                                                  under.represented.class,
+                                                  over.represented.class,
+                                                  folds,
+                                                  trees.total,
+                                                  proportion.each.batch=0.8,
+                                                  batches.per.fold=20){
+  # takes a data frame with a label column assumed to be named Engramcell, data$Engramcell
+  # returns a model that has been k-fold cross validated, with an attribute called Assessment
+  # assessment has the performance metrics of all the folds and a column of means and SD's for each
+  # metric
+  #NOTE: ROC curve needs to be implemented
+  
+  folds.obj <- createFolds(data$Engramcell, k = folds)
+  loops <- c(1:folds)
+  for( i in loops ){
+    #create indices
+    test.idx <- folds.obj[[i]]
+    # needs to be a list so it can act as an index
+    train.idx <- which(!(rownames(data) %in% test.idx) )
+    
+    #split data for this fold
+    training_set <- data[train.idx,]
+    testing_set <- data[test.idx,]
+    
+    # divvies up number of trees
+    trees.in.the.fold = as.integer(trees.total/folds)
+    if ( ( trees.total%%(batches.per.fold*folds) )>0  ){ 
+      stop("Number of trees does not devide evenly by batches and folds.")
+    }
+    # we still need to settle on stuff to 
+    rf.this_fold <- resample.regularizedRF(df.in = training_set,
+                                           under_represented_class = under.represented.class,
+                                           over_represented_class = over.represented.class,
+                                           proportion= proportion.each.batch,
+                                           batches = batches.per.fold, 
+                                           trees = trees.in.the.fold)
+    
+    if(i == 1){
+      rf.out <- rf.this_fold
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance <- data.frame(assess )
+      rownames(fold.performance) <- c("F1 Score", "AUC", "Precision", "Recall",
+                                      "FPR", "FNR", "True Positives", "False Negatives", 
+                                      "True Negatives", "False Positives")
+    }else{
+      rf.out <- RRF::combine(rf.out, rf.this_fold)
+      # we need votes for all cells to calculate
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance[,ncol(fold.performance) + 1] <- assess
+    }
+    
+  }# end of for loop
+  colnames(fold.performance) <- names(folds.obj)
+  fold.performance$Mean <- apply(fold.performance,MARGIN=1,  FUN = mean)
+  fold.performance$SigDiff <- apply(fold.performance,MARGIN=1,  FUN = sd)
+  rf.out$Assessment <- fold.performance
+  
+  #votes needs to be updated to make roc curve
+  rf.out$votes <- predict(object = rf.out, newdata = data, type = 'vote', norm.votes = FALSE)
+  return(rf.out)
+}
+```
+
+
+
+
+
+```{r}
+# we're just gonna use the genes from Neuroestimator first 
+# they did not provide a lsit so I ma just reading off of figure1 and not all the genes were legible
+
+# non target genes that were highly influential Homer1, Bdnf, Ntrk2, Jun, Cyr61,
+# I added Rgs4 because I know it's important "Rgs4",
+
+bahl2022_IEGs <- list("Per1", "Dusp1","Fosb", "Btg2", "Erg2", "Npas4", "Grasp", "Tiparp", "Nr4a3", "Rgs2", "Crem",
+                      "Arc", "Fos", "Fbxso33", "Nr4a2", "Junb","Erg3", "Fosl2", "Egr1","Nr4a1")
+other_important_IEGs <- list("Homer1","Bdnf","Ntrk2","Jun","Cyr61","Rgs4", "Bdnf")
+
+target_IEGs <- c(bahl2022_IEGs, other_important_IEGs)
+```
+
+
+```{r}
+# human mouse gene orthologs
+hg_to_mm <- read.table("/home/acampbell/PavLabEngrams/EngramCellClassifier/hg_mm_1to1_ortho_genes_DIOPT-v8.tsv", sep = '\t', header = TRUE)
+
+
+iegs_hg <- hg_to_mm$Symbol_hg[hg_to_mm$Symbol_mm %in% target_IEGs]
+```
+
+
+
+We will start looking for these cells in the live human brain tissue as it may.
+```{r}
+ayhan_counts <- read.table('/home/acampbell/test_datasets/Ayhan2021_GSE160189/GSE160189_Hippo_Counts.csv.gz',
+                     sep = ",", header = TRUE)
+
+ayhan_counts <- data.frame(ayhan_counts) %>% column_to_rownames(var = 'gene')
+```
+
+
+
+
+
+
+
+```{r}
+# note the meta data is not in the same order as the cell counts matrix
+# it also contains cell that were filtered from the counts
+# must have been done in seurat
+ayhan_meta <- read.table('/home/acampbell/test_datasets/Ayhan2021_GSE160189/meta.tsv',
+                     sep = '\t' , header = TRUE)
+ayhan_meta <- data.frame(ayhan_meta)
+
+print("The cells in ayhan meta do not match counts")
+print(dim(ayhan_meta))
+print(dim(ayhan_counts))
+
+
+```
+
+```{r}
+# return position in original data set
+ayhan_meta$cell_order <- match(ayhan_meta$Cell,colnames(ayhan_counts))
+```
+
+
+```{r}
+completeFun <- function(data, desiredCols) {
+  completeVec <- complete.cases(data[, desiredCols])
+  return(data[completeVec, ])
+}
+
+ayhan_meta <- completeFun(ayhan_meta, "cell_order") %>%
+  arrange(cell_order)
+
+
+```
+
+```{r}
+hippocampal_neuron_types <- c('Den.Gyr1', 'Den.Gyr2', 'In1', 'In2', 'In3', 'Pyr1', 'Pyr2')
+
+ayhan_neuron_cellids <- ayhan_meta$Cell[ayhan_meta$Cluster %in% hippocampal_neuron_types]
+
+ayhan_neurons <- ayhan_counts[,colnames(ayhan_counts) %in% ayhan_neuron_cellids] 
+```
+
+```{r}
+
+ayhan_neurons <- seurat.normalize(ayhan_neurons)
+
+
+
+```
+
+```{r}
+ieg_thresholding <-function(assay_normed,
+                            ieg_list,
+                            percentile_lowerbound = 0.99,
+                            return_colnames = TRUE){
+  # PARAMETERS:
+  # assay_normed : data frame (genes by cells)
+  # ieg_list : list of iegs to check if cells are expressing above percentile lower bound
+  # percentile_lowerbound : the percentile of an ieg's expression a cell needs to pass
+  # return_colnames : default true, if false logical vector is returned true for a cell that passed
+  #RETURNS:
+  # high_ieg_cells : colnaems of cell that expressed one ieg in teh percentile chosen, or logical vetor same length as assya_normed cols true where cell passed
+  
+  
+  # instantiate vector which keeps track of which cells
+  # are expressing one ieg in the ieg_list above the
+  # lower percentile bound for all cells
+  is_high_ieg <- rep(FALSE, each = dim(assay_normed)[2])
+
+  for(ieg in ieg_list){
+    # get row number of ieg
+    gene.idx <- rownames(assay_normed) %in% ieg
+    #get numeric values of that iegs expression in every cell,
+    # needs to be converted to numeric or it jsut returns colnames
+    ieg_expression <- as.numeric(assay_normed[gene.idx,])
+    #use percentile to get the threshold for this gene, again as.numeric for just the float value
+    thresh <- as.numeric(quantile(ieg_expression , probs = percentile_lowerbound))
+    # if a cell has previously been found to pass another ieg's thresh make it true,
+    # OR if it passes this ieg's thresh make it true, keeps a rolling tally of the cells that pass
+    # for at least one ieg
+    is_high_ieg <- is_high_ieg |  (ieg_expression > thresh)
+    }
+          
+  # return the colnames,
+  # if return_colnaems is false returns a binary vector of 
+  # length of columns of assay_normed
+  if(return_colnames){
+    high_ieg_cells <- colnames(assay_normed)[is_high_ieg]
+  }else{
+    high_ieg_cells <- is_high_ieg
+  }
+  return(high_ieg_cells)
+}
+```
+
+```{r}
+ayhan_high_ieg <- ieg_thresholding(assay_normed = ayhan_neurons, ieg_list=  iegs_hg)
+```
+
+
+```{r}
+cell.type.proportion <-function (active_cells, cell_name_list, cell_type_list){
+  # Returns proportion of cells that are active in a population
+  # active_cells : list of cell names of teh active cells from ieg_thrsholding()
+  # cell_name_list : list of cells in the whole assay from assay_normed in ieg_thresholding active and inactive
+  # cell_type_list : list of the types of cells corresponding to the whole assay active and inactive
+  # NOTE WE ASSUME cell_name_list and cell_type_list corespond to each other, same length and
+  # each entry corresponds to the same cell (some of which are in active_cells)
+  cell_type_activity <- table(cell_type_list[cell_name_list %in% test])
+  
+  for(cell.type in names(cell_type_activity)){
+    proportion_of_active_cells <- cell_type_activity[cell.type]/sum(cell_type_list == cell.type)
+    cell_type_activity[cell.type] <- proportion_of_active_cells
+  }
+return(cell_type_activity)
+}
+```
+
+
+```{r}
+activation_proportions <- cell.type.proportion(ayhan_high_ieg, ayhan_meta$Cell, ayhan_meta$Cluster)
+
+active.df <- data.frame(Cell_Type= names(activation_proportions),
+                        Proportion = as.numeric(activation_proportions) )
+
+active.df
+```
+
+
+```{r}
+xlimits <- active.df$Cell_Type
+
+ggplot(data=active.df, aes(x=Cell_Type, y=Proportion)) +
+  geom_bar(stat="identity", color="green", fill="white") +
+  xlab("Ayhan Cell Type") +
+  ylab("Proportion Activated")  +
+  theme(text = element_text(size = 15)) +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0,1),expand = c(0, 0)) +
+  theme_minimal()
+
+```
+
+```{r}
+cell.type.proportion(test, ayhan_meta$Cell, ayhan_meta$group)
+```
+
+
+```{r}
+# activity score
+
+ieg_thresh_activity_score <- function(expression_df, target_genes,
+                                      cells_to_score = c(), thresh = 0.95){
+  # this function scores cells by fraction of target ieg's expressed above 
+  # desired percentile
+  # parameters:
+  # expression_df : genes by cells matrix of sc rna-seq data
+  # target_genes : list of genes to use for score
+  # cells to_score : list of colnames to use to find desired cells,
+  # if empty all cells are scored, else supply colnames
+  # thresh the percentile a target gene (usually an IEG) needs to pass
+  # to contribute to the score
+  
+  #check if a list of names has been provided, if it has
+  # 
+  number_of_cells <- length(cells_to_score)
+  
+  if (number_of_cells==0){
+    cells_to_score <- colnames(expression_df)
+  }
+  
+  # first we want a matrix that's going to contain the
+  # scores of teh cells in cells_to_score,
+  # could just be a lsit we add to then at the end devide by length of 
+  # the target genes list
+  activity_score = rep(0, each = number_of_cells)
+  
+  for(gene in target_genes){
+    
+  }
+  
+  
+  
+}
+  
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# plot the density of the genes and show the IEGs seperately,
+# maybe do it by cell type as well?
+# https://r-graph-gallery.com/135-stacked-density-graph.html
+# https://rdrr.io/github/rdocking/amlpmpsupport/man/density_plotter.html
+
+# eric says use gather
+
+
+```
+```{r}
+### What we can do is plot all IEG desnsity using effy (I think that's what it's called)
+
+## Plot the log2-transformed data with a 0.1 pseudocount
+
+# setting in affy fror controlling color
+#col=rep(myColors, each=3)
+
+# ntoe that ayhan neurons has already been normalized
+plotDensity(ayhan_neurons,
+            lty=c(1:ncol(ayhan_neurons)), xlab='Logp1(count/umi)*10^4)',
+            main='Expression Distribution')
+
+## Add a legend and vertical line
+#legend('topright', names(ayhan_neurons), 
+#       lty=c(1:ncol(ayhan_neurons))
+#       )
+#abline(v=-1.5, lwd=1, col='red', lty=2)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+#iegs.idx <- rownames(ayhan_neurons) %in% iegs_hg
+
+
+set.seed(1)
+groups <- factor(sample(c(1, 2), 100, replace = TRUE))
+
+variable <- numeric(100)
+
+# Group 1: mean 3
+variable[groups == 1] <- rnorm(length(variable[groups == 1]), 3)
+
+# Group 2: mean 0
+variable[groups == 2] <- rnorm(length(variable[groups == 2]))
+
+#library(car)
+
+densityPlot(variable, groups)
+```
+```{r}
+
+
+density_multiple_genes<- function(assay_normed, genes_to_plot,
+                                  group = c()){
+  #PARAMETERS:
+  #assay_normed : gene by cell(sample) rna seq
+  # genes_to_plot : list of genes in the assay
+  # group : default none, if provided should be a list
+  # the same length of genes_to_plot 
+  gene.list <- c()
+  express <- c()
+  group.list <- c()
+  
+  for(gene in genes_to_plot){
+    gene.list <- c(gene.list, rep(gene, each=dim(assay_normed)[2] ) )
+  
+    idx <- rownames(assay_normed) == gene
+    express <- c(express, assay_normed[idx,])
+    
+      if(length(group)>0){
+    group.list <- c(group.list,rep(group[idx], each=dim(assay_normed)[2] ) )}
+  }
+  if(length(group)>0){
+    gene.list <- group
+  }
+  gene.list <- as.factor(gene.list)
+  express <- as.numeric(express)
+  # return a density plot of this
+  #
+  #return(express)
+  densityPlot(express, gene.list)
+}
+
+
+```
+
+https://mkempenaar.github.io/gene_expression_analysis/chapter-3.html
+
+
+
+
+```{r}
+non_iegs_sample <- sample(rownames(ayhan_neurons)[!(rownames(ayhan_neurons) %in% iegs_hg)], 5)
+
+genes.to.plot <- c(non_iegs_sample, iegs_hg)
+
+gene.groups <- c(rep('Non-IEG', each = length(non_iegs_sample)), rep('Target IEG', each = length(iegs_hg)) )
+
+expression.stuff <- ayhan_neurons[rownames(ayhan_neurons) %in% genes.to.plot,]
+```
+
+
+
+
+```{r}
+density_multiple_genes(expression.stuff, genes.to.plot, genes.to.plot)
+```
+  This seems like it may be the solution:
+https://r-graphics.org/recipe-distribution-multi-density
+
+ - has something that looks like it coudl be useful for plotting
+ IEG dsitribution in active vs non active
+ -paul may not want this though
+
+
+```{r}
+ayhan_meta$Cluster[ayhan_meta]
+```
+
+
+
+
+TO get a more fine grained view of th
+```{r}
+suerat_neurons <- CreateSeuratObject(counts = ayhan_counts[,colnames(ayhan_counts) %in% ayhan_neuron_cellids])
+```
+
+```{r}
+subset(chen, subset = nCount_RNA > 50000 & nFeature_RNA > 100 & percent.mt < 10 & percent.ribo < 10)
+```
+
+ ude.nretsewhtuostu@akponoK.eveiveneG or ude.nretsewhtuostu@ageL.yeldar
+
+
+This is taken from [Smith et al., (2021)](https://www.frontiersin.org/articles/10.3389/fncir.2022.836930/full)
+```{r} 
+ knitr::include_graphics("~/PavLabEngrams/EngramCellClassifier/High_ieg_expressing_images/Smith2021_delta_metric.png") 
+``` 
+
+
+
+
+
+
+
+
+```{r}
+modularity_score<-function(assay_normed,
+                           cell_types_list){
+  # PARAMETERS:
+  # assay_normed : data frame (genes by cells)
+  # active_cells : list of cell names of teh active cells from ieg_thrsholding()
+  # cell_name_list : list of cells in the whole assay from assay_normed in ieg_thresholding 
+}
+
+
+
+```
+
+
+
+
+
+
+
+References: 
+
+Ayhan, F., Kulkarni, A., Berto, S., Sivaprakasam, K., Douglas, C., Lega, B. C., & Konopka, G. (2021). Resolving cellular and molecular diversity along the hippocampal anterior-to-posterior axis in humans. Neuron, 109(13), 2091-2105.
+
+Smith, S. J., & von Zastrow, M. (2022). A Molecular Landscape of Mouse Hippocampal Neuromodulation. Frontiers in Neural Circuits, 16.
+
+
+
+
+## Shared Recall and delayed IEG exrpression
+
+Load the data sets with recall.  We will use the same definitions of activity 
+the original authors claimed, so we have two datasets with recently reactivated
+cells and another dataset with cells from a much later time point (9 days) and all from many brain regions so if this holds up.  Could possibly ask mark to try it on his subiculum data if this works.
+
+
+
+```{r}
+# NOTE INCLUDE ACTIVATED CELLS IN THE TRAINING
+
+
+# Jeager data (fos+, are+, reactivation)
+setwd("/home/acampbell/PavLabEngrams/EngramCellClassifier")
+lacar2016_meta <- read.csv('Lacar2016_GSE77067/SraRunTable.txt', header = TRUE)
+lacar2016_snHC_counts <- read.table('Lacar2016_GSE77067/GSE77067_sn_hc_counts.txt.gz')
+lacar2016_snNE_counts <- read.table('Lacar2016_GSE77067/GSE77067_sn_ne_counts.txt.gz')
+lacar2016_wc_counts <- read.table('Lacar2016_GSE77067/GSE77067_wc_counts.txt.gz')
+
+#Loading Jeager data
+#Jeagers meta rows are a little out of order w.r.t. their count data, i.e. rows do no correspond to cells order we fix that in a bit
+jeager2018_counts <- bind_cols(read.table('Jeager2018_GSE98679/GSE98679_count.txt.gz', header = TRUE, check.names = FALSE),
+                               read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_count.txt.gz', header = TRUE, check.names = FALSE))
+
+jeager2018_meta <- read.csv('Jeager2018_GSE98679/SraRunTable.txt', header = TRUE)
+
+
+jeager2018_meta <- jeager2018_meta[c(1:46,599:912,47:598),] #here we fix the order
+rownames(jeager2018_meta) <- c(1:912)
+jeager2018_meta$CellID <- colnames(jeager2018_counts)
+
+arclabels <- read.csv("Jeager2018_GSE98679/Jaeger2018_meta_arclabels.csv", header = TRUE)
+jeager2018_meta <- left_join(jeager2018_meta,
+                             arclabels %>% dplyr::select(Title, ArcStatus),
+                             by = c("CellID" = "Title"))
+
+
+
+
+jeager2018_meta$predicted_cell_type <- as.character(lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x}))
+jeager2018_meta$predicted_cell_type <- lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x})
+
+jeager2018_meta$fos_status <- as.factor(sapply(as.character(jeager2018_meta$source_name), function(y) if (grepl("_F_", y, fixed=TRUE)) "Fos+" else "Fos-"  ))
+jeager2018_meta$fos_status[361:dim(jeager2018_meta)[1]] <- "Fos+"
+
+jeager2018_meta$Mouse_Number[c(361:912)] <- jeager2018_meta$mousingle_number[c(361:912)]
+jeager2018_meta <- jeager2018_meta %>% 
+  dplyr::select(-mousingle_number)
+
+#filtering out cells as per instructions in Jeager et al., 2018)
+under4k <- sapply(jeager2018_counts, function(y) sum(length(which(y>0))))
+
+# as per the mthods section we remove cells with less than 4k gene expressed or 100k reads aligned
+filtered.idx <- as.numeric(which((under4k>4000)&(jeager2018_meta$alignable>100000)))
+filtered.idx <- order(c(filtered.idx,194))
+
+jeager2018_counts <-jeager2018_counts[,filtered.idx]
+jeager2018_counts[is.na(jeager2018_counts)] <- 0
+
+jeager2018_meta <- jeager2018_meta[filtered.idx,]
+
+
+
+# MERGING THE DATASETS 
+#matching all genes and merging datasets
+multi.intersect <- function(x) Reduce(intersect, x) #takes lists of lists, c() will not work
+
+shared.genes <- multi.intersect(list(rownames(jeager2018_counts),
+                                     rownames(lacar2016_wc_counts),
+                                     rownames(lacar2016_snHC_counts),
+                                     rownames(lacar2016_snNE_counts)
+)#closing list 
+)#closing multi.intersect
+
+jeager2018_counts$gene <- as.character(rownames(jeager2018_counts))
+jeager2018_counts <- jeager2018_counts[rownames(jeager2018_counts) %in% shared.genes,]
+#jeager2018_counts <- lastcol.to.firstcol(jeager2018_counts)
+
+lacar2016_wc_counts$gene <- as.character(rownames(lacar2016_wc_counts))
+lacar2016_wc_counts <- lacar2016_wc_counts[rownames(lacar2016_wc_counts) %in% shared.genes,]
+
+#lacar2016_wc_counts <- lastcol.to.firstcol(lacar2016_wc_counts)
+
+lacar2016_snHC_counts$gene <- as.character(rownames(lacar2016_snHC_counts))
+lacar2016_snHC_counts <-lacar2016_snHC_counts[rownames(lacar2016_snHC_counts) %in% shared.genes,]
+#lacar2016_snHC_counts <- lastcol.to.firstcol(lacar2016_snHC_counts)
+
+lacar2016_snNE_counts$gene <- as.character(rownames(lacar2016_snNE_counts))
+lacar2016_snNE_counts <-lacar2016_snNE_counts[rownames(lacar2016_snNE_counts) %in% shared.genes,]
+#lacar2016_snNE_counts <- lastcol.to.firstcol(lacar2016_snNE_counts)
+
+# we will remove the PTZ treated cells as well before matching its genes
+not.ptz <- which(lacar2016_meta$treatment != "PTZ")
+
+
+#Match the gene sets by adding the gene names as rows, will strip later
+DG.idx <- which(jeager2018_meta$predicted_cell_type=="DG")
+
+# we must add 1 to the values of DG.idx and not.ptz to deal with the generow shifting the index 1
+combined.counts <- jeager2018_counts[, c(DG.idx,862)] %>% 
+  left_join(lacar2016_wc_counts[, c(not.ptz[not.ptz <= 82],83)], by = 'gene' , all.y = TRUE) %>%
+  left_join(lacar2016_snHC_counts, by = 'gene', all.y = TRUE) %>%
+  left_join(lacar2016_snNE_counts, by = 'gene', all.y = TRUE) #%>% 
+
+
+#this join is possibly including the gene rows leading to mismatch number of cells later 
+
+#give the combined.counts genes for rownames and get rid of that column
+rownames(combined.counts) <- combined.counts$gene
+combined.counts$gene <- NULL
+combined.counts[is.na(combined.counts)] <- 0
+
+#cleaning up the gene column from the other count data
+jeager2018_counts$gene <- NULL
+lacar2016_wc_counts$gene <- NULL
+lacar2016_snHC_counts$gene <- NULL
+lacar2016_snNE_counts$gene <- NULL
+
+
+###   MAKING META-DATA FOR COMBINED COUTNS
+#columns for which paper the cells are from
+experiment.label <- c(replicate( length(DG.idx),"Jeager" ),
+                      replicate( length(not.ptz),"Lacar" ))
+
+
+#column for treatment
+treatment <- c(jeager2018_meta$exposure[DG.idx],
+               lacar2016_meta$treatment[not.ptz])
+treatment <- as.character(lapply(treatment, function(x) if (x=="home-cage") {"HC"} else {x}))
+treatment <- as.character(lapply(treatment, function(x) if (x=="novel environment") {"NE"} else {x}))
+
+#fos status 
+facs_sort <-c(as.character(jeager2018_meta$fos_status[DG.idx]),
+               lacar2016_meta$facs_sort[not.ptz])
+fos_status <- facs_sort # make fos_status from 
+fos_status <-c(as.character(jeager2018_meta$fos_status[DG.idx]),
+               lacar2016_meta$facs_sort[not.ptz])
+fos_status <- as.character(lapply(fos_status, function(x) if (x=="Prox1+/Fos+") {"Fos+"} else {x}))
+fos_status <- as.character(lapply(fos_status, function(x) if (x=="NeuN+/Prox1+") {"Fos-"} else {x}))
+fos_status <- as.character(lapply(fos_status, function(x) if (x=="Prox1+/Fos-") {"Fos-"} else {x}))
+fos_status <- as.character(lapply(fos_status, function(x) if (x=="GFP+") {"Fos-"} else {x}))
+
+ActivityStatus <- fos_status
+ActivityStatus <- as.character(lapply(ActivityStatus, function(x) if (x=="Fos-") {"Inactive"} else {x}))
+ActivityStatus <- as.character(lapply(ActivityStatus, function(x) if (x=="Fos+") {"Active"} else {x}))
+# need to check what GFP + means, I think it means it is fos positive
+
+
+combined.meta <- data.frame(experiment.label,
+                            treatment,
+                            facs_sort,
+                            fos_status,
+                            ActivityStatus)
+#this throws an error mismatch number of rows and genes most likely
+rownames(combined.meta) <- colnames(combined.counts)
+combined.meta$CellID <- rownames(combined.meta)
+
+arclabels <- read.csv("/home/acampbell/PavLabEngrams/EngramCellClassifier/Jeager2018_GSE98679/Jaeger2018_meta_arclabels.csv", header = TRUE)
+
+combined.meta <- left_join(combined.meta,
+                           arclabels %>% dplyr::select(Title, ArcStatus),
+                           by = c("CellID" = "Title"))
+
+combined.meta <- left_join(combined.meta,
+                           arclabels %>% dplyr::select(Title, FosStatus),
+                           by = c("CellID" = "Title"))
+
+combined.meta <- left_join(combined.meta,
+                           arclabels %>% dplyr::select(Title, Cellgroup),
+                           by = c("CellID" = "Title"))
+
+# fishing out the reactivated cells
+#grpel("5hrAA" + grepl(arc combined.meta$arcpos + fos pos = reactivated
+
+combined.meta$Reactivated <- (combined.meta$FosStatus=='pos')&(combined.meta$ArcStatus=='pos')&grepl("5hrAA",combined.meta$Cellgroup)
+combined.meta$Reactivated <- sapply(combined.meta$Reactivated, function(x) if(x) {'Reactivated'} else {'Other'} )
+
+```
+
+
+```{r}
+# chen data
+
+# maybe include that Hu dataset as well so they have
+# activated mPFC cells to train against as well, unless you have to cluster it
+#Chen
+chen2020_counts <- read.csv('~/PavLabEngrams/EngramCellClassifier/Chen2020_GSE152632/GSE152632_GEO_mberkchen_TRAP2_counts.csv.gz', header = TRUE)
+rownames(chen2020_counts) <- chen2020_counts$X
+chen2020_counts <- chen2020_counts[,2:3531]
+chen2020_meta <- read.csv( '~/PavLabEngrams/EngramCellClassifier/Chen2020_GSE152632/SraRunTable.txt', header = TRUE)
+
+#add engram label
+chen2020_meta$engram_label <-  as.factor(sapply(as.character(colnames(chen2020_counts)), function(y) if (grepl("_pos_", y, fixed=TRUE)) "tdT+" else "tdT-"))
+
+#create the condition label
+condition_label <- chen2020_meta$source_name %>%
+  sapply( function(y) if (grepl("Homecage", y, fixed=TRUE)) "Homecage")
+
+condition_label <- chen2020_meta$source_name
+condition_label[str_detect(condition_label, "Homecage")] = "Homecage"
+condition_label[str_detect(condition_label, "Context-Only")] = "Context-Only"
+condition_label[str_detect(condition_label, "Fear-Only")] = "Fear-Only"
+condition_label[str_detect(condition_label, "Fear-Recall")] = "Fear-Recall"
+chen2020_meta$condition_label <- condition_label
+
+#adding cell bacrcodes from coutn data to rows of metadata for seurat
+rownames(chen2020_meta) <- colnames(chen2020_counts)
+
+
+chen2020_meta <- cbind(chen2020_meta, read.csv("~/PavLabEngrams/EngramCellClassifier/Chen2020_GSE152632/Chen2020_ClusterMarkers.csv") )
+
+
+
+# filters for the cells taht are labelled in rexposure to fear conditioning env, labels them, makes column a factor
+chen2020_meta$Reactivated <- (chen2020_meta$condition_label == "Fear-Recall") & (chen2020_meta$engram_label == "tdT+")
+
+chen2020_meta$Reactivated <- sapply(chen2020_meta$Reactivated, function(x) if (x) "Reactivated" else "Other")
+#chen2020_meta$Reactivated <- as.factor(chen2020_meta$Reactivated)
+
+eight_ieg_list <- c('Arc', 'Bdnf', 'Btg2', 'Fos', 'Fosl2', 'Homer1', 'Npas4', 'Nr4a1')
+chen2020_meta$highIEG <- ieg_thresholding(chen_normed, eight_ieg_list,
+                                          percentile_lowerbound = 0.95,
+                                          return_colnames = FALSE)
+
+chen2020_meta$highIEG <- sapply(chen2020_meta$highIEG, function(x) if(x){'Active'}else{'Inactive'})
+
+# we may filter it for excitatory cells, excitatory.chen.idx does not exist in this script as of yet
+#chen.lognorm.glut$Engramcell <- chen2020_meta$ActivityStatus[excitatory.chen.idx]
+
+```
+
+
+```{r}
+# possibly tyschowski with sustained firing
+
+# Hochgerner_Amygdala
+
+path_to_hochgerner_amygdala_data <- "~/test_datasets/Hochgerner2022_amygdala_biorvx/Amy_FC_allcells_with_metadata_31-Jul-2022.txt"
+
+
+amygdalaFC2018_counts <- read.table(path_to_hochgerner_amygdala_data, sep = "\t" )
+#contains metadate
+
+amygdalaFC2018_counts[4,1] <- "FC_time"
+
+amygdalaFC2018_meta <- t(amygdalaFC2018_counts[1:5,]) %>% 
+  row_to_names(row_number = 1)
+amygdalaFC2018_meta <- data.frame(amygdalaFC2018_meta)
+
+#rownames(amygdalaFC2018_counts) <- NULL
+
+#amygdalaFC2018_counts 
+
+amygdalaFC2018_counts <- amygdalaFC2018_counts[c(1,6:dim(amygdalaFC2018_counts)[1]),]
+cellids_amycols <- as.list(amygdalaFC2018_counts[1,2:dim(amygdalaFC2018_counts)[2]])
+genes_amyrows <- as.list(amygdalaFC2018_counts[2:dim(amygdalaFC2018_counts)[1],1])
+amygdalaFC2018_counts <- amygdalaFC2018_counts[2:dim(amygdalaFC2018_counts)[1],2:dim(amygdalaFC2018_counts)[2]]
+colnames(amygdalaFC2018_counts) <- cellids_amycols
+non_duplicate.idx <- !(genes_amyrows %in% genes_amyrows[duplicated(genes_amyrows)])
+
+
+# write down the duplicated genes
+#duplicate_genes <- data.frame(duplicate_gene =  as.character(genes_amyrows[genes_amyrows %in% #genes_amyrows[duplicated(genes_amyrows)] ]),
+#                              index = as.numeric(which(genes_amyrows %in% genes_amyrows[duplicated(genes_amyrows)]))  )
+
+#write.csv(duplicate_genes,"~/test_datasets/Hochgerner2022_amygdala_biorvx/dupliceted_genes_hochgerner2022.csv")
+
+genes_amyrows <- genes_amyrows[non_duplicate.idx]
+amygdalaFC2018_counts <- amygdalaFC2018_counts[non_duplicate.idx,]
+rownames(amygdalaFC2018_counts) <- genes_amyrows
+amygdalaFC2018_counts <- lapply(amygdalaFC2018_counts, function(x) as.numeric(x) )
+amygdalaFC2018_counts <- as.data.frame(amygdalaFC2018_counts)
+rownames(amygdalaFC2018_counts) <- genes_amyrows
+
+
+
+```
+
+
+```{r}
+# just pull out glutamatergic neurons
+
+cell.class.fun <- function(x){
+   if (grepl("VGLUT",x)){
+     x <- "Excitatory"
+   }else if(grepl("GABA",x)){
+     x <- "Inhibitory"
+   }else{
+     x <- "non-neuronal"
+   }
+  return(x)
+}
+
+
+```
+
+
+```{r}
+# give cells cell type labels then remove non-neuronal cells
+amygdalaFC2018_meta$broadcellclass <- sapply(amygdalaFC2018_meta$celltype, FUN = cell.class.fun)
+
+#filterout non-neuronal cells
+amygdalaFC2018_counts <- amygdalaFC2018_counts[,amygdalaFC2018_meta$broadcellclass != "non-neuronal"]
+amygdalaFC2018_meta <- amygdalaFC2018_meta[amygdalaFC2018_meta$broadcellclass != "non-neuronal",]
+
+
+# next we use IEG thresholding approach they describe to score cells as being active or not
+
+eight_ieg_list <- c('Arc', 'Bdnf', 'Btg2', 'Fos', 'Fosl2', 'Homer1', 'Npas4', 'Nr4a1')
+
+amygdalaFC2018_meta$ActivityStatus <- ieg_thresholding(assay_normed = amygdalaFC2018_counts,
+                                                        ieg_list = eight_ieg_list,
+                                                         percentile_lowerbound = 0.95,
+                                                        return_colnames = FALSE)
+```
+
+Lets see how many glutamatergic cells are active during the reactivated condition.
+
+```{r}
+amy.glut.idx <- amygdalaFC2018_meta$broadcellclass=="Excitatory"
+recall <- amygdalaFC2018_meta$FC_time==28
+
+
+
+amygdalaFC2018_meta$Reactivated <- recall&amygdalaFC2018_meta$ActivityStatus
+
+# relabelleing to human readable status
+amygdalaFC2018_meta$ActivityStatus <- sapply(amygdalaFC2018_meta$ActivityStatus, function(x) if(x){'Active'}else{'Inactive'})
+amygdalaFC2018_meta$Reactivated <- sapply(amygdalaFC2018_meta$Reactivated, function(x) if(x){'Reactivated'}else{'Other'})
+
+```
+
+# lets merge the count
+
+
+```{r}
+# gene filtering, normalization and filtering the data sets
+gene.list <- list(rownames(combined.counts),
+                  rownames(chen2020_counts),
+                  rownames(amygdalaFC2018_counts))
+shared.genes <- multi.intersect(gene.list )
+
+# remove nas from labels
+train.labels[is.na(train.labels)] <- 'Other'
+test.labels[is.na(test.labels)] <- 'Other'
+
+
+# normalize
+amy_normed <- seurat.normalize(amygdalaFC2018_counts) %>% rownames_to_column(var ="genes")
+chen_normed <- seurat.normalize(chen2020_counts) %>% rownames_to_column(var ="genes")
+jeager_normed <- seurat.normalize(combined.counts) %>% rownames_to_column(var ="genes") %>% arrange(genes)
+
+#normalize and filter for shared genes
+# needs to be normalized before gene filtering to keep UMI count
+amy_normed <- seurat.normalize(amygdalaFC2018_counts)
+amy_normed <- amy_normed[rownames(amy_normed) %in% shared.genes,] #filter 
+amy_normed <- amy_normed[order(row.names(amy_normed)), ] #order so corresponds with others
+chen_normed <- seurat.normalize(chen2020_counts) 
+chen_normed <- chen_normed[rownames(chen_normed) %in% shared.genes,]
+chen_normed <- chen_normed[order(row.names(chen_normed)), ]
+jeager_normed <- seurat.normalize(combined.counts) 
+jeager_normed <- jeager_normed[rownames(jeager_normed) %in% shared.genes,]
+jeager_normed <- jeager_normed[order(row.names(jeager_normed)), ]
+
+
+# bind
+recall.data <- cbind(amy_normed, chen_normed, jeager_normed)
+recall.data <- rowScales(recall.data)
+recall.data_t <- transpose(recall.data)
+colnames(recall.data_t) <- rownames(recall.data)
+rownames(recall.data_t) <- colnames(recall.data)
+recall.data <- recall.data_t
+rm(recall.data_t)
+
+
+# only using glutamatergic cells for now
+recall.meta <- data.frame(cell_id = rownames(recall.data), b =0)
+recall.meta <- recall.meta[,1, drop=F]
+
+recall.meta$reactivated <- c(amygdalaFC2018_meta$Reactivated,chen2020_meta$Reactivated,combined.meta$Reactivated)
+recall.meta$active <- c(amygdalaFC2018_meta$ActivityStatus, chen2020_meta$highIEG, combined.meta$ActivityStatus)
+recall.meta$broadcellclass <- c(amygdalaFC2018_meta$broadcellclass, chen2020_meta$BroadCellTypes, rep('Excitatory', each = dim(combined.counts)[2]))
+recall.meta$experiment <-c(rep('hochgerner2022', each = dim(amygdalaFC2018_counts)[2]), 
+                          rep('chen2020',each = dim(chen2020_counts)[2] ), 
+                          combined.meta$experiment.label )
+
+recall.meta$cell_id <- as.factor(recall.meta$cell_id)
+recall.meta$reactivated <- as.factor(recall.meta$reactivated)
+recall.meta$active <- as.factor(recall.meta$active)
+recall.meta$broadcellclass <- as.factor(recall.meta$broadcellclass)
+
+# need to make a numeric values for the experiments for groupdata2's partitions()
+exp.groups <- names(table(recall.meta$experiment))
+recall.meta$experiment_num <-lapply(recall.meta$experiment, function(x) which(exp.groups %in% x) )
+recall.meta$experiment_num <- as.numeric(recall.meta$experiment_num)
+recall.meta$experiment <- as.factor(recall.meta$experiment)
+
+
+
+recall.data.glut <- recall.data[recall.meta$broadcellclass=='Excitatory',]
+recall.meta.glut <- recall.meta[recall.meta$broadcellclass=='Excitatory',]
+
+# partition is from groudata2. p sets the size of the partition
+# here we will withhold 20% of our data
+testandtrain.sets <- partition(recall.meta.glut, cat_col = 'reactivated', num_col='experiment_num', id_col = 'cell_id', p=0.2)
+```
+
+Double checking we have the desired representation of each experiment and
+reactivated cells from each.  The first dataframe is our test set, the second our training set.
+The test set will be fully witheld.
+
+```{r}
+#test set
+table(testandtrain.sets[[1]]$reactivated,testandtrain.sets[[1]]$experiment)
+```
+
+```{r}
+#training set
+table(testandtrain.sets[[2]]$reactivated,testandtrain.sets[[2]]$experiment)
+```
+
+Now we try some classifiers. first lets just do downsampling and smote.
+
+Useful notes: 
+Function here: https://www.rdocumentation.org/packages/DMwR/versions/0.4.1/topics/SMOTE
+Using smote in R: https://www.statology.org/smote-in-r/
+
+Using cross validation and smote: https://community.rstudio.com/t/help-with-smote-and-cross-validation/127098
+https://stats.stackexchange.com/questions/346534/smote-data-balance-before-or-during-cross-validation
+
+
+groupdata2 tutorial on cv with groupdata2: https://cran.r-project.org/web/packages/groupdata2/vignettes/cross-validation_with_groupdata2.html
+
+general rule, use smote within each fold.
+
+ssamp from sampler: https://rdrr.io/cran/sampler/man/ssamp.html
+
+ggplot has an roc plotting function, can be fed a list to plot multiple curves
+https://www.rdocumentation.org/packages/pROC/versions/1.18.0/topics/ggroc.roc
+
+```{r}
+# > table(testandtrain.sets[[2]]$reactivated)
+# 
+#       Other Reactivated 
+#       15448         897 
+
+
+# we will make the training data simply by downsampling from the negatives
+# we will maintain the ration of active cells we see
+negatives <- ssamp(testandtrain.sets[[2]][testandtrain.sets[[2]]$reactivated=='Other',],
+                   n = 897, strata=active)
+
+train.cell_ids <- c(negatives$cell_id,testandtrain.sets[[2]]$cell_id[testandtrain.sets[[2]]$reactivated=='Reactivated'])
+training.data <- recall.data.glut[rownames(recall.data.glut) %in% train.cell_ids,]
+training.reactivated.y <-                               testandtrain.sets[[2]]$reactivated[testandtrain.sets[[2]]$cell_id %in% train.cell_ids ]
+training.reactivated.y <- as.factor(training.reactivated.y)
+
+# create test data
+testing.data <- recall.data.glut[rownames(recall.data.glut) %in% testandtrain.sets[[1]]$cell_id,]
+testing.reactivated.y <- as.factor(testandtrain.sets[[1]]$reactivated)
+
+
+# calling it dumb because this is one of the dumbest ways to perform the training
+# I am curious how it will perform just with this simple approach
+
+dumb.rf.recall <- randomForest(x = training.data,
+                               y = training.reactivated,
+                               ntree = 500,
+                               xtest = testing.data,
+                               ytest = testing.reactivated.y)
+
+
+```
+
+```{r}
+training.active.idx <- testandtrain.sets[[2]]$active[testandtrain.sets[[2]]$cell_id %in% train.cell_ids ]
+
+training.active.idx <- training.active.idx=='Active'
+
+par(pty='s') #otherwise we get ugly padding around our graph
+rf.roc <- roc(training.reactivated.y,dumb.rf.recall$votes[,2])
+
+rf.active.roc <- roc(training.reactivated.y[training.active.idx],
+                     dumb.rf.recall$votes[training.active.idx,2])
+rf.inactive.roc <- roc(training.reactivated.y[!(training.active.idx)],
+                     dumb.rf.recall$votes[!(training.active.idx),2])
+
+# ggplot ggroc, needs a bit of work
+
+ggroc(list('Overall'=rf.roc, 
+           'Active Neurons' =rf.active.roc, 
+           'Inactive Neurons'=rf.inactive.roc)) + 
+  geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1),
+               color="grey", linetype="dashed") +
+  ggtitle("Reactivation Random Forest AUC on Training Data")
+```
+
+```{r}
+
+# on test data
+rf.test.roc <- roc(testing.reactivated.y,dumb.rf.recall$test$votes[,2])
+
+#
+testing.active.idx <- testandtrain.sets[[1]]$active=='Active'
+
+#testing.active.idx <- testing.active.idx=='Active'
+
+rf.test.active.roc <- roc(testing.reactivated.y[testing.active.idx],
+                     dumb.rf.recall$test$votes[testing.active.idx,2])
+rf.test.inactive.roc <- roc(testing.reactivated.y[!(testing.active.idx)],
+                     dumb.rf.recall$test$votes[!(testing.active.idx),2])
+#plot(rf.test.roc)
+#auc(rf.test.roc)
+ggroc(list('Overall'=rf.test.roc, 
+           'Active Neurons' =rf.test.active.roc, 
+           'Inactive Neurons'=rf.test.inactive.roc)) + 
+  geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1),
+               color="grey", linetype="dashed") +
+  ggtitle("Reactivation Random Forest AUC on Test Data")
+```
+
+
+
+
+```{r}
+# smote classifier
+# start with smote re-sampling maker 
+# then just 
+
+# smotefamily
+# https://rpubs.com/hwulanayu/smote-in-r
+# 
+
+# first we make folds
+
+# run smote on folds (Smote both the controls and targets)
+# train forest, then combine
+# remake this index as we are not doing one simple down sample
+train.cell_ids <- testandtrain.sets[[2]]$cell_id
+training.data <- recall.data.glut[rownames(recall.data.glut) %in% train.cell_ids,]
+
+training.reactivated.y <-  testandtrain.sets[[2]]$reactivated[testandtrain.sets[[2]]$cell_id %in% rownames(training.data)]
+training.reactivated.y <- as.factor(training.reactivated.y)
+
+#do the same for the test data, this will be fully withheld
+test.cell_ids <- testandtrain.sets[[1]]$cell_id
+testing.data <- recall.data.glut[rownames(recall.data.glut) %in% test.cell_ids,]
+
+testing.data$reactivated <-  testandtrain.sets[[1]]$reactivated[testandtrain.sets[[1]]$cell_id %in% rownames(testing.data)]
+testing.data$reactivated <- as.factor(testing.data$reactivated)
+
+
+
+## TRAINING CLASSIFIER WITH CV AND SMOTE
+k_folds <- 5 # sets number of folds, and lets for loop of randomForest know how many loops to do
+smote_nn <- 5 # the K parameter in smotefamily::SMOTE, teh number of nearest neighbours used for sampling
+trees.per.fold <- 10
+
+# make the folds
+folds <- createFolds(y = training.reactivated.y, k = k_folds, list = TRUE,returnTrain=TRUE)
+
+# pull index from fold, in loop the number will be the looping variable i.e. i in c(1:k_folds)
+this.folds.idx <- folds[[1]]
+imbal.data <- training.data[this.folds.idx,]
+imbal.class <- training.reactivated.y[this.folds.idx]
+
+# create valdiation data
+validation.data <- imbal.data[!(rownames(training.data) %in% rownames(imbal.data) ),]
+validation.y <- training.reactivated.y[!(rownames(training.data) %in% rownames(imbal.data) )]
+
+# smote from smotefamily, page 15 of this cran doc:
+# https://cran.r-project.org/web/packages/smotefamily/smotefamily.pdf 
+train.smote <- SMOTE(X = imbal.data, target = imbal.class, K= smote_nn )
+train.smote <- train.smote$data # extract only the balanced dataset
+train.smote$class <- as.factor(train.smote$class)
+
+for (i in c(1:k_folds)){
+  # loop over folds
+  
+  # smote up sampling
+  
+  
+  # this is borrow code, but our loop will look something like this  
+  # -dim(train.smote)[2] drops the last column aka $class from train.smote
+  # smote and this takes forever, consider downsampling to test, or 
+  # only use top most variable genes
+    rf.this_fold <- randomForest(x=train.smote[,-dim(train.smote)[2]], 
+                                 y= train.smote$class,
+                                 ntree= 2,
+                                 do.trace = TRUE)
+    
+    if(i == 1){
+      rf.out <- rf.this_fold
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance <- data.frame(assess )
+      rownames(fold.performance) <- c("F1 Score", "AUC", "Precision", "Recall",
+                                      "FPR", "FNR", "True Positives", "False Negatives", 
+                                      "True Negatives", "False Positives")
+    }else{
+      rf.out <- randomForest::combine(rf.out, rf.this_fold)
+      # we need votes for all cells to calculate
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance[,ncol(fold.performance) + 1] <- assess
+    }
+  
+  
+}
+
+
+
+#trainControl to set up my training phase.
+ctrl <- trainControl(method = "cv", index = folds,
+                 classProbs = TRUE,
+                 summaryFunction = twoClassSummary,
+                 savePredictions = "all",
+                 ## new option here:
+                 sampling = "smote")
+
+#train the model
+set.seed(5627)
+smote_inside <- train(Class ~ ., data = imbal_train,
+                  method = "treebag",
+                  nbagg = 50,
+                  metric = "ROC",
+                  trControl = ctrl)
+
+
+
+```
+
+```{r}
+# generating the data 2 steps
+
+#1 Smote done at the level of cell types
+# see if it can loop over a set of cell types
+# 
+#2 RF with cross validation (no re-sampling)
+
+# EXAMPlE OF USING SMOTE
+# library(smotefamily)
+# > smote_output = SMOTE(X = transfer_data[, -1],
+# target = transfer_data$isFraud,
+# K = 4,
+# dup_size = 10)
+# > oversampled_data = smote_output$data
+# > table(oversampled_data$isFraud)
+# false true
+# 990 110
+# > prop.table(table(oversampled_data$isFraud))
+# false true
+# 0.9 0.1
+
+
+```
+
+
+
+
+
+## REMOTE MEMORY GENE THRESHOLDING
+
+As per Pauls advice here we will simply use thresholding method to detect cells that
+may be displaying remote memory assosciated genes.
+
+Limma Voom tutorial for a more comprehensive method of doing this:
+https://ucdavis-bioinformatics-training.github.io/2018-June-RNA-Seq-Workshop/thursday/DE.html
+
+Remote Memory Markers were chosen from this figure: https://www.nature.com/articles/s41586-020-2905-5/figures/15
+
+Showing the 'sustained' gene expression from Fear labeling and recall labeling.
+I.e. genes which occured in both a DEG analysis of No-fear vs fear and 
+No recall vs recall.
+
+Mast has useful stuff to look at as well: https://www.bioconductor.org/packages/release/bioc/vignettes/MAST/inst/doc/MAITAnalysis.html
+This may help with making some plots of gene expression distributions.
+
+### Load some post mortem brains
+
+```{r}
+chen_remotememory_markers <- c("Hid1", "Kctd10", "Pdha1", "Pigq", "Skiv2l2", "Abcf3", "Miga2", "Mmd", "Sar1a", "Eif2ak1", "Acsf3", "Cdc42se2", "Fam134a", "Vamp2", "Gsk3b", "Hnrnph2", "Pja2", "Sdha", "Gdi2", "Rab15", "Fam131a", "Gfra2", "Pip4k2c", "Ncdn", "Usp5", "Nell2", "Tmem151a", "Dmtn", "Rtn3", "Pcsk2", "Pfkm", "Trim32", "Mfsd14b", "Rab5a", "Tdg", "Emc1", "Gpm6a", "Elmod1", "Cycs", "Sarnp", "Rab24", "Erp29", "Ghitm", "Zfp706", "Sult4a1", "App", "Cck", "Emc4", "Psmb6", "Atp6v0b", "Hint1", "Guk1", "Rtn1", "Clpp", "Crip2", "Mpc1", "Atp6v0c", "Atp5g3", "Tmem50a", "Plekhb2", "Syt13", "Garnl3", "Dpysl4", "Aplp1", "Hnrnpk", "Nsf", "Mfsd14a", "Mir124-2hg", "Nck2", "Stx1b", "Pak1", "Slc25a46", "Itfg1", "Lmbrd1", "Tmx1", "Dner", "Atad1", "Ankrd45", "Timm29", "Vopp1", "Pls3", "Hmg20a", "Ctbp1", "Strip1", "Cdv3", "Inpp5f", "Prkar1b", "Slc30a9", "Alg2", "Trim35", "Hacd3", "Serinc1", "Serinc3", "Ptp4a1")
+
+upreg_rem_markers <- c("Hid1", "Kctd10", "Pdha1", "Pigq", "Skiv2l2", "Abcf3", "Miga2", "Mmd", "Sar1a", "Eif2ak1", "Acsf3", "Cdc42se2", "Fam134a", "Vamp2", "Gsk3b", "Hnrnph2", "Pja2", "Sdha", "Gdi2", "Rab15", "Fam131a", "Gfra2", "Pip4k2c", "Ncdn", "Usp5", "Nell2", "Tmem151a", "Dmtn", "Rtn3", "Pcsk2", "Pfkm", "Trim32", "Mfsd14b", "Rab5a", "Tdg", "Emc1", "Gpm6a", "Ghitm", "Zfp706", "Sult4a1", "App", "Atp6v0c", "Atp5g3", "Plekhb2", "Syt13", "Garnl3", "Dpysl4", "Aplp1", "Hnrnpk", "Nsf", "Mfsd14a", "Mir124-2hg", "Nck2", "Stx1b", "Pak1", "Slc25a46", "Itfg1", "Lmbrd1", "Tmx1", "Dner", "Atad1", "Ankrd45", "Timm29", "Vopp1", "Pls3", "Hmg20a", "Ctbp1", "Strip1", "Cdv3", "Inpp5f", "Prkar1b", "Slc30a9", "Alg2", "Trim35", "Hacd3", "Serinc1", "Serinc3", "Ptp4a1")
+
+remotememory_markers_hg <- hg_to_mm$Symbol_hg[hg_to_mm$Symbol_mm %in% chen_remotememory_markers]
+
+upreg_rem_mrks_hg <- hg_to_mm$Symbol_hg[hg_to_mm$Symbol_mm %in% upreg_rem_markers]
+
+```
+
+
+
+
+
+```{r}
+# mathys
+
+
+mathys.meta <- read.table('/space/scratch/ericchu/r_cache/040_SIM_VALIDATION_00/data/rosmap/filtered_column_metadata.txt', header = TRUE)
+
+
+mathys.counts <- as.data.frame(as.matrix(Matrix::readMM('/space/scratch/ericchu/r_cache/040_SIM_VALIDATION_00/data/rosmap/filtred_count_matrix.mtx') ))
+
+# getting gene names
+mathysgenes <- read.table('/space/scratch/ericchu/r_cache/040_SIM_VALIDATION_00/data/rosmap/filtered_gene_row_names.txt', sep = "\n")
+rownames(mathys.counts) <- mathysgenes$V1
+rm(mathysgenes)
+
+# applying cell ides making them unique to mathys
+colnames(mathys.counts) <- lapply(mathys.meta$TAG, function(x) paste(x,"_mathys", sep =''))
+
+mathysneruon.idx <- mathys.meta$broad.cell.type %in% c('Ex', 'In')
+
+mathys.meta <- mathys.meta[mathysneruon.idx,]
+mathys.counts <- mathys.counts[,mathysneruon.idx ]
+
+
+human.shared.genes <- multi.intersect(list(rownames(ayhan_neurons),
+                                     rownames(mathys.counts)) )
+
+mathys.counts <- seurat.normalize( mathys.counts)
+mathys.counts <- mathys.counts[rownames(mathys.counts) %in% human.shared.genes,]
+```
+
+```{r}
+# mathys chen amrker distributions
+big3 <- c("SERINC1","SERINC3","PTP4A1")
+
+mathys.big3 <- mathys.counts[rownames(mathys.counts) %in% big3,]
+
+
+plotDensity(mathys.big3,
+            lty=c(1:ncol(mathys.big3)), xlab='Logp1(count/umi)*10^4)',
+            main='Expression Distribution')
+```
+
+
+
+
+
+```{r}
+mathys.chen.mrks <- mathys.counts[rownames(mathys.counts) %in% upreg_rem_mrks_hg,]
+
+
+plotDensity(mathys.chen.mrks,
+            lty=c(1:ncol(mathys.chen.mrks)), xlab='Logp1(count/umi)*10^4)',
+            main='Expression Distribution')
+```
+
+
+
+```{r}
+# combining human datasets
+human.combined <- ayhan_neurons[rownames(ayhan_neurons) %in% human.shared.genes,]
+human.combined <- cbind(human.combined, mathys.counts)
+
+humancells <- colnames(human.combined)
+humangenes <- rownames(human.combined)
+
+human.combined <- scale(human.combined)
+colnames(human.combined) <- humancells
+rownames(human.combined) <- humangenes 
+
+
+```
+
+
+
+```{r}
+
+```
+
+
+
+
+
+
+
+```{r}
+#velmeschev, autism
+
+velmeschev.meta <- read.table('/space/scratch/ericchu/r_cache/040_SIM_VALIDATION_00/data/velmeshev/meta.txt', sep = '\t', header = TRUE)
+remove.non.neurons <- velmeschev.meta$cluster %in% c('AST-FB,','AST-PP', 'Endothelial', 'Microglia', 'Oligodendrocytes')
+velmeschev.meta <- velmeschev.meta[!remove.non.neurons,] # filter out non neurons
+velmeschev.counts <- as.data.frame(as.matrix(Matrix::readMM('/space/scratch/ericchu/r_cache/040_SIM_VALIDATION_00/data/velmeshev/matrix.mtx')))
+velmeschev.counts <- velmeschev.counts[,!remove.non.neurons]
+velgenes <- read.table('/space/scratch/ericchu/r_cache/040_SIM_VALIDATION_00/data/velmeshev/genes.tsv', sep = '\t')
+# here we will normalize before filtering for genes to avoid 
+velmeschev.normed <- seurat.normalize(velmeschev.counts)
+rownames(velmeschev.counts) <- velgenes$V2
+
+```
+
+
+
+
+
+```{r}
+remote_memory_markers <- c('Zbtb38', 'Vcp-rs', 'Ncs1', 'Dbpht2','Gsk3b',
+                          'Inpp4a', 'Slc39a1', 'Hmga1-rs1', 'Impact')
+
+remote_memory_markers <- hg_to_mm$Symbol_hg[hg_to_mm$Symbol_mm %in% remote_memory_markers ]
+#remote_memory_markers <- remote_memory_markers[remote_memory_markers %in% human.shared.genes]
+rownames(mathys.counts)[rownames(mathys.counts) %in% remote_memory_markers]
+# contains mathys AZ postmortem cortex and auhan human hippocampus epilepsy fresh
+human.combined.remotesignature <- ieg_thresholding(human.combined, remote_memory_markers,
+                                                   percentile_lowerbound = 0.8)
+
+remote.mathyscells <- ieg_thresholding(mathys.counts, remote_memory_markers,
+                                                   percentile_lowerbound = 0.99)
+
+
+remote.active.cells <- colnames(mathys.counts) %in% remote.mathyscells
+
+test <- ieg_thresholding(mathys.counts, remote_memory_markers,
+                 percentile_lowerbound = 0.99)
+iegs_hg
+#ieg_thresholding()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r, run=FALSE}
+
+### JUNK CODE
+
+# adding grouping information KEEPING IN CASE THE META DAOSTNT WORK
+# recall.data$reactivated <- c(amygdalaFC2018_meta$Reactivated,chen2020_meta$Reactivated,combined.meta$Reactivated)
+# recall.data$active <- c(amygdalaFC2018_meta$ActivityStatus, chen2020_meta$highIEG, combined.meta$ActivityStatus)
+# recall.data$broadcellclass <- c(amygdalaFC2018_meta$broadcellclass, chen2020_meta$BroadCellTypes, rep('Excitatory', each = dim(combined.counts)[2]))
+# recall.data$experiment <-c(rep('hochgerner2022', each = dim(amygdalaFC2018_counts)[2]), 
+#                           rep('chen2020',each = dim(chen2020_counts)[2] ), 
+#                           combined.meta$experiment.label )
+# 
+# 
+# 
+# 
+# 
+# # make meta data into factors
+# recall.data$reactivated <- as.factor(recall.data$reactivated)
+# recall.data$active <- as.factor(recall.data$active)
+# recall.data$broadcellclass <- as.factor(recall.data$broadcellclass)
+# 
+# # need to make a numeric values for the experiments for groupdata2's partitions()
+# exp.groups <- names(table(recall.data$experiment))
+# recall.data$experiment_num <-lapply(recall.data$experiment, function(x) which(exp.groups %in% x) )
+# recall.data$experiment_num <- as.numeric(recall.data$experiment_num)
+# recall.data$experiment <- as.factor(recall.data$experiment)
+
+  
+  
+test <- balance(recall.data.glut, id_col='experiment_num', cat_col = 'reactivated')
+#split 
+training.idx <- c(train.amy.idx, train.chen.idx, train.jeager.idx)
+training.data <- recall.data[,colnames(recall.data) %in% training.idx ]
+
+testing.idx <- c(test.amy.idx, test.chen.idx, test.jeager.idx)
+testing.data <- recall.data[,colnames(recall.data) %in% testing.idx ]
+
+
+
+
+
+
+
+
+recall.data <- cbind(amy_normed[,colnames(amy_normed) %in%  c(train.amy.idx) ],
+                       chen_normed[,colnames(chen_normed) %in% c(train.chen.idx)])
+recall.data <- cbind(training.data, 
+                       jeager_normed[,colnames(jeager_normed) %in% c(train.jeager.idx)])
+
+training.data <- cbind(amy_normed[,colnames(amy_normed) %in%  c(train.amy.idx) ],
+                       jeager_normed[,colnames(jeager_normed) %in% c(train.jeager.idx)])
+
+
+  left_join(y = chen_normed[,colnames(chen_normed) %in%  c(train.chen.idx) ], by = c('genes') )  %>%
+  left_join(y = , by = c('genes') )
+
+
+
+
+
+
+training.data <- jeager_normed[,colnames(jeager_normed) %in% c('genes',train.jeager.idx)] %>%
+  left_join(y = chen_normed[,colnames(chen_normed) %in%  c('genes',train.chen.idx) ], by = c('genes') )  %>%
+  left_join(y = amy_normed[,colnames(amy_normed) %in%  c('genes',train.amy.idx) ], by = c('genes') )
+
+
+training.data <- jeager_normed[,colnames(jeager_normed) %in% c('genes',train.jeager.idx)] %>%
+  left_join(y = data.frame(chen_normed[,colnames(chen_normed) %in%  c('genes',train.chen.idx) ]), by.x = "genes", by.y = "genes" ) %>%
+  left_join(y = data.frame(amy_normed[,colnames(amy_normed) %in%  c('genes',train.amy.idx) ]), by.x = "genes", by.y = "genes")
+
+ 
+testing.data <- jeager_normed[,colnames(jeager_normed) %in% c('genes',test.jeager.idx)] %>%
+  left_join(y = chen_normed[,colnames(chen_normed) %in%  c('genes',test.chen.idx) ], by = 'genes') %>%
+  left_join(y = amy_normed[,colnames(amy_normed) %in%  c('genes',test.amy.idx) ], by = 'genes') 
+
+
+training.data <- merge(training.data, chen_normed[,colnames(chen_normed) %in%  train.chen.idx ], by=0, all.x=TRUE)   
+training.data <- merge(training.data, amy_normed[,colnames(amy_normed) %in%  train.amy.idx ], by=0, all.x=TRUE) 
+
+
+test.jeager.idx 
+test.chen.idx 
+test.amy.idx 
+
+
+#merge(df1, df2, by=0, all.x=TRUE)
+```
+
+

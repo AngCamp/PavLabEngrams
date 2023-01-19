@@ -194,8 +194,8 @@ combined.meta$ArcStatus[is.na(combined.meta$ArcStatus)&combined.meta$treatment==
 # even stain for it for instance at 1hr points or in lacar
 # at the 5hr time points they only included 
 
-
-
+#write.csv(combined.counts, "jeager_lacar_combinedcounts.csv")
+#write.csv(combined.meta, "jeager_lacar_combinedmeta.csv")
 
 
 
@@ -246,7 +246,57 @@ colnames(hochgernerDGC_counts) <- colnames(hochgerner5k_2018_counts)[hochgerner5
 
 #### Functions
 
+# paul prefers a log base that's easy to do headmath with so no eulers numebr
+pseudocount_log2p1_transform <- function(x, scale_factor = 10000, UMI.provided = NULL){
+  if(is.null(UMI.provided)){
+    counts <- sum(x)}else{
+      counts <- UMI.provided
+    }
+  x <- (x+1)/counts
+  x <- x/scale_factor
+  return(log2(x))
+}
+
+pavlab.normalize <- function(df, UMI = NULL){
+  df.cols <- colnames(df)
+  df.rows <- rownames(df)
+  if( is.null(UMI)){
+    df <- data.frame(apply(df,  MARGIN = 2, pseudocount_log2p1_transform))
+  }else{
+    df <- data.frame(apply(df,  MARGIN = 2, pseudocount_log2p1_transform(UMI.provided=UMI)))
+  }
+  colnames(df) <- df.cols
+  rownames(df)<- df.rows
+  return(df)
+}
+
+
+
 #normalization functions, log.norm calls logplusone
+seurat_log1p_transform <- function(x, scale_factor = 10000, UMI.provided = NULL){
+  if(is.null(UMI.provided)){
+    counts <- sum(x)}else{
+      counts <- UMI.provided
+    }
+  x <- (x+1)/counts
+  x <- x/scale_factor
+  return(log(x))
+}
+
+seurat.normalize <- function(df, UMI = NULL){
+  df.cols <- colnames(df)
+  df.rows <- rownames(df)
+  if( is.null(UMI)){
+    df <- data.frame(apply(df,  MARGIN = 2, seurat_log1p_transform))
+  }else{
+    df <- data.frame(apply(df,  MARGIN = 2, seurat_log1p_transform(UMI.provided=UMI)))
+  }
+  colnames(df) <- df.cols
+  rownames(df)<- df.rows
+  return(df)
+}
+
+
 # mean center scale then log(x+1) for normalizing
 logplusone <- function(x){
   return( log(x+1) )
@@ -327,7 +377,7 @@ assessment <- function(predictions.df,
                        label = c("Active","Inactive") 
                        ){
   # returns a vector of assessments to be used to make dataframe summarizing classifiers performance
-  # can be used to make df of all calssifiers trained in a single run
+  # can be used to make df of all classifiers trained in a single run
   TP <- sum((predictions.df$predict == label[1])&(predictions.df$observed == label[1]))
   TN <- sum((predictions.df$predict == label[2])&(predictions.df$observed == label[2]))
   FN <- sum((predictions.df$predict == label[2])&(predictions.df$observed == label[1]))
@@ -569,7 +619,7 @@ classifier.hochgerner2018_genes <- RRFclassifier.hoch <- resampled.regularizedRF
                                                      batches.per.fold=20)
 
 # Importance
-classifier.hochgerner2018_genes <- classifier.hoch.normal
+#classifier.hochgerner2018_genes <- classifier.hoch.normal
 importance.df.hoch<- data.frame(gene = as.character( rownames(classifier.hochgerner2018_genes$importance) ),
                                 importance_score = as.numeric(classifier.hochgerner2018_genes$importance ) ) %>%
   arrange(desc(importance_score))
@@ -823,7 +873,7 @@ dev.off()
 
 combined.shuffledcells <- combined.counts 
 combined.shuffledcells <- combined.shuffledcells[rownames(combined.shuffledcells) %in% shared.genes, ]
-combined.shuffledcells <- log.norm(  combined.shuffledcells )
+combined.shuffledcells <- log.norm( combined.shuffledcells )
 combined.shuffledcells <- combined.shuffledcells[ sample( c(1:nrow(combined.shuffledcells)) ), ]
 
 
@@ -1040,10 +1090,46 @@ p.nptx2 + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_class
   theme(plot.title = element_text(hjust = 0.5, size=22, face = "bold"))
 dev.off()
 
+# trying with -human-mouse TF one to one orthologs
 
-########## WINNER WINNER CHICKEN DINNER SELECTINTEGRATIONFEATURES IS THE BEST WAY
-########## WINNER WINNER CHICKEN DINNER SELECTINTEGRATIONFEATURES IS THE BEST WAY
-########## WINNER WINNER CHICKEN DINNER SELECTINTEGRATIONFEATURES IS THE BEST WAY
+
+mouse_tfs <- read.table("/home/acampbell/PavLabEngrams/EngramCellClassifier/mouse_tfs.tsv",
+                        sep = "\t", header = TRUE)
+
+tf_hg_to_mm <- hg_to_mm[hg_to_mm$Symbol_mm %in% mouse_tfs$Symbol,]
+
+tf.present.orthologs.idx <- (tf_hg_to_mm$Symbol_hg %in% rownames(ayhanDGC_counts))&(tf_hg_to_mm$Symbol_mm %in% rownames(combined.counts) )
+tf_hg_to_mm <- tf_hg_to_mm[tf.present.orthologs.idx,] # filter for matches, ~ 14403 present between Ayhan and Jeager/Lacar
+
+# filter using left join and swithc out mm for hg in jeager/lacar data
+combined.normed <- seurat.normalize(combined.counts)
+combined.normed.tf_hg <- combined.normed
+combined.normed.tf_hg$Symbol_mm <- rownames(combined.normed.tf_hg)
+
+# filtering for orthologs present in both data sets
+combined.normed.tf_hg <- left_join(x = tf_hg_to_mm, y = combined.normed.tf_hg, by = "Symbol_mm" )
+rownames(combined.normed.tf_hg) <- combined.normed.tf_hg$Symbol_hg
+combined.normed.tf_hg <- combined.normed.tf_hg[,c(4:(dim(combined.normed.tf_hg)[2]) )]
+
+
+ayhanDGC_normed.tf_hg <- seurat.normalize(ayhanDGC_counts)
+ayhanDGC_normed.tf_hg$Symbol_hg <- rownames(ayhanDGC_normed.tf_hg)
+ayhanDGC_normed.tf_hg <- left_join(x = tf_hg_to_mm, y = ayhanDGC_normed.tf_hg, by = "Symbol_hg" )
+rownames(ayhanDGC_normed.tf_hg) <- ayhanDGC_normed.tf_hg$Symbol_hg
+ayhanDGC_normed.tf_hg <- ayhanDGC_normed.tf_hg[,c(4:dim(ayhanDGC_normed.tf_hg)[2])]
+
+# shared genes
+shared.tf_hg_mm_orthologs <- multi.intersect(c(rownames(ayhanDGC_normed.tf_hg),
+                                             rownames(combined.normed.tf_hg) ) )
+
+
+
+
+
+
+########## this works but it is not reproducible
+########## this works but it is not reproducible
+########## this works but it is not reproducible
 
 # first we do gene matching between all datasets
 combined.counts.hg <- combined.counts
@@ -1131,11 +1217,9 @@ DGC.list <- lapply(X = DGC.list, FUN = function(x) {
 # select features that are repeatedly variable across datasets for integration
 features <- SelectIntegrationFeatures( object.list = DGC.list, nfeatures = 2000 )
 
-########## WINNER WINNER CHICKEN DINNER SELECTINTEGRATIONFEATURES IS THE BEST WAY
-########## WINNER WINNER CHICKEN DINNER SELECTINTEGRATIONFEATURES IS THE BEST WAY
-########## WINNER WINNER CHICKEN DINNER SELECTINTEGRATIONFEATURES IS THE BEST WAY
-
-
+########## this works but it is not reproducible
+########## this works but it is not reproducible
+########## this works but it is not reproducible
 
 # training classifier on jeager2018, we only have 2000 genes though this contains the most important
 # genes that previous classifiers have gripped on to still the low number of genes may decrease
@@ -1166,8 +1250,9 @@ ayhan2021.integrated <- left_join(x = int.feats.df, y = ayhan2021.integrated, by
 rownames(ayhan2021.integrated) <- ayhan2021.integrated$Symbol_hg
 ayhan2021.integrated <- ayhan2021.integrated[,c(4:dim(ayhan2021.integrated)[2])]
 
+capture.output(rownames(combined.counts), 'jeager_dgc_gene_names.csv')
 
-
+capture.output(rownames(ayhanDGC_counts), 'ayhan_dgc_gene_names.csv')
 
 ## training classifier for human data
 # add

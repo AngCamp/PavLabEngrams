@@ -306,3 +306,83 @@ DGC.list <- lapply(X = DGC.list, FUN = function(x) {
 
 # select features that are repeatedly variable across datasets for integration
 features <- SelectIntegrationFeatures( object.list = DGC.list, nfeatures = 8000 )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##########  In high iegs expressing cells.Rmd
+
+# attempt to split data, before just using group data
+
+# splitting data to retain samples from each, taking 25% of what ever is there 
+
+# get reactivated data index
+jeager.react.idx <- combined.meta$Reactivated=='Reactivated'
+
+# keep cell ids for test
+test.jeager.idx <- sample(combined.meta$CellID[jeager.react.idx], size = as.integer(sum(jeager.react.idx ) /4) )
+test.jeager.idx <- c(test.jeager.idx, sample(combined.meta$CellID[!(jeager.react.idx)], size = as.integer(sum(!(jeager.react.idx) ) /4) ))
+test.labels <- combined.meta$Reactivated[combined.meta$CellID %in% test.jeager.idx]
+
+# do the same for chen
+chen.glut.idx <- chen2020_meta$BroadCellTypes=='Excitatory'
+chen.react.idx <- (chen2020_meta$Reactivated=='Reactivated')
+
+test.chen.idx <- sample(rownames(chen2020_meta)[chen.react.idx&glut.idx], size = as.integer(sum(chen.react.idx&glut.idx) /4) )
+test.chen.idx <- c(test.chen.idx, sample(rownames(chen2020_meta)[(!(chen.react.idx))&glut.idx], size = as.integer(sum((!(chen.react.idx))&glut.idx ) /4) ))
+test.labels <- c(test.labels, combined.meta$Reactivated[rownames(chen2020_meta) %in% test.chen.idx])
+
+# doing it for amygdala data
+amygdalaFC2018_meta$cellID
+amy.glut.idx <- amygdalaFC2018_meta$broadcellclass=="glutamatergic"
+amy.react.idx <- (amygdalaFC2018_meta$Reactivated=='Reactivated')
+test.amy.idx <- sample(amygdalaFC2018_meta$cellID[amy.react.idx&amy.glut.idx], size = as.integer(sum(amy.react.idx&amy.glut.idx) /4) )
+test.amy.idx <- c(test.amy.idx, sample(amygdalaFC2018_meta$cellID[(!(amy.react.idx))&amy.glut.idx], size = as.integer(sum( (!(amy.react.idx) )&amy.glut.idx ) /4) ))
+test.labels <- c(test.labels, amygdalaFC2018_meta$Reactivated[amygdalaFC2018_meta$cellID %in% test.amy.idx])
+
+
+# training data
+#rememebr to include not in test as a condition
+# pick some, down sample the more common class then up sample the less comon class and 
+# then train it on that, no cross validation for now
+not.in.test <- !(combined.meta$CellID %in% test.jeager.idx)
+# targets
+train.jeager.idx <- combined.meta$CellID[jeager.react.idx&not.in.test]
+# create list so we know what it's label is for classifier
+train.labels <- combined.meta$Reactivated[jeager.react.idx&not.in.test] 
+# controls
+train.jeager.idx <- c(train.jeager.idx, combined.meta$CellID[(!jeager.react.idx)&not.in.test] )
+# add to list so we know what it's label is for classifier
+train.labels <- c(train.labels, combined.meta$Reactivated[(!jeager.react.idx)&not.in.test])
+
+# chen
+not.in.test <- !(rownames(chen2020_meta) %in% test.chen.idx)
+# targets
+train.chen.idx <- rownames(chen2020_meta)[chen.react.idx&not.in.test&chen.glut.idx]
+# add to list so we know what it's label is for classifier
+train.labels <- c(train.labels, chen2020_meta$ActivityStatus[chen.react.idx&not.in.test&chen.glut.idx])
+# controls
+train.chen.idx <- c(train.chen.idx, rownames(chen2020_meta)[(!chen.react.idx)&not.in.test&chen.glut.idx] )
+# add to list so we know what it's label is for classifier
+train.labels <- c(train.labels, chen2020_meta$ActivityStatus[(!chen.react.idx)&not.in.test&chen.glut.idx])
+
+#amygdala
+not.in.test <- !(amygdalaFC2018_meta$cellID %in% test.amy.idx)
+#targets
+train.amy.idx <- amygdalaFC2018_meta$cellID[amy.react.idx&not.in.test&amy.glut.idx]
+# add to list so we know what it's label is for classifier
+train.labels <- c(train.labels, amygdalaFC2018_meta$Reactivated[amy.react.idx&not.in.test&amy.glut.idx])
+train.amy.idx <- c(train.amy.idx, amygdalaFC2018_meta$cellID[(!amy.react.idx)&not.in.test&amy.glut.idx] )
+# add to list so we know what it's label is for classifier
+train.labels <- c(train.labels, amygdalaFC2018_meta$Reactivated[(!amy.react.idx)&not.in.test&amy.glut.idx])

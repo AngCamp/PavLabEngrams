@@ -1,0 +1,9 @@
+"","group","n_cells_sum","unique_replicates_sum"
+"1","Context-Only.positive",331,4
+"2","Fear-Only.positive",197,5
+"3","Fear-Recall.positive",644,5
+"4","Homecage.positive",115,4
+"5","Context-Only.negative",346,4
+"6","Fear-Only.negative",352,5
+"7","Fear-Recall.negative",330,5
+"8","Homecage.negative",187,4

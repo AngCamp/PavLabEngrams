@@ -1,0 +1,533 @@
+---
+title: "Classifying Hochgerner P35 DGCs from Jeager data"
+author: "Angus Campbell"
+date: "15/02/2022"
+output: github_document
+---
+
+INTRODUCTION
+---
+<br>
+<br>
+Using the gene lists of Jeager et al., (2018), I was able to find a cluster of cells within Adult Dentate Gyrus Granule Cells from post natal day 35 with certain elevated IEGs.  These tended to be from genes Jeager had labelled as expressed at all time points or at the 1hour mark suggesting relatively recently active cells.
+<br>
+<br>
+```{r include = FALSE}
+#libraries
+setwd("C:/Users/angus/Desktop/PavLabEngrams/EngramCellClassifier")
+
+library(tidyverse)
+library(GEOquery)
+library(AnnotationDbi)
+library(randomForest)
+library(data.table)
+library(reshape2)
+library(FactoMineR)
+library(factoextra)
+library(Rtsne)
+library(dplyr)
+library(Seurat) #installed with remotes
+library(stringr)
+library(patchwork)
+library(metap)
+library(cqn)
+library(GeoTcgaData)
+library(ggplot2)
+library(tictoc)
+library(pheatmap)
+library(SeuratDisk) # installed with remotes
+#reticulate::py_install(packages ='umap-learn')
+
+```
+
+
+<br>
+<br>
+LOADING OUR DATA
+---
+<br>
+<br>
+```{r include = FALSE}
+jeager2018_counts <- bind_cols(read.table('Jeager2018_GSE98679/GSE98679_count.txt.gz', header = TRUE, check.names = FALSE),
+                               read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_count.txt.gz', header = TRUE, check.names = FALSE))
+
+jeager2018_meta <- read.csv('Jeager2018_GSE98679/SraRunTable.txt', header = TRUE)
+jeager2018_meta = jeager2018_meta[c(1:46,599:912,47:598),] #we need to fix Jeager's files up a bit
+rownames(jeager2018_meta) <- c(1:912)
+
+jeager2018_meta$predicted_cell_type <- as.character(lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x}))
+jeager2018_meta$predicted_cell_type <- lapply(jeager2018_meta$predicted_cell_type, function(x) if (x=="") {"DG"} else {x})
+
+jeager2018_meta$fos_status <- as.factor(sapply(as.character(jeager2018_meta$source_name), function(y) if (grepl("_F_", y, fixed=TRUE)) "Fos+" else "Fos-"  ))
+jeager2018_meta$fos_status[361:dim(jeager2018_meta)[1]] <- "Fos+"
+
+jeager2018_meta$Mouse_Number[c(361:912)] <- jeager2018_meta$mousingle_number[c(361:912)]
+jeager2018_meta <- jeager2018_meta %>% 
+  dplyr::select(-mousingle_number)
+
+#filtering out cells as per instructions in Jeager et al., 2018)
+under4k <- sapply(jeager2018_counts, function(y) sum(length(which(y>0))))
+
+filtered.idx <- as.numeric(which(under4k>4000))
+filtered.idx <- order(c(filtered.idx,194))
+
+jeager2018_counts <- jeager2018_counts[,filtered.idx]
+jeager2018_meta <- jeager2018_meta[filtered.idx,]
+rownames(jeager2018_meta) <- colnames(jeager2018_counts)
+jeager2018_meta$dataset <- "Jeager2018"
+
+#Loading Hochgerner5k
+testsetpath <- "C:/Users/angus/Desktop/test_datasets"
+
+hochgerner5k_2018_counts <- read.table(paste(testsetpath,"/Hochgerner2018/GSE95315_10X_expression_data_v2.tab.gz", sep=""))
+
+colnames(hochgerner5k_2018_counts) <- hochgerner5k_2018_counts[1,]
+rownames(hochgerner5k_2018_counts) <- hochgerner5k_2018_counts[,1]
+
+hochgerner5k_2018_meta <- hochgerner5k_2018_counts %>% 
+  dplyr::slice(c(1:3)) %>%
+  t() %>%
+  data.frame %>%
+  dplyr::slice(-1) %>% 
+  dplyr::select(-cellid)
+
+hochgerner5k_2018_counts <- hochgerner5k_2018_counts %>% 
+  dplyr::select(-cellid) %>% 
+  dplyr::slice(-c(1:3))
+
+
+### Merging the count data
+combined_counts <- merge(hochgerner5k_2018_counts, jeager2018_counts, by = "row.names") %>%
+  `rownames<-`(.[,1]) %>%
+  dplyr::select(-Row.names)
+
+combined_counts <- as.data.frame(combined_counts)
+combined_counts[is.na(combined_counts)] = 0
+  
+
+#### Merging the metadata
+#adding rows for cimbining the metadata
+hochgerner5k_2018_meta$dataset <- "Hochgerner5k2018"
+hochgerner5k_2018_meta$exposure <- "HC-Hochgerner"
+hochgerner5k_2018_meta$fos_status <- "unstained"
+hochgerner5k_2018_meta$predicted_cell_type <- hochgerner5k_2018_meta$cluster_name
+jeager2018_meta$age.days. <- ceiling(jeager2018_meta$AGE*7)
+
+#merge metadata
+combined_meta <- data.frame(t(merge(t(hochgerner5k_2018_meta), t(jeager2018_meta), by = "row.names")))
+colnames(combined_meta) <- c("Age", "dataset", "exposure", "fos_status", "predicted_cell_type")
+combined_meta <- combined_meta %>%
+    dplyr::slice(-1)
+combined_meta <- as.data.frame(lapply(combined_meta, unlist)) #this needs to happen
+combined_meta$dataset <- as.factor(combined_meta$dataset) #prevents error later when splitting object
+combined_meta$exposure <- as.factor(combined_meta$exposure) #otherwise all these columns stay as lists
+combined_meta$fos_status <- as.factor(combined_meta$fos_status)
+combined_meta$predicted_cell_type <- as.factor(combined_meta$predicted_cell_type)
+
+```
+
+```{r}
+#filter for granule cells 
+dgc.idx <- combined_meta$predicted_cell_type=="DG"
+dgc.idx <- dgc.idx|(combined_meta$predicted_cell_type=="Granule-mature")
+dgc.idx <- dgc.idx|(combined_meta$predicted_cell_type=="Granule-immature")
+
+#throw them into seurat and move onto integration
+combinedObject <- CreateSeuratObject(counts = combined_counts[,dgc.idx],
+                   meta.data = combined_meta[dgc.idx,])
+```
+
+<br>
+<br>
+
+INTEGRATING OUR DATASETS
+---
+<br>
+<br>
+In order to mitigate the batch effects that will inevitably arise we need to use seurats data integration features.  Described in this tutorial [here](https://satijalab.org/seurat/articles/integration_introduction.html).
+<br>
+<br>
+
+```{r}
+DG.list <- SplitObject(combinedObject, split.by = "dataset") 
+
+# normalize and identify variable features for each dataset independently
+DG.list <- lapply(X = DG.list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = DG.list)
+```
+
+
+```{r}
+# this command creates an 'integrated' data assay
+
+DG.anchors <- FindIntegrationAnchors(object.list = DG.list, anchor.features = features)
+DG.combined <- IntegrateData(anchorset = DG.anchors)
+```
+```{r}
+DefaultAssay(DG.combined) <- "integrated" #the object still has OG data but now we set
+#the modified data to be the default we works with
+
+# Run the standard workflow for visualization and clustering
+DG.combined <- ScaleData(DG.combined, verbose = FALSE)
+DG.combined <- RunPCA(DG.combined, npcs = 30, verbose = FALSE)
+DG.combined <- RunUMAP(DG.combined, reduction = "pca", dims = 1:30)
+DG.combined <- FindNeighbors(DG.combined, reduction = "pca", dims = 1:30)
+DG.combined <- FindClusters(DG.combined, resolution = 0.5)
+```
+
+
+```{r}
+p1 <- DimPlot(DG.combined, reduction = "umap", group.by = "dataset")
+p2 <- DimPlot(DG.combined, reduction = "umap", label = TRUE, repel = TRUE)
+p3 <- DimPlot(DG.combined, reduction = "umap", group.by = "predicted_cell_type")
+p1 + p3
+```
+```{r}
+
+```
+
+
+
+```{r}
+
+p4 <- FeaturePlot(DG.combined, reduction = "umap",
+                  features =  c("Inhba", "Rgs4"),
+                  shape.by = "dataset",
+                  pt.size = 1)
+p4
+
+```
+Notes from meeting with Paul on Fed17th:
+  1) In both datasets stratify by fos or other IEG markers expression then compare them
+  to the metadata labels fos+/- and reactivated as well as maturity status.  
+  2) Look at what p-value adjustment is being used by seurat, change it to benjammini-hochberg if possible.
+  
+  Answer:  The correction method is Bonferroni, but it is not recomended to change this as it is favorable to be mroe conservative here, the genes are rpefilterd by Seurat to reduce the number of tests performed and the gene's used for clustering are the same used for differential expression analysis to get markers.  See page 74 of the Suerat manual.  They refer to  Aaron Lun as having pointed this second argument out but do not provide a direct citation to follow this claim up on.  I will investigate further.
+  
+  3) cells should be filtered before using some kind of restricted gene list.  So should be based on full gene lists.
+  Solution:  put them into a seuat object, use the functions that are useful like the step for filtering mitochondrial genes,
+  then pull those out of the metadata and store them.  delete the object, filter the cells and gene's then make a new
+  object based on that.  This is on line 175 of the JeagerEngramCellGeneSignaturesinotherdatasets.
+  
+  Still working on how to get gene expression by gene out of the seurat obejcts.
+  4) Run the classifier anyway, just try to see what it labels and use the above analyses to get a good idea of what its doing.
+
+
+WITH JUST THE DEGS
+---
+
+```{r}
+# getting the DEGs out
+Jeager.DEGs <- read.csv("Jeager2018_GSE98679/jeager_DEGs_grouped.csv", header = T)
+
+colnames(Jeager.DEGs)[1] <- "GeneID"
+
+DEGs.idx <- Jeager.DEGs$GeneID
+
+DEGs.idx <- DEGs.idx[(DEGs.idx %in% rownames(hochgerner5k_2018_counts))& (DEGs.idx %in% rownames(jeager2018_counts))]
+
+Jeager.DEGs <- Jeager.DEGs[Jeager.DEGs$GeneID %in% DEGs.idx,]
+
+Jeager.DEGs$combined.idx <- which(rownames(combined_counts) %in% Jeager.DEGs$GeneID)
+
+
+#filtering a 
+
+
+#throw them into seurat and move onto integration, we will call this re
+combinedObject.jeagerDEGs <- CreateSeuratObject(counts = combined_counts[ Jeager.DEGs$combined.idx, dgc.idx],
+                   meta.data = combined_meta[dgc.idx,])
+
+DG.list.jeagerDEGs <- SplitObject(combinedObject.jeagerDEGs, split.by = "dataset") # some stupid error here 
+
+# normalize and identify variable features for each dataset independently
+DG.list.jeagerDEGs <- lapply(X = DG.list.jeagerDEGs, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+features.jeagerDEGs <- SelectIntegrationFeatures(object.list = DG.list.jeagerDEGs)
+DG.jeagerDEGs.anchors <- FindIntegrationAnchors(object.list = DG.list.jeagerDEGs, anchor.features = features.jeagerDEGs)
+DG.combined.jeagerDEGs <- IntegrateData(anchorset = DG.jeagerDEGs.anchors)
+
+DefaultAssay(DG.combined.jeagerDEGs) <- "integrated" #the object still has OG data but now we set
+#the modified data to be the default we works with
+
+# Run the standard workflow for visualization and clustering
+DG.combined.jeagerDEGs <- ScaleData(DG.combined.jeagerDEGs, verbose = FALSE)
+DG.combined.jeagerDEGs <- RunPCA(DG.combined.jeagerDEGs, npcs = 30, verbose = FALSE)
+
+
+```
+```{r}
+#Dsicovering dimensionality of these activity markers
+DG.combined.jeagerDEGs <- JackStraw(DG.combined.jeagerDEGs, num.replicate = 100)
+DG.combined.jeagerDEGs <- ScoreJackStraw(DG.combined.jeagerDEGs, dims = 1:20)
+```
+
+
+```{r}
+JackStrawPlot(DG.combined.jeagerDEGs, dims = 1:20)
+```
+
+
+```{r}
+ElbowPlot(DG.combined.jeagerDEGs)
+```
+
+
+
+
+```{r}
+DG.combined.jeagerDEGs <- RunUMAP(DG.combined.jeagerDEGs, reduction = "pca", dims = 1:9)
+DG.combined.jeagerDEGs <- FindNeighbors(DG.combined.jeagerDEGs, reduction = "pca", dims = 1:30)
+DG.combined.jeagerDEGs <- FindClusters(DG.combined.jeagerDEGs, resolution = 0.5)
+```
+
+
+```{r}
+p1.jeagerDEGs <- DimPlot(DG.combined.jeagerDEGs, reduction = "umap", group.by = "dataset")
+p2.jeagerDEGs <- DimPlot(DG.combined.jeagerDEGs, reduction = "umap", label = TRUE, repel = TRUE)
+p3.jeagerDEGs <- DimPlot(DG.combined.jeagerDEGs, reduction = "umap", group.by = "predicted_cell_type")
+p1.jeagerDEGs + p2.jeagerDEGs
+```
+
+
+
+Finding clusters that may represent Engram cells.
+
+```{r}
+DG.combined.jeagerDEGs.markers <- FindAllMarkers(DG.combined.jeagerDEGs, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+DG.combined.jeagerDEGs.markers %>%
+    group_by(cluster)
+
+
+DG.combined.jeagerDEGs.markers
+```
+Ok so when I combine adult DGCs and Immature DGCs with the snRNAseq data from Jeager this really does not work.  Many of the clusters show signifcantly different expression of various of these DEGs.  The batch effects are probably crazy also these cell state transitions are subtle.  But what this does suggest to me is that across cell tyeps this is simply nto going to work as different cell types will have different expression of these cells.  This should be lumped into failed analyses.
+
+Next steps:
+Do this again but do it for imaature granule cells seperately, see if there is some metadata in Hochgerner about immature cell position.  GO back to Jeager data and see if these cells contain markers for immmature DGC markers from Hochgerner.  Then move on to chen and limit cells to.   
+
+CLUSTERING JUST WITHIN THE IMMATURE GRANULE CELLS
+---
+
+
+```{r}
+# 
+# > table(hochgerner5k_2018_meta$cluster_name[(hochgerner5k_2018_meta$age.days. == "35") | (hochgerner5k_2018_meta$age.days. == "35*")])
+# 
+#       Astrocytes    Cajal-Retzius          Cck-Tox      Endothelial        GABA-Cnr1        GABA-Lhx6 Granule-immature 
+#               71               18               26               27               10               19              366 
+#   Granule-mature        Microglia    Mossy-Adcyap1    Mossy-Cyp26b1       Mossy-Klk8     Neuroblast_1     Neuroblast_2 
+#             1014               46                5               11               11               14               53 
+#             NFOL             nIPC               OL              OPC        Pericytes              PVM Radial_Glia-like 
+#                4               11               49               19               17                6               17 
+#             VLMC 
+#                8
+
+#Load Jeagers DEGs and Check which genes are shared
+
+Jeager.DEGs <- read.csv("Jeager2018_GSE98679/jeager_DEGs_grouped.csv", header = T)
+
+colnames(Jeager.DEGs)[1] <- "GeneID"
+
+DEGs.idx <- Jeager.DEGs$GeneID
+
+DEGs.idx <- DEGs.idx[(DEGs.idx %in% rownames(hochgerner5k_2018_counts))& (DEGs.idx %in% rownames(jeager2018_counts))]
+
+Jeager.DEGs <- Jeager.DEGs[Jeager.DEGs$GeneID %in% DEGs.idx,]
+
+Jeager.DEGs$hoch5k.idx <- which(rownames(hochgerner5k_2018_counts) %in% Jeager.DEGs$GeneID)
+
+#get index locations of these gene's in the other datasets
+
+hoch5k.GC_immature.p35.idx <- (hochgerner5k_2018_meta$age.days.=="35") | (hochgerner5k_2018_meta$age.days.=="35*")
+hoch5k.GC_immature.p35.idx <- (hoch5k.GC_immature.p35.idx) & (hochgerner5k_2018_meta$cluster_name == "Granule-immature")
+
+
+
+#create seurat object just for the Hoch 5k data, with only the JEager DEG counts
+Hoch5k.GCimmature <- CreateSeuratObject(counts = hochgerner5k_2018_counts[Jeager.DEGs$hoch5k.idx, hoch5k.GC_immature.p35.idx],
+                                        meta.data = hochgerner5k_2018_meta[hoch5k.GC_immature.p35.idx,])
+
+Hoch5k.GCimmature <- NormalizeData(Hoch5k.GCimmature) # Seurat normalization has many steps see publication
+
+Hoch5k.GCimmature <- FindVariableFeatures(Hoch5k.GCimmature)
+
+top10 <-  head(VariableFeatures(Hoch5k.GCimmature), 10)
+plot1 <- VariableFeaturePlot(Hoch5k.GCimmature)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot2
+
+```
+
+
+```{r}
+top10
+Jeager.DEGs$group.number[Jeager.DEGs$GeneID %in% top10]
+Jeager.DEGs$group[Jeager.DEGs$GeneID %in% top10]
+```
+ 
+```{r}
+#scaling for dimnesionality reduction
+all.genes <- rownames(Hoch5k.GCimmature) # just realized I could use this feature ratehr than trying to filter gene's before hand
+Hoch5k.GCimmature <- ScaleData(Hoch5k.GCimmature, features = all.genes)
+
+Hoch5k.GCimmature <- RunPCA(Hoch5k.GCimmature , features = VariableFeatures(object = Hoch5k.GCimmature),
+                         npcs = 20) 
+```
+
+
+
+```{r}
+
+Hoch5k.GCimmature<- JackStraw(Hoch5k.GCimmature, num.replicate = 100)
+Hoch5k.GCimmature <- ScoreJackStraw(Hoch5k.GCimmature, dims = 1:20)
+
+straw <- JackStrawPlot(Hoch5k.GCimmature, dims = 1:20)
+elbow <- ElbowPlot(Hoch5k.GCimmature)
+  
+straw + elbow
+```
+ Ok looks like we can just reduce it to 3 dimensions.
+ 
+```{r}
+#Clustering, we will visualize in UMP later
+Hoch5k.GCimmature <- FindNeighbors(Hoch5k.GCimmature, dims = 1:4)
+Hoch5k.GCimmature <- FindClusters(Hoch5k.GCimmature, resolution = 0.5)
+```
+```{r}
+Hoch5k.GCimmature <- RunUMAP(Hoch5k.GCimmature, dims = 1:4)
+
+DimPlot(Hoch5k.GCimmature, reduction ="umap")
+```
+
+```{r}
+#Lets find some markers 
+cluster0.markers <- FindMarkers(Hoch5k.GCimmature, ident.1 = 0, min.pct = 0.25)
+dim(cluster0.markers)
+head(cluster0.markers, n = 10)
+```
+```{r}
+cluster1.markers <- FindMarkers(Hoch5k.GCimmature, ident.1 = 1, min.pct = 0.25)
+dim(cluster1.markers)
+head(cluster1.markers, n = 10)
+```
+
+```{r}
+cluster2.markers <- FindMarkers(Hoch5k.GCimmature, ident.1 = 2, min.pct = 0.25)
+dim(cluster2.markers)
+head(cluster2.markers, n = 10)
+```
+
+```{r}
+cluster3.markers <- FindMarkers(Hoch5k.GCimmature, ident.1 = 3, min.pct = 0.25)
+dim(cluster3.markers)
+head(cluster3.markers, n = 10)
+```
+
+Almost no significant gene's in any of the clusters at all.  This jives well with mark cembrowski's report in Erwin et al., (2020) that in hippocampal dependent behaviors it is a subset of.
+
+We still need some kind of control for both these claims.  But I feel confident in them.  One analysis I could do is to check the clusters in Hoch5k.GCadult for expression of the same markers as described in Erwin et al., (2020) which also used novelty exploration.  Several other studies have pin pointed a regionally specific subset of these neurons in the supra pyramidal blade of the dentate gyrus, the layer resting closer ot CA1 than CA3 (Chawla et al., 2005, Chawla et al., 2018, Guenthner et al., 2013, Penke et al., 2011).  This regions activation appears to occur in a wide range of hippocampal associated behaviours, "In total, preferential suprapyramidal blade activation occurred in behaviors evoking memory, spatial navigation, socialization, and stress" (Erwin et al., 2020), so it would make sense that this is what we are detecting as well.
+
+(consider inlcuding figure 1A from Erwin, )
+
+They identified higher expression of Penk in active neurons relative to non active neurons and replicated this in another dataset (Habib et al., 2016).  
+
+
+BUILDING THE CLASSIFIER
+---
+<br>
+<br>
+https://www.rdocumentation.org/packages/Seurat/versions/2.3.4/topics/ClassifyCells
+
+
+```{r}
+#Example code for classifier
+# NOT RUN {
+pbmc_small
+# take the first 10 cells as test data and train on the remaining 70 cells
+test.pbmc <- SubsetData(object = pbmc_small, cells.use = pbmc_small@cell.names[1:10])
+train.pbmc <- SubsetData(object = pbmc_small, cells.use = pbmc_small@cell.names[11:80])
+predicted.classes <- ClassifyCells(
+  object = train.pbmc,
+  training.classes = train.pbmc@ident,
+  new.data = test.pbmc@data
+)
+
+# }
+```
+
+
+<br>
+<br>
+
+REPLICATING SOME OF THE RESULTS IN JEAGER
+---
+
+
+<br>
+<br>
+
+EXPLORING ITS PERFORMANCE ON HOCHGERNER ET AL., (2018) P35-Adult DGCs
+---
+<br>
+<br>
+```{r}
+#loading the seurat analysis from JeagerEngramCellGenesignaturesinotherdatasets.Rmd
+# totorial here: https://mojaveazure.github.io/seurat-disk/articles/h5Seurat-load.html
+
+brain2 <- LoadH5Seurat("anterior1.h5Seurat")
+Hoch5k.GCadult.markers <- read.csv("SeuratAnalysesData/HochgernerGDC_Adult_marker.csv")
+```
+<br>
+<br>
+
+NEXT STEPS
+---
+<br>
+<br>
+The Hochgerner dataset provides the opportunity to study activity across developmental states and in immature DGCs which is particularly interesting to study neurogenesis.  IEGs are pretty widely expressed across all tissues and in neurons they appear to have been co-opted to drive platicity pathways, so it may be that there are a core set of IEGs that are widely expressed with the cells relying on particular cell type specfic TFs present to open chromatic specific to each cell type.  Going back to Jeager data with CA2 and VIP interneurons and taking another look may be of interest as well.
+
+Review of IEG and psychiatric conditons may be worth reading see Gallo et al., (2018)
+
+
+References
+---
+
+<br>
+<br>
+
+
+
+Chawla, M. K., Guzowski, J. F., Ramirez‐Amaya, V., Lipa, P., Hoffman, K. L., Marriott, L. K., ... & Barnes, C. A. (2005). Sparse, environmentally selective expression of Arc RNA in the upper blade of the rodent fascia dentata by brief spatial experience. Hippocampus, 15(5), 579-586.
+
+<br>
+<br>
+
+Chawla, M. K., Sutherland, V. L., Olson, K., McNaughton, B. L., & Barnes, C. A. (2018). Behavior‐driven arc expression is reduced in all ventral hippocampal subfields compared to CA1, CA3, and dentate gyrus in rat dorsal hippocampus. Hippocampus, 28(2), 178-185.
+
+<br>
+<br>
+
+Erwin, S. R., Sun, W., Copeland, M., Lindo, S., Spruston, N., & Cembrowski, M. S. (2020). A sparse, spatially biased subtype of mature granule cell dominates recruitment in hippocampal-associated behaviors. Cell Reports, 31(4), 107551. 
+<br>
+<br>
+
+Gallo, F. T., Katche, C., Morici, J. F., Medina, J. H., & Weisstaub, N. V. (2018). Immediate early genes, memory and psychiatric disorders: focus on c-Fos, Egr1 and Arc. Frontiers in behavioral neuroscience, 12, 79.
+
+<br>
+<br>
+
+Guenthner, C. J., Miyamichi, K., Yang, H. H., Heller, H. C., & Luo, L. (2013). Permanent genetic access to transiently active neurons via TRAP: targeted recombination in active populations. Neuron, 78(5), 773-784.
+
+<br>
+<br>
+
+Habib, N., Li, Y., Heidenreich, M., Swiech, L., Avraham-Davidi, I., Trombetta, J. J., ... & Regev, A. (2016). Div-Seq: Single-nucleus RNA-Seq reveals dynamics of rare adult newborn neurons. Science, 353(6302), 925-928.

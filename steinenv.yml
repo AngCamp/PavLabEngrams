@@ -1,0 +1,15 @@
+name: stein-env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python
+  - ipython
+  - pandas
+  - scikit-learn
+  - numpy
+  - jupyterlab
+  - ripple_detection
+  - replay_trajectory_classification
+  - scipy
+prefix: /home/wintermute/anaconda3/envs/stein-env

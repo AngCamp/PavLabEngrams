@@ -171,16 +171,16 @@ test <- data.frame(test)
 test <- test[test$p_val_adj<0.05,]
 layer.markers <- c("Dkkl1","Rprm","Calb2","Tesc","Tnfaip8l3","Tshz2","Lhx6")
 layer.markers.idx <- which(test$gene %in% "Lhx6")
-test$cluster[layer.markers.idx]
+#test$cluster[layer.markers.idx]
 
-test <- select(test, c(6,7))
-test[layer.markers.idx,]
+#test <- select(test, c(6,7))
+#test[layer.markers.idx,]
 #they are there and match the cluster assignments from chen
 # > test$cluster[layer.markers.idx]
 # [1] 0 1 2 3 4 5 6
 # Levels: 0 1 2 3 4 5 6
 
-test$p_val_adj[layer.markers.idx]
+#test$p_val_adj[layer.markers.idx]
 #The genes are significant even after bonferonni correction
 # > test$p_val_adj[layer.markers.idx]
 # [1]  0.000000e+00  0.000000e+00  0.000000e+00 6.459740e-244 1.979667e-140

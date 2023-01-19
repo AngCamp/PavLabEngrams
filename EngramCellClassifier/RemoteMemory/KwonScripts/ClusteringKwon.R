@@ -8,6 +8,7 @@ library(ggplot2)
 library(tidyverse)
 library(stringr)
 library(purrr)
+library(R.utils)
 
 # ## Libraries
 # library(randomForest)
@@ -31,7 +32,8 @@ library(purrr)
 
 setwd("~/test_datasets/Kwon2021_GSE145970")
 
-kwon2021_counts <- read.csv("kwon2021_dropseq_counts.csv", header =T) # generated in cleaningkwon2021.r
+kwon2021_counts <- read.table("~/test_datasets/Kwon2021_GSE145970/kwon2021_dropseq_counts.csv.gz", 
+                            header =T) # generated in cleaningkwon2021.r
 genes <- kwon2021_counts$GENE # save the gene names
 kwon2021_counts <- kwon2021_counts[,2:dim(kwon2021_counts)[2]]
 kwon2021_counts <- apply(kwon2021_counts, 2, FUN=as.numeric) # drops the rownames
@@ -124,7 +126,15 @@ dev.off()
 kwon2021 <- RunUMAP(kwon2021, dims=1:50, dim.embed = 2)
 #clustering usign the top 20 PCs as they did in kwon2021
 kwon2021 <- FindNeighbors(kwon2021, reduction = "pca", dims = 1:50)
-kwon2021 <- FindClusters(kwon2021, resolution = 1)
+kwon2021 <- FindClusters(kwon2021, resolution = 0.46) # we get 26 at this setting
+# from the text:
+# "Clusters were identified using the function FindCluster in Seurat with the
+# resolution parameter set to 1. Cells were classified into 21–45 clusters with 
+# the resolution parameter from 0.3 to 2. Clustering resolution parameters were 
+# varied quantitatively based on the number of cells being clustered. After the 
+# clustering results with different resolutions were compared and evaluated, we 
+# chose a resolution value of 1. Using this approach we were able to assign 31,806 
+# cells to 28 clusters"
 # they tried this between 0.2 and 3 and found 38 clusters
 # I find 36, they also note an extreme batch effect
 # I feel at this point clustering may be best done using the integration tutorial
@@ -142,169 +152,212 @@ dev.off()
 # https://satijalab.org/seurat/reference/dotplot
 
 #Finding Markers
-kwon2021.markers <- FindAllMarkers(kwon2021, only.pos = TRUE)
+kwon2021.markers.res0.46 <- FindAllMarkers(kwon2021, only.pos = TRUE)
 
-write_csv(kwon2021.markers, "kwon_allcell_clustering_markers.csv")
+top.kwon2021.markers.res0.46 <- kwon2021.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 1, order_by = avg_log2FC) %>% 
+  data.frame()
+top.kwon2021.markers.res0.46
+
+# because we had two Tshz2 (like they did I )
+top2.kwon2021.markers.res0.46 <- kwon2021.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 2, order_by = avg_log2FC) %>% 
+  data.frame()
+
+
+kwon2021@meta.data$markers_res0.046 <- as.character(lapply(kwon2021@meta.data$RNA_snn_res.0.46, function(x) top.kwon2021.markers.res0.046$gene[as.numeric(x)]))
+
+# rename cluster id's
+clust.ident <- c("Nectin3-0", "Rorb-1","Il1rapl2-2", "Ndst4-3", "Zfpm2-4", "Rgs9-5",
+                "Sst-6", "Pbx3-7", "Slc1a3-8", "Adarb2-9", "Fam19a1-10", "Plp1-11",
+                "Cdh18-12", "Ntng1-13", "Tshz2-Neurod6-14", "Pdgfra-15", "Tshz2-Vwc2l-16", "Nr4a2-17",
+                "Hexb-18", "Gpc5-19", "Nefm-20", "Ptgds-21", "Zbtb20-22", "Rgs5-23", 
+                "9630013A20Rik-24", "Zfp804b-25")
+
+names(clust.ident) <- levels(kwon2021)
+kwon2021 <- RenameIdents(kwon2021, clust.ident)
+
+FeaturePlot(kwon2021, label = TRUE, repel = TRUE, features = "Angpt1") 
+
+#kwon2021.markers.roc <- FindAllMarkers(kwon2021, test.use = "roc", only.pos = TRUE)
+# 
+# top.kwon2021.markers.by_roc <- kwon2021.markers.roc %>%
+#   group_by(cluster) %>%
+#   filter(avg_log2FC>2) %>%
+#   slice_max(n = 5, order_by = myAUC)
+# top.kwon2021.markers.by_roc
+
+write_csv(kwon2021.markers.res0.46, "kwon_allcells_clustering_markers.csv")
 
 clust <- data.frame(kwon2021@meta.data$orig.ident)
 clust$seurat_all_cells_clusters <- kwon2021@meta.data$seurat_clusters
 
-write_csv(clust, "kwon_allcells_clustering_markers.csv")
+write_csv(kwon2021@meta.data, "~/test_datasets/Kwon2021_GSE145970/kwon2021_clustering_meta.csv")
+kwon2021 <- RenameIdents(kwon2021, top.kwon2021.markers)
+
+kwon2021.markers <- read_csv("~/test_datasets/Kwon2021_GSE145970/kwon_allcells_clustering_markers.csv")
+
+
+cluster_info <- data.frame(
+  cluster = as.factor(c(0:25)), 
+  marker = names(table(kwon2021@active.ident)),
+  num_cells = as.numeric(table(kwon2021@active.ident))
+)
+cluster_info$percent <- cluster_info$num_cells/sum(cluster_info$num_cells)
+
+
+#############################################################
+## Finding mpfc c36ell types and corresponding clusters 
+###########################################################
+
+# Clusters we dont want
+# 5, 7, 8, 11, 15, 17, 18, 19, 21, 22, 23, 24
+
+
+FeaturePlot(kwon2021, label = TRUE, features = "Ppp1r1b")
+FeaturePlot(kwon2021, label = TRUE, features = "Meis2")
+# Rgs9 - 5 Striatal cells based on Ppp1r1b and Meis2 expression
+
+# Plp-11 remains unidentified but its clusetering with oligodendrocytes
+# does not express neuronal markers
+
+FeaturePlot(kwon2021, label = TRUE, repel = TRUE, features = "Pdgfra")
+# OPC oligodendrocyte precursors, Pdgfra-15 
+
+FeaturePlot(kwon2021, label = TRUE, features = "Gnb4") # claustrum excitatory cells
+# Nr4a2 17
+
+
+FeaturePlot(kwon2021, label = TRUE, features = "Ctss") # microglia marker,
+# Hexb 18
+
+FeaturePlot(kwon2021, label = TRUE, repel =TRUE, features = "Rorb")
+FeaturePlot(kwon2021, label = TRUE, repel =TRUE, features = "Apoe")
+FeaturePlot(kwon2021, label = TRUE, features = "Gja1") # astrocyte marker,
+# cluster Slc1a3, Gpc5,  8, 19 and 
+
+FeaturePlot(kwon2021, label = TRUE, features = "Mgp")
+FeaturePlot(kwon2021, label = TRUE, features = "Fn1")
+# Ptgds-21
+
+FeaturePlot(kwon2021, label = TRUE, features = "Flt1") # endothelial cells
+# Rgs5 23
+
+FeaturePlot(kwon2021, label = TRUE, features = "Enpp6") #  Oligo2
+# 9630013A20Rik-24
+
+FeaturePlot(kwon2021, label = TRUE, repel =TRUE, features = "Prox1") 
+FeaturePlot(kwon2021, label = TRUE, repel =TRUE, features = "Zfpm2") 
+# based on the small number of cells and the Prox1 and Zfpm2 expression
+# these are DGCs 
+
+FeaturePlot(kwon2021, label = TRUE, repel =TRUE, features = "Meis2")
+# Rgs9 - 5, Pbx3 - 7 I suspect are Meis2 Inhibitory neurons which are white matter 
+# virtually absent in Chen shoud be exculded
+
+
+FeaturePlot(kwon2021, label = TRUE, repel =TRUE, features = "Rorb")
+#Gpc15 19 Astrocytes
+
+# Clusters we want....
+# 0, 1, 2, 3, 4, 6, 9, 10, 12, 13, 14, 16, 20, 25
+ 
+FeaturePlot(kwon2021, label = TRUE, repel = TRUE, features = "Enpp2")
+FeaturePlot(kwon2021, label = TRUE, repel = TRUE, features = "Cux2")
+# Necti3 - 0 Cux2 and Enpp2 are in this so its likely ExL
+
+# Rorb 1, Ex_Layer_4 
+
+FeaturePlot(kwon2021, label = TRUE, repel = TRUE, features = "Ndst4")
+# 3 Ndst4 Layer2/3_Ex
+
+FeaturePlot(kwon2021, label = TRUE, features = "Pvalb") # Inh_Pv, Inh_Sst, Inh_Ndnf
+# cluster 6 Sst-6
+
+FeaturePlot(kwon2021, label = TRUE, features = "Vip") # Inh_Vip
+# Adarb2-9
+
+#Ex_Layer5
+FeaturePlot(kwon2021, label = TRUE, repel = TRUE, features = "Cpne7")
+FeaturePlot(kwon2021, label = TRUE, repel = TRUE, features = "Tox")
+FeaturePlot(kwon2021, label = TRUE, repel = TRUE, features = "Tshz2")
+# based on tox but no Tshz2 its Layer 5 and Cpne7 Fam19a1-10
+
+# these are Ex_L6 cells
+FeaturePlot(kwon2021, label = TRUE, repel = TRUE, features = "Zfpm2")
+FeaturePlot(kwon2021, label = TRUE, repel = TRUE, features = "Hs3st4")
+# Zfpm2  4, Cdh18  12
+
+# 13 Ntng1 Ex_Ntng1
+
+# Tshz2-Vxc2l 16 one of their Tshz2 clusters
+
+# Nefm-20 no
+
+FeaturePlot(kwon2021, label = TRUE, repel = TRUE, features = "Dkkl1")
+FeaturePlot(kwon2021, label = TRUE, repel = TRUE, features = "Rgs4")
+# they express a chen marker for glutamatergic cells,
+# and a marker I found 
 
 
 
-#checking for the markers described in Chen et al., 2020
-test <- kwon2021.markers %>%
-  group_by(cluster)
 
-test <- data.frame(test)
-test <- test[,test$p_val_adj<0.05]
-layer.markers <- c("Dkkl1","Rprm","Calb2","Tesc","Tnfaip8l3","Tshz2","Lhx6")
-layer.markers.idx <- which(test$gene %in% layer.markers)
-test$cluster[layer.markers.idx]
-# > test$cluster[layer.markers.idx]
-# [1] 1  18 20 23 32 34 35 35
-# > layer.markers[(layer.markers %in%  test$gene)]
-# [1] "Rprm"      "Tnfaip8l3" "Tshz2"
+###############################
+########### Making the meta data
+###############################
 
-# I've got to get it down to just the neurons
+cortex.clusters <- c(0, 1, 2, 3, 4, 6, 9, 10, 12, 13, 14, 16, 20, 25)
 
-DimPlot(kwon2021, reduction = "umap",  label = TRUE)
+mpfc_neural_clusters.idx <- which(kwon2021@meta.data$seurat_clusters %in% cortex.clusters )
 
-kwon2021.markers$gene[kwon2021.markers$cluster==6]
-
-layer.markers[(layer.markers %in%  test$gene)]
-
-#they are there and match the cluster assignments from kwon2021
-# > test$cluster[layer.markers.idx]
-# [1] 0 1 2 3 4 5 6
-# Levels: 0 1 2 3 4 5 6
-
-test$p_val_adj[layer.markers.idx]
-#The genes are significant even after bonferonni correction
-# > test$p_val_adj[layer.markers.idx]
-# [1]  0.000000e+00  0.000000e+00  0.000000e+00 6.459740e-244 1.979667e-140
-# [6] 8.827732e-301  0.000000e+00
+# due to an error in the python script the cell naems are slightly different
+# between the colnames() of counts and the doublescore$CellID
+kwon2021_mpfc_neurons_meta <- doubletscore[mpfc.idx,]
+kwon2021_mpfc_neurons_meta$allcells_seurat_cluster <- kwon2021@meta.data$seurat_clusters[mpfc_neural_clusters.idx ]
 
 
-top2.kwon2021.markers <- kwon2021.markers %>%
-  group_by(cluster) %>%
-  slice_max(n = 2, order_by = avg_log2FC)
+clust.ident <- c("Nectin3", "Rorb","Il1rapl2", "Ndst4", "Zfpm2", "Rgs9",
+                 "Sst", "Pbx3", "Slc1a3", "Adarb2", "Fam19a1", "Plp1",
+                 "Cdh18", "Ntng1", "Tshz2-Neurod6", "Pdgfra", "Tshz2-Vwc2l", "Nr4a2",
+                 "Hexb", "Gpc5", "Nefm", "Ptgds", "Zbtb20", "Rgs5", 
+                 "9630013A20Rik", "Zfp804b")
 
-two.mrkrs <- c() # the list we will use to label the graph
-j=0
-for(i in c(1:dim(top2.chen.markers)[1]) ){
-  j = j+1
-  if(j==1){
-    first.marker <- top2.chen.markers$gene[i]
-  }# end of if statement
-  
-  if(j == 2){
-    # glue the markers together and...
-    this.clstr <- paste(as.character(first.marker),
-                        as.character(top2.chen.markers$gene[i]),
-                        sep = "-")
-    #...add to the list as a single entry
-    two.mrkrs <- c(two.mrkrs, this.clstr)
-    j = 0 # reset j
-  }# end of if statement
-}# end of for loop
+kwon2021_mpfc_neurons_meta$cluster_markers_res0.46 <- as.character(lapply(kwon2021_mpfc_neurons_meta$allcells_seurat_cluster , function(x) clust.ident[as.numeric(x)]))
 
 
+kwon2021_mpfc_neurons_meta$condition <- as.character(lapply(kwon2021_mpfc_neurons_meta$CellID, function(x) if (grepl("Ctrl", x, fixed=TRUE)) "Control" else {x}))
+kwon2021_mpfc_neurons_meta$condition <- as.character(lapply(kwon2021_mpfc_neurons_meta$condition, function(x) if (grepl("Stress", x, fixed=TRUE)) "CUS" else {x}))
+kwon2021_mpfc_neurons_meta$condition <- as.factor(kwon2021_mpfc_neurons_meta$condition)
+
+kwon2021_mpfc_neurons_meta$mouse.replicate <- as.character(lapply(kwon2021_mpfc_neurons_meta$CellID, function(x) if (grepl("Rep30", x, fixed=TRUE)) "Rep30" else {x}))
+kwon2021_mpfc_neurons_meta$mouse.replicate  <- as.character(lapply(kwon2021_mpfc_neurons_meta$mouse.replicate , function(x) if (grepl("Rep31", x, fixed=TRUE)) "Rep31" else {x}))
+kwon2021_mpfc_neurons_meta$mouse.replicate  <- as.character(lapply(kwon2021_mpfc_neurons_meta$mouse.replicate , function(x) if (grepl("Rep33", x, fixed=TRUE)) "Rep33" else {x}))
+kwon2021_mpfc_neurons_meta$mouse.replicate  <- as.character(lapply(kwon2021_mpfc_neurons_meta$mouse.replicate , function(x) if (grepl("Rep34", x, fixed=TRUE)) "Rep34" else {x}))
+kwon2021_mpfc_neurons_meta$mouse.replicate  <- as.character(lapply(kwon2021_mpfc_neurons_meta$mouse.replicate , function(x) if (grepl("Rep45", x, fixed=TRUE)) "Rep45" else {x}))
+kwon2021_mpfc_neurons_meta$mouse.replicate  <- as.character(lapply(kwon2021_mpfc_neurons_meta$mouse.replicate , function(x) if (grepl("Rep46", x, fixed=TRUE)) "Rep46" else {x}))
+kwon2021_mpfc_neurons_meta$mouse.replicate  <- as.character(lapply(kwon2021_mpfc_neurons_meta$mouse.replicate , function(x) if (grepl("Rep48", x, fixed=TRUE)) "Rep48" else {x}))
+kwon2021_mpfc_neurons_meta$mouse.replicate  <- as.character(lapply(kwon2021_mpfc_neurons_meta$mouse.replicate , function(x) if (grepl("Rep49", x, fixed=TRUE)) "Rep49" else {x}))
+kwon2021_mpfc_neurons_meta$mouse.replicate  <- as.factor(kwon2021_mpfc_neurons_meta$mouse.replicate)
+
+# making neuron counts and 
+keepthese <- kwon2021@meta.data$CellID[mpfc_neural_clusters.idx]
+mpfc.idx <- doubletscore$CellID %in% keepthese
+kwon2021_mpfc_neurons_counts <- kwon2021_counts[,mpfc.idx]
+kwon2021_mpfc_neurons_counts$GENE <- rownames(kwon2021_mpfc_neurons_counts)
+rownames(kwon2021_mpfc_neurons_meta) <- colnames(kwon2021_mpfc_neurons_counts)
 
 
-# clusters we want are....
-#kwon2021.markers$cluster[which(kwon2021.markers$gene %in% c("Snap25","Gad2","Slc17a7") )]
-# 0  1 2  3  5 7  8  10 11 13 15 16 22 24 29 31 35
-FeaturePlot(kwon2021, features = "Slc17a7")# glut transporter
-FeaturePlot(kwon2021, features = "Gad2") # gaba transporter
-# claustrum is cluster 21
-# > sum(kwon2021@meta.data$seurat_clusters==21)
-# [1] 432
-# > 432/30615
-# [1] 0.01411073 
-FeaturePlot(kwon2021, features = "Nr4a2") # claustrum excitatory cells
-FeaturePlot(kwon2021, features = "Gnb4") # claustrum excitatory cells
-FeaturePlot(kwon2021, features = "Ppp1r1b",  min.cutoff = 1.5) #Striatal inhibitory neurons
-# clusters 6 and 14 Lmo3 and Gad2 are also markers
-# > sum(kwon2021@meta.data$seurat_clusters==6)
-# [1] 1345
-# > sum(kwon2021@meta.data$seurat_clusters==14)
-# [1] 777
-# > kwon2021
-# An object of class Seurat 
-# 25887 features across 30615 samples within 1 assay 
-# Active assay: RNA (25887 features, 2000 variable features)
-# 2 dimensional reductions calculated: pca, umap
-# > (1345+777)/30615
-# [1] 0.06931243 so about 7 percent
-FeaturePlot(kwon2021, features = "Gja1") # astrocyte marker, 
-FeaturePlot(kwon2021, features = "Pdgfra") # vasculature marker, 
-FeaturePlot(kwon2021, features = "Ctss") # microglia marker, 
-FeaturePlot(kwon2021, features = "Enpp6") #  Oligo2
-FeaturePlot(kwon2021, features = "Flt1") # endothelial cells
-
-
-
-
-
-chen_markers <- read_csv("~/PavLabEngrams/EngramCellClassifier/Chen2020_GSE152632/Chen2020_cellclusterlabels.csv")
-
-
-test <- chen_markers %>%
-  group_by(cluster)
-
-test <- data.frame(test)
-chen.layer.markers <- c("Dkkl1","Rprm","Calb2","Tesc","Tnfaip8l3","Tshz2","Lhx6")
-layer.markers.idx <- which(test$gene %in% chen.layer.markers)
-test$cluster[layer.markers.idx]
-
-top2.kwon2021.markers <-kwon_markers %>%
-  group_by(cluster) %>%
-  slice_max(n = 2, order_by = avg_log2FC)
-top2.kwon2021.markers
-
-top2.kwon2021.markers.conserved <-conserved_markers.summary %>%
-  group_by(cluster_id) %>%
-  slice_max(n = 2, order_by = rowmean_log2FC)
-top2.kwon2021.markers.conserved
-
-FeaturePlot(kwon2021_mpfc.combined.sct, features = "Slc17a7")# glut transporter
-FeaturePlot(kwon2021_mpfc.combined.sct, features = "Gad2")
-DimPlot(kwon2021_mpfc.combined.sct)
-
-
-
+write_csv(kwon2021_mpfc_neurons_meta, "~/test_datasets/Kwon2021_GSE145970/kwon2021_mpfc_neurons_meta.csv")
+write_csv(kwon2021_mpfc_neurons_counts, "~/test_datasets/Kwon2021_GSE145970/kwon2021_mpfc_neurons_counts.csv")
+gzip("~/test_datasets/Kwon2021_GSE145970/kwon2021_mpfc_neurons_counts.csv",
+     destname="~/test_datasets/Kwon2021_GSE145970/kwon2021_mpfc_neurons_counts.csv.gz")
 
 
 ###############################
 ########### Second Round of Clustering to get it as close to chen as possible
 ###############################
-
-mpfc_neural_clusters.idx <- which(kwon2021@meta.data$seurat_clusters %in% c(0,1,2,3,5,7,8,10,11,13,15,16,22,24,29,31,35) )
-keepthese <- kwon2021@meta.data$CellID[mpfc_neural_clusters.idx]
-mpfc.idx <- doubletscore$CellID %in% keepthese
-kwon2021_mpfc_neurons_counts <- kwon2021_counts[,mpfc.idx]
-# due to an error in the python script the cell naems are slightly different
-# between the colnames() of counts and the doublescore$CellID
-kwon2021_mpfc_meta <- doubletscore[mpfc.idx,]
-kwon2021_mpfc_meta$allcells_seurat_cluster <- kwon2021@meta.data$seurat_clusters[which(kwon2021@meta.data$seurat_clusters %in% c(0,1,2,3,5,7,8,10,11,13,15,16,22,24,29,31,35) )]
-
-kwon2021_mpfc_meta$condition <- as.character(lapply(kwon2021_mpfc_meta$CellID, function(x) if (grepl("Ctrl", x, fixed=TRUE)) "Control" else {x}))
-kwon2021_mpfc_meta$condition <- as.character(lapply(kwon2021_mpfc_meta$condition, function(x) if (grepl("Stress", x, fixed=TRUE)) "CUS" else {x}))
-kwon2021_mpfc_meta$condition <- as.factor(kwon2021_mpfc_meta$condition)
-
-kwon2021_mpfc_meta$mouse.replicate <- as.character(lapply(kwon2021_mpfc_meta$CellID, function(x) if (grepl("Rep30", x, fixed=TRUE)) "Rep30" else {x}))
-kwon2021_mpfc_meta$mouse.replicate  <- as.character(lapply(kwon2021_mpfc_meta$mouse.replicate , function(x) if (grepl("Rep31", x, fixed=TRUE)) "Rep31" else {x}))
-kwon2021_mpfc_meta$mouse.replicate  <- as.character(lapply(kwon2021_mpfc_meta$mouse.replicate , function(x) if (grepl("Rep33", x, fixed=TRUE)) "Rep33" else {x}))
-kwon2021_mpfc_meta$mouse.replicate  <- as.character(lapply(kwon2021_mpfc_meta$mouse.replicate , function(x) if (grepl("Rep34", x, fixed=TRUE)) "Rep34" else {x}))
-kwon2021_mpfc_meta$mouse.replicate  <- as.character(lapply(kwon2021_mpfc_meta$mouse.replicate , function(x) if (grepl("Rep45", x, fixed=TRUE)) "Rep45" else {x}))
-kwon2021_mpfc_meta$mouse.replicate  <- as.character(lapply(kwon2021_mpfc_meta$mouse.replicate , function(x) if (grepl("Rep46", x, fixed=TRUE)) "Rep46" else {x}))
-kwon2021_mpfc_meta$mouse.replicate  <- as.character(lapply(kwon2021_mpfc_meta$mouse.replicate , function(x) if (grepl("Rep48", x, fixed=TRUE)) "Rep48" else {x}))
-kwon2021_mpfc_meta$mouse.replicate  <- as.character(lapply(kwon2021_mpfc_meta$mouse.replicate , function(x) if (grepl("Rep49", x, fixed=TRUE)) "Rep49" else {x}))
-kwon2021_mpfc_meta$mouse.replicate  <- as.factor(kwon2021_mpfc_meta$mouse.replicate)
-
-rownames(kwon2021_mpfc_meta) <- colnames(kwon2021_mpfc_neurons_counts)
 
 
 # follow the integration tutorial from here and do it by replicates to remove batch effects then
@@ -313,7 +366,7 @@ rownames(kwon2021_mpfc_meta) <- colnames(kwon2021_mpfc_neurons_counts)
 # our clustering should be able to accomodate this
 
 kwon2021_mpfc <- CreateSeuratObject(counts = kwon2021_mpfc_neurons_counts, 
-                                    meta.data = kwon2021_mpfc_meta)
+                                    meta.data = kwon2021_mpfc_neurons_meta)
 
 # https://satijalab.org/seurat/articles/integration_introduction.html#performing-integration-on-datasets-normalized-with-sctransform-1
 # in particular lets rely on the sctransform
@@ -401,9 +454,9 @@ top.kwon.markers <- kwon_markers %>%
   group_by(cluster) %>%
   slice_max(n = 1, order_by = avg_log2FC)
 
-kwon2021_mpfc_meta$mpfc_integrated_seurat_cluster <- kwon2021_mpfc.combined.sct@meta.data$seurat_clusters
-kwon2021_mpfc_meta$mpfc_integrated_marker <- as.character(lapply(as.numeric(kwon2021_mpfc_meta$mpfc_integrated_seurat_cluster), function(x) top.kwon.markers$gene[x]))
+kwon2021_mpfc_neurons_meta$mpfc_integrated_seurat_cluster <- kwon2021_mpfc.combined.sct@meta.data$seurat_clusters
+kwon2021_mpfc_neurons_meta$mpfc_integrated_marker <- as.character(lapply(as.numeric(kwon2021_mpfc_neurons_meta$mpfc_integrated_seurat_cluster), function(x) top.kwon.markers$gene[x]))
 
-write_csv( kwon2021_mpfc_meta, "~/test_datasets/Kwon2021_GSE145970/kwon_mpfc_neurons_meta.csv")
+write_csv( kwon2021_mpfc_neurons_meta, "~/test_datasets/Kwon2021_GSE145970/kwon_mpfc_neurons_meta.csv")
 
 

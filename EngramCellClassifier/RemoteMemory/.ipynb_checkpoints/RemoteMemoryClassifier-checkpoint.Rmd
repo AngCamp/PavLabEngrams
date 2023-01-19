@@ -1,0 +1,1346 @@
+---
+title: "Chen_to_Kwon_Classifier"
+author: "Angus Campbell"
+date: "2022-10-09"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+Reference for pdf documents: https://github.com/svmiller/svm-r-markdown-templates/blob/master/article-example/svm-rmarkdown-article-example.Rmd
+
+https://github.com/svmiller/svm-r-markdown-templates/blob/master/article-example/svm-rmarkdown-article-example.pdf
+
+
+```{r}
+setwd("~/PavLabEngrams/EngramCellClassifier/RemoteMemory")
+
+# libraries used
+library(randomForest)
+library(rfUtilities)
+library(Seurat)
+library(stringr)
+library(sampler)
+library(caTools)
+library(pROC)
+library(ggplot2)
+library(stats)
+library(Dict)
+library(pheatmap)
+library(caret)
+library(data.table)
+library(dplyr)
+library(aod) #for logistic regression
+library(lme4)
+```
+
+
+# Integrating Chen and Kwon
+ 
+Kwon should have "adult control (15911 nuclei) and CUS (15349 nuclei)"
+
+I tried matching the cell clusters just based on markers but to no avail so I feel it is best to do it across clusters.  There could be a veriety of reasons for this issue, they both used the Log normalized methods where I was using sct transform, also the chronic stress condition (CUS) may have been an issue.  As Chen has cases of just a few cells coming from one mouse I have opted instead to 
+
+Orginally I integrated over mouse replicates in
+Kwon as they noted severe batch effects in the text.  I wil
+
+
+```{r}
+library(janitor)
+amygdalaFC2018_counts <- read.table("~/test_datasets/Hochgerner2022_amygdala_biorvx/Amy_FC_allcells_with_metadata_31-Jul-2022.txt", sep = "\t" )
+#contains metadate
+
+amygdalaFC2018_counts[4,1] <- "FC_time"
+
+amygdalaFC2018_meta <- t(amygdalaFC2018_counts[1:5,]) %>% 
+  row_to_names(row_number = 1)
+amygdalaFC2018_meta <- data.frame(amygdalaFC2018_meta)
+
+amygdalaFC2018_counts <- amygdalaFC2018_counts[c(1,6:dim(amygdalaFC2018_counts)[1]),] %>% 
+  row_to_names(row_number = 1) %>%
+  column_to_rownames( var = "cellID") %>%
+  mutate_if(is.character, as.numeric)
+
+#colnames(amygdalaFC2018_counts)[1] <- 'gene'
+
+```
+
+
+The clustering will be done in seurat following standard integration, I will od it over conditions so homecage, CUS and then the Fear groups etc.
+##Create and merge counts data
+```{r}
+# sees like this fiel cannot open the connection
+# we will have to make plots in a seperate R script
+# just add relevatn figures here and reference the script
+
+#kwon 
+kwon2021_counts <- read.table("~/test_datasets/Kwon2021_GSE145970/kwon2021_mpfc_neurons_counts.csv.gz",
+                              header = TRUE, sep =",")
+rownames(kwon2021_counts) <- kwon2021_counts$GENE
+
+kwon2021_meta <- read.csv("~/test_datasets/Kwon2021_GSE145970/kwon2021_mpfc_neurons_meta.csv",
+                          header = TRUE)
+
+# there is a discrepancy between the names in kwon meta dat cell id and the counts
+fun <- function(x){
+   out <- str_c(
+     str_sub(x, start = 1L, end = 12L), 
+     "_", 
+     str_sub(x, start = 13L)
+     )
+   return(out)}
+
+kwon2021_meta$CellID <- lapply(kwon2021_meta$CellID, FUN = fun)
+```
+
+```{r}
+#Chen
+chen2020_counts <- read.csv('~/PavLabEngrams/EngramCellClassifier/Chen2020_GSE152632/GSE152632_GEO_mberkchen_TRAP2_counts.csv.gz', header = TRUE)
+rownames(chen2020_counts) <- chen2020_counts$X
+chen2020_counts <- chen2020_counts[,2:3531]
+chen2020_meta <- read.csv( '~/PavLabEngrams/EngramCellClassifier/Chen2020_GSE152632/SraRunTable.txt', header = TRUE)
+
+#add engram label
+chen2020_meta$engram_label <-  as.factor(sapply(as.character(colnames(chen2020_counts)), function(y) if (grepl("_pos_", y, fixed=TRUE)) "tdT+" else "tdT-"))
+
+#create the condition label
+condition_label <- chen2020_meta$source_name %>%
+  sapply( function(y) if (grepl("Homecage", y, fixed=TRUE)) "Homecage")
+
+condition_label <- chen2020_meta$source_name
+condition_label[str_detect(condition_label, "Homecage")] = "Homecage"
+condition_label[str_detect(condition_label, "Context-Only")] = "Context-Only"
+condition_label[str_detect(condition_label, "Fear-Only")] = "Fear-Only"
+condition_label[str_detect(condition_label, "Fear-Recall")] = "Fear-Recall"
+chen2020_meta$condition_label <- condition_label
+
+#adding cell bacrcodes from coutn data to rows of metadata for seurat
+rownames(chen2020_meta) <- colnames(chen2020_counts)
+
+
+chen2020_meta <- cbind(chen2020_meta, read.csv("~/PavLabEngrams/EngramCellClassifier/Chen2020_GSE152632/Chen2020_ClusterMarkers.csv") )
+
+
+```
+
+Now we can actually cluster.
+
+```{r}
+kwon2021_counts$GENE <- rownames(kwon2021_counts) 
+chen2020_counts$GENE <- rownames(chen2020_counts)
+
+combined.counts <- left_join(chen2020_counts, kwon2021_counts, by = "GENE") %>%
+  column_to_rownames( var = "GENE") 
+
+```
+
+
+```{r}
+combined.meta <- data.frame(condition = c(chen2020_meta$condition_label, kwon2021_meta$condition))
+combined.meta$og_cluster <-  c(chen2020_meta$ChenLayerMarkers, kwon2021_meta$cluster_markers_res0.46)
+# we're gonna consider the controls and home cage seperate
+combined.meta$condition <- as.factor(combined.meta$condition)
+
+combined.meta$label_status <- as.factor(c(as.character(chen2020_meta$engram_label), rep("discovery_data", dim(kwon2021_counts)[2]-1))) # -1 because of the GENE column
+
+
+
+rownames(combined.meta) <- colnames(combined.counts)
+```
+
+
+```{r}
+mpfc_neurons <- CreateSeuratObject(counts =  combined.counts,
+                   meta.data = combined.meta, min.cells = 10)
+
+# we have already filtered cells, all pass the thresholds for percent MT, number of cells
+# doublets have already been filtered
+
+```
+
+```{r}
+mpfc_neurons.list <- SplitObject(mpfc_neurons, split.by = "condition")
+
+mpfc_neurons.list <- lapply(X = mpfc_neurons.list, FUN = SCTransform)
+features <- SelectIntegrationFeatures(object.list = mpfc_neurons.list, nfeatures = 3000)
+mpfc_neurons.list <- PrepSCTIntegration(object.list = mpfc_neurons.list, 
+                                         anchor.features = features)
+
+mpfc_neurons.anchors <- FindIntegrationAnchors(object.list = mpfc_neurons.list,
+                                                normalization.method = "SCT",
+                                                anchor.features = features)
+mpfc_neurons.combined.sct <- IntegrateData(anchorset = mpfc_neurons.anchors, 
+                                            normalization.method = "SCT")
+
+mpfc_neurons.combined.sct <- RunPCA(mpfc_neurons.combined.sct, verbose = FALSE)
+# jackplots dont work on sct transformed data
+
+# tryingt o keep 
+mpfc_neurons.combined.sct <- RunTSNE(mpfc_neurons.combined.sct, 
+                                      dim.embed = 2)
+```
+
+
+```{r}
+# remove the previous clusterings
+# object[['column.to.remove']] <- NULL
+
+DefaultAssay(mpfc_neurons.combined.sct) <- "integrated" # make sure this is set for reclustering
+mpfc_neurons.combined.sct <- FindNeighbors(mpfc_neurons.combined.sct,
+                                            reduction = "tsne", dims = 1:2)
+
+mpfc_neurons.combined.sct <- FindClusters(mpfc_neurons.combined.sct,
+                                           resolution = 0.008)
+# at 0.08 we get 7 clusters
+```
+
+```{r}
+# finding markers the old way using Sct transformed data
+DefaultAssay(mpfc_neurons.combined.sct) <- "SCT"
+mpfc_neurons.combined.sct <- PrepSCTFindMarkers(mpfc_neurons.combined.sct)
+mpfc_neurons_markers <- FindAllMarkers(mpfc_neurons.combined.sct, test.use = "negbinom")
+
+
+```
+```{r}
+top.mpfc_neurons.markers <- mpfc_neurons_markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 1, order_by = avg_log2FC)
+
+new.cluster.ids <- top.mpfc_neurons.markers$gene
+names(new.cluster.ids) <- levels(mpfc_neurons.combined.sct)
+mpfc_neurons.combined.sct <- RenameIdents(mpfc_neurons.combined.sct, new.cluster.ids)
+
+DimPlot(mpfc_neurons.combined.sct, reduction = "tsne",group.by =  shape.by = "label_status", label = TRUE, pt.size = 1)
+```
+```{r}
+# with labels
+DimPlot(mpfc_neurons.combined.sct, reduction = "tsne", split.by = "label_status", label = TRUE, pt.size = 1)
+```
+
+
+
+
+Cortical inhibiroty neruons meta-anlysis of markers: Martini, L., Bardini, R., & Di Carlo, S. (2021, December). Meta-Analysis of cortical inhibitory interneurons markers landscape and their performances in scRNA-seq studies. In 2021 IEEE International Conference on Bioinformatics and Biomedicine (BIBM) (pp. 253-258). IEEE.
+
+Good references for me to look for sub clusters with.
+
+
+
+```{r}
+DimPlot(mpfc_neurons.combined.sct, group.by = "seurat_clusters",
+        shape.by = "condition", label = TRUE, pt.size = 1.2)
+```
+Inhibitory cortical neuron markers : https://www.biorxiv.org/content/10.1101/2021.11.03.467049v1.full
+```{r}
+DefaultAssay(mpfc_neurons.combined.sct) <- "SCT"
+FeaturePlot(mpfc_neurons.combined.sct, features = "Dkkl1", label = TRUE)
+```
+
+
+
+```{r}
+FeaturePlot(mpfc_neurons.combined.sct, features = "Lhx6", label = TRUE)
+```
+
+
+All mice are Kwon mice are C57Bl/6J, CUS were  where Chen had C57BL/6. Yy1^{_fl/fl_} floxed mice were also used for Chip-seq experiments in Kwon, these are not included in the scRNA-seq data.  Only the fear recall group is useful to us, the others are labeling with homecage and the other, fear only, labeling is occurring without exposure to the original environment.
+
+
+```{r}
+gaba_or_glut <- c("Excitatory", "Excitatory","Excitatory","Excitatory","Inhibitory","Inhibitory","Inhibitory")
+mpfc_neurons.combined.sct@meta.data$broad_cell_type <- as.character(lapply(as.numeric(mpfc_neurons.combined.sct@meta.data$integrated_snn_res.0.017), function(x) gaba_or_glut[x]))
+
+combined.meta <- mpfc_neurons.combined.sct@meta.data
+write_csv(combined.meta,"~/PavLabEngrams/EngramCellClassifier/RemoteMemory/chen_kwon_combined_meta.csv")
+```
+
+
+```{r}
+DimPlot(mpfc_neurons.combined.sct, group.by = "seurat_clusters",
+        shape.by = "condition", label = TRUE, pt.size = 1)
+```
+```{r}
+DimPlot(mpfc_neurons.combined.sct, group.by = "og_cluster",
+        shape.by = "condition", label = TRUE, pt.size = 1)
+```
+
+
+
+```{r}
+
+DefaultAssay(mpfc_neurons.combined.sct) <- "SCT"
+mpfc_neurons.combined.sct <- PrepSCTFindMarkers(object = mpfc_neurons.combined.sct )
+
+mpfc_neurons_res0.017_.markers <- FindAllMarkers(mpfc_neurons.combined.sct, 
+                               features = features,
+                               test.use = "negbinom",
+                               only.pos = TRUE)
+```
+
+
+
+
+```{r}
+top2.mpfc_markers.sct <- mpfc_neurons_res0.017_.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 2, order_by = avg_log2FC)
+top2.mpfc_markers.sct
+```
+```{r}
+top.mpfc_markers <- mpfc_neurons_res0.017_.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 2, order_by = avg_log2FC)
+top2.mpfc_markers.sct
+```
+
+
+
+
+
+```{r include=FALSE}
+
+get_conserved <- function(cluster){
+  FindConservedMarkers(mpfc_neurons.combined.sct,
+                       ident.1 = cluster,
+                       grouping.var = "condition",
+                       only.pos = TRUE) %>%
+    rownames_to_column(var = "gene") %>%
+    cbind(cluster_id = cluster, .)
+}
+
+```
+
+
+
+```{r}
+#for finding markers we want to be using SCT as the two datasets have different sequencing depths
+DefaultAssay(mpfc_neurons.combined.sct) <- "SCT"
+
+get_conserved <- function(cluster){
+  FindConservedMarkers(mpfc_neurons.combined.sct,
+                       ident.1 = cluster,
+                       grouping.var = "condition",
+                       only.pos = TRUE) %>%
+    rownames_to_column(var = "gene") %>%
+    cbind(cluster_id = cluster, .)
+}
+
+clusters.res0.017 <- unique(mpfc_neurons.combined.sct@meta.data$integrated_snn_res.0.017 )
+conserved_markers_res0.017 <- map_dfr(clusters.res0.017 , get_conserved)
+
+```
+
+```{r}
+df = data.frame(cell_id = colnames(mpfc_neurons.combined.sct),
+           cluster = mpfc_neurons.combined.sct@active.ident,
+           cluster_num = mpfc_neurons.combined.sct@meta.data$seurat_clusters)
+
+write.csv(df, "integrated_sct_clusters.csv")
+```
+
+
+
+
+
+
+
+
+
+
+## Classifiers
+
+ 
+
+```{r include=FALSE}
+# FUNCTIONS
+
+#normalization functions, log.norm calls logplusone
+# mean center scale then log(x+1) for normalizing
+logplusone <- function(x){
+  return( log(x+1) )
+}
+
+log.norm <- function(df.in){
+  #performs the lognorm transform and scales the data, removes NA's first
+  if( sum(is.na(df.in)) ){
+    df.in[is.na(df.in)] <- 0
+  }
+  df.out <- apply(df.in,
+                  MARGIN = 1,
+                  FUN = logplusone
+  )
+  df.out <- scale( t(df.out) ) #we need it transposed so that the scaling is done per gene not cell
+  df.out <- data.frame( t(df.out) )
+  colnames(df.out) <- rownames(df.in)
+  return(df.out)
+}
+
+celltype.lognorm <-function(countsdata, celltype.labels){
+  #log normalizes within cell types in counts data
+  #celltype labels and colnames of countsdata must have same order
+  
+  #retunrs a transposed and normalize dataframe 
+  
+  print("Normalizing cell type...")
+  
+  celltypes <- unique(celltype.labels)
+  df.out <- data.frame(gene = rownames(countsdata))
+  #df.out <- t(df.out)
+  #colnames(df.out) <- rownames(countsdata)
+  
+  cell_names <- colnames(countsdata) # keep this for reorganizing later
+  df.out.rownames <- c()
+  for(type in celltypes){
+    print(type[1])
+    normalized.within.type <- log.norm(countsdata[,celltype.labels==type])
+    normalized.within.type <- t(normalized.within.type ) # lognomr flips its data
+    normalized.within.type <- data.frame(normalized.within.type)
+    normalized.within.type <- rownames_to_column(normalized.within.type, var ="gene")
+    df.out <- left_join( df.out, normalized.within.type, by = 'gene' )
+  }
+  
+  df.out <- df.out[,2:dim(df.out)[2]] # drops gene column
+  df.out <- df.out[cell_names] # to keep original order
+  df.out <- t(df.out)
+  return( data.frame(df.out) ) 
+}
+
+
+
+resample.randomForest <-function( df.in,
+                                  under_represented_class,
+                                  over_represented_class,
+                                  proportion,
+                                  batches, 
+                                  trees){
+  #NOTE: df.in should have a column called engram cell with the class labels i.e. postive or negative
+  
+  #this function resamples from our samples and retrains new models then combines them
+  # this is too prevent over fitting on cells
+  trees.per.batch <- as.integer(trees/batches)
+  n.cells <- trunc( sum(df.in$Engramcell==under_represented_class)*proportion)
+  batches <- c(1:batches)
+  for( batch in batches){
+    resample.set <- rbind(sample(which(df.in$Engramcell==under_represented_class), size = n.cells),
+                          sample(which(df.in$Engramcell==over_represented_class), size = n.cells)
+    )
+    resample.set <- df.in[resample.set,]
+    
+    # creates rf.model
+    if(batch==1){
+      rf.model <- randomForest(x = resample.set[,1:(length(resample.set)-1)],
+                               y = resample.set$Engramcell,
+                               ntree = trees.per.batch)
+    }
+    #trains new models in rf.fit and combines tham with rf.model
+    if(batch>1){
+      rf.fit = randomForest(x = resample.set[,1:(length(resample.set)-1)],
+                            y = resample.set$Engramcell,
+                            ntree = trees.per.batch)
+      rf.model <- randomForest::combine(rf.fit, rf.model)
+    }
+  }#end of for loop over batches
+  
+  return(rf.model)
+}
+
+
+make.predictions.df <- function(classifier.object, 
+                                test_df,
+                                meta.data.label.column,
+                                label = c("Active","Inactive")
+){
+  #generate predictions for making classifier summary
+  predictions <- as.data.frame(predict(classifier.object, test_df[,1:(length(test_df))], type = "prob"))
+  predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
+  predictions$observed <- meta.data.label.column #this should be changed if you want to make this functions more modular
+  colnames(predictions)[1:2] <- c("label_pos","label_neg")
+  predictions$engramobserved <- ifelse(predictions$observed==label[1], 1, 0)
+  predictions$inactiveobserved <- ifelse(predictions$observed==label[2], 1, 0)
+  return(predictions)
+}
+
+
+# assess a single run of resampled.randomforest
+assessment <- function(predictions.df, 
+                       label = c("Active","Inactive") 
+){
+  # returns a vector of assessments to be used to make dataframe summarizing classifiers performance
+  # can be used to make df of all calssifiers trained in a single run
+  TP <- sum((predictions.df$predict == label[1])&(predictions.df$observed == label[1]))
+  TN <- sum((predictions.df$predict == label[2])&(predictions.df$observed == label[2]))
+  FN <- sum((predictions.df$predict == label[2])&(predictions.df$observed == label[1]))
+  FP <- sum((predictions.df$predict == label[1])&(predictions.df$observed == label[2]))
+  
+  #precision and recall as well as sumamry stats F1
+  precision <- TP/(TP+FP)
+  recall <- TP/(TP+FN)
+  F1.score = 2 * (precision * recall) / (precision + recall)
+  FPR <- FP/(TN+FP)
+  FNR <- FN/(TP+FN)
+  
+  #getting auc
+  roc.engramcell <- roc(predictions.df$engramobserved, as.numeric(predictions.df$label_pos) )
+  AUC <- auc(roc.engramcell)
+  
+  return( c(F1.score, AUC, precision, recall, FPR, FNR,
+            TP, FN, TN, FP) )
+}
+
+
+
+resampled.randomForest.crossvalidated <-function(data,
+                                                 under.represented.class,
+                                                 over.represented.class,
+                                                 folds,
+                                                 trees.total,
+                                                 proportion.each.batch=0.8,
+                                                 batches.per.fold=20){
+  # takes a data frame with a label column assumed to be named Engramcell, data$Engramcell
+  # returns a model that has been k-fold cross validated, with an attribute called Assessment
+  # assessment has the performance metrics of all the folds and a column of means and SD's for each
+  # metric
+  #NOTE: ROC curve needs to be implemented
+  
+  folds.obj <- createFolds(data$Engramcell, k = folds)
+  loops <- c(1:folds)
+  for( i in loops ){
+    #create indices
+    test.idx <- folds.obj[[i]]
+    # needs to be a list so it can act as an index
+    train.idx <- which(!(rownames(data) %in% test.idx) )
+    
+    #split data for this fold
+    training_set <- data[train.idx,]
+    testing_set <- data[test.idx,]
+    
+    # divvies up number of trees
+    trees.in.the.fold = as.integer(trees.total/folds)
+    if ( ( trees.total%%(batches.per.fold*folds) )>0  ){ 
+      stop("Number of trees does not devide evenly by batches and folds.")
+    }
+    # we still need to settle on stuff to 
+    rf.this_fold <- resample.randomForest(df.in = training_set,
+                                          under_represented_class = under.represented.class,
+                                          over_represented_class = over.represented.class,
+                                          proportion= proportion.each.batch,
+                                          batches = batches.per.fold, 
+                                          trees = trees.in.the.fold)
+    
+    if(i == 1){
+      rf.out <- rf.this_fold
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance <- data.frame(assess )
+      rownames(fold.performance) <- c("F1 Score", "AUC", "Precision", "Recall",
+                                      "FPR", "FNR", "True Positives", "False Negatives", 
+                                      "True Negatives", "False Positives")
+    }else{
+      rf.out <- randomForest::combine(rf.out, rf.this_fold)
+      # we need votes for all cells to calculate
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance[,ncol(fold.performance) + 1] <- assess
+    }
+    
+  }# end of for loop
+  colnames(fold.performance) <- names(folds.obj)
+  fold.performance$Mean <- apply(fold.performance,MARGIN=1,  FUN = mean)
+  fold.performance$SigDiff <- apply(fold.performance,MARGIN=1,  FUN = sd)
+  rf.out$Assessment <- fold.performance
+  
+  #votes needs to be updated to make roc curve
+  rf.out$votes <- predict(object = rf.out, newdata = data, type = 'vote', norm.votes = FALSE)
+  return(rf.out)
+}
+
+resample.regularizedRF <- function( df.in,
+                                    under_represented_class,
+                                    over_represented_class,
+                                    proportion,
+                                    batches, 
+                                    trees){
+  #NOTE: df.in should have a column called engram cell with the class labels i.e. postive or negative
+  
+  #this function resamples from our samples and retrains new models then combines them
+  # this is too prevent over fitting on cells
+  trees.per.batch <- as.integer(trees/batches)
+  n.cells <- trunc( sum(df.in$Engramcell==under_represented_class)*proportion)
+  batches <- c(1:batches)
+  for( batch in batches){
+    resample.set <- rbind(sample(which(df.in$Engramcell==under_represented_class), size = n.cells),
+                          sample(which(df.in$Engramcell==over_represented_class), size = n.cells)
+    )
+    resample.set <- df.in[resample.set,]
+    
+    # creates rf.model
+    if(batch==1){
+      rf.model <- RRF(x = resample.set[,1:(length(resample.set)-1)],
+                      y = resample.set$Engramcell,
+                      ntree = trees.per.batch)
+    }
+    #trains new models in rf.fit and combines tham with rf.model
+    if(batch>1){
+      rf.fit = RRF(x = resample.set[,1:(length(resample.set)-1)],
+                   y = resample.set$Engramcell,
+                   ntree = trees.per.batch)
+      rf.model <- RRF::combine(rf.fit, rf.model)
+    }
+  }#end of for loop over batches
+  
+  return(rf.model)
+}
+
+#
+resampled.regularizedRF.crossvalidated <-function(data,
+                                                  under.represented.class,
+                                                  over.represented.class,
+                                                  folds,
+                                                  trees.total,
+                                                  proportion.each.batch=0.8,
+                                                  batches.per.fold=20){
+  # takes a data frame with a label column assumed to be named Engramcell, data$Engramcell
+  # returns a model that has been k-fold cross validated, with an attribute called Assessment
+  # assessment has the performance metrics of all the folds and a column of means and SD's for each
+  # metric
+  #NOTE: ROC curve needs to be implemented
+  
+  folds.obj <- createFolds(data$Engramcell, k = folds)
+  loops <- c(1:folds)
+  for( i in loops ){
+    #create indices
+    test.idx <- folds.obj[[i]]
+    # needs to be a list so it can act as an index
+    train.idx <- which(!(rownames(data) %in% test.idx) )
+    
+    #split data for this fold
+    training_set <- data[train.idx,]
+    testing_set <- data[test.idx,]
+    
+    # divvies up number of trees
+    trees.in.the.fold = as.integer(trees.total/folds)
+    if ( ( trees.total%%(batches.per.fold*folds) )>0  ){ 
+      stop("Number of trees does not devide evenly by batches and folds.")
+    }
+    # we still need to settle on stuff to 
+    rf.this_fold <- resample.regularizedRF(df.in = training_set,
+                                           under_represented_class = under.represented.class,
+                                           over_represented_class = over.represented.class,
+                                           proportion= proportion.each.batch,
+                                           batches = batches.per.fold, 
+                                           trees = trees.in.the.fold)
+    
+    if(i == 1){
+      rf.out <- rf.this_fold
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance <- data.frame(assess )
+      rownames(fold.performance) <- c("F1 Score", "AUC", "Precision", "Recall",
+                                      "FPR", "FNR", "True Positives", "False Negatives", 
+                                      "True Negatives", "False Positives")
+    }else{
+      rf.out <- RRF::combine(rf.out, rf.this_fold)
+      # we need votes for all cells to calculate
+      pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
+      assess <- assessment( pred ) 
+      fold.performance[,ncol(fold.performance) + 1] <- assess
+    }
+    
+  }# end of for loop
+  colnames(fold.performance) <- names(folds.obj)
+  fold.performance$Mean <- apply(fold.performance,MARGIN=1,  FUN = mean)
+  fold.performance$SigDiff <- apply(fold.performance,MARGIN=1,  FUN = sd)
+  rf.out$Assessment <- fold.performance
+  
+  #votes needs to be updated to make roc curve
+  rf.out$votes <- predict(object = rf.out, newdata = data, type = 'vote', norm.votes = FALSE)
+  return(rf.out)
+}
+
+
+
+gene.shuffle <-function(dat){
+  #shuffles the genes valus within cells,
+  #intended to be applied before normalization
+  for ( cell in c(1:ncol(dat)) ){
+    rand <- sample(nrow(dat)) # generates random vector of numbers from colls
+    dat[,cell] <- dat[rand,cell] # shuffles the genes within cells
+    
+  }# end of loop over cells
+  return(dat)
+}
+
+
+```
+
+
+```{r}
+
+#keeps the cells we want, gets rid of the genes we dont want
+chen2020_counts <- combined.counts[,colnames(combined.counts) %in% colnames(chen2020_counts)]
+kwon2021_counts <- combined.counts[,colnames(combined.counts) %in% colnames(kwon2021_counts)] 
+
+```
+
+```{r}
+FeaturePlot(mpfc_neurons.combined.sct, features = "Gad2", label = TRUE)
+```
+Clusters 0,1,2,3, and 6 are glutametergic excitatory cells.  CLusters 4and 5 are
+gabanergic cells.  I am going to normalize before selecting cells for the first attempt.
+
+```{r}
+# normalize before selcting cells.
+chen.lognorm <- log.norm(chen2020_counts)
+# kind surprised the transgene wasn't removed 
+chen.lognorm <- chen.lognorm[,!(names(chen.lognorm) %in% "TdTom-transgene")]
+
+
+chen.idents <- mpfc_neurons.combined.sct$seurat_clusters[colnames(combined.counts) %in% colnames(chen2020_counts)]
+
+excitatory.chen.idx <- chen.idents %in% c(0,1,2,3,6)
+
+# this normalizaition is across the whole dataset
+chen.lognorm.glut <- chen.lognorm[excitatory.chen.idx,]
+Activity_defintion <- chen2020_meta$condition_label == "Fear-Recall" & chen2020_meta$engram_label == "tdT+"
+chen.lognorm.glut$Engramcell <- Activity_defintion[excitatory.chen.idx]
+chen.lognorm.glut$Engramcell <- as.factor(chen.lognorm.glut$Engramcell)
+levels(chen.lognorm.glut$Engramcell) <- c("Inactive", "Active")
+
+# For debugging the classifier
+# test_data <- c(sample(rownames(chen.lognorm.glut[chen.lognorm.glut$Engramcell=="Inactive",]), 7), sample(rownames(chen.lognorm.glut[chen.lognorm.glut$Engramcell=="Active",]), 3))
+# 
+# test_data <- chen.lognorm.glut[test_data,]
+
+
+# resampled.regularizedRF.crossvalidated
+classifier.Excitatory_mpfc <-  resampled.randomForest.crossvalidated( data= chen.lognorm.glut,
+                                                     under.represented.class = "Active",
+                                                     over.represented.class = "Inactive",
+                                                     trees.total = 1000,
+                                                     folds = 10,
+                                                     proportion.each.batch=0.8,
+                                                     batches.per.fold=20)
+
+# Importance
+
+importance.df.mpfc_excitatory<- data.frame(gene = as.character( rownames(classifier.Excitatory_mpfc$importance) ),
+                                importance_score = as.numeric(classifier.Excitatory_mpfc$importance ) ) %>%
+  arrange(desc(importance_score))
+
+head(importance.df.mpfc_excitatory, 100) # don't forget to run this before gettng  the regularized
+```
+
+write_csv(importance.df.mpfc_excitatory,"mpfc_excitatory_remote_memory_gene_importance.csv")
+
+Lets see if cell types have issues in them 
+```{r}
+# clsuters, 0, 1,2, 3, 6 the Rorb+,Fam19a1+, Cck+, Cdh18, and Tshz2+ glutematergic neurons
+# are what may have contrubted here
+
+for (clust in c(0:3,6)){
+  marker_genes <- mpfc_neurons_markers$gene[mpfc_neurons_markers$cluster==clust]
+  marker_genes.idx <- importance.df.mpfc_excitatory$gene %in% marker_genes
+  print( paste("Cluster ", as.character(clust), sep ='') )
+  print( mean(importance.df.mpfc_excitatory$importance_score[marker_genes.idx]) )
+  print(" ")
+}
+```
+It seems like generally the classifier is ignoring cluster markers.  If we try it with only the top 10 genes from each cell tyope I wonder what will happen.
+
+```{r}
+
+top10 <- mpfc_neurons_markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 10, order_by = avg_log2FC)
+
+
+for (clust in c(0:3,6)){
+  marker_genes <- top10$gene[top10$cluster==clust]
+  marker_genes.idx <- importance.df.mpfc_excitatory$gene %in% marker_genes
+  print( paste("Cluster ", as.character(clust), sep ='') )
+  print( mean(importance.df.mpfc_excitatory$importance_score[marker_genes.idx]) )
+  print(" ")
+}
+
+```
+Focusing on the top expressed genes does not change much.
+
+
+
+
+```{r}
+predictions <- as.numeric(predict(classifier.Excitatory_mpfc, 
+                                  chen.lognorm.glut[,c(1:(dim(chen.lognorm.glut)[2]-1))],
+                                  type="response"))
+
+names(predictions) <- names(chen.lognorm.glut$Engramcell)
+
+# the roc is quite good again, 
+roc.engramcell = roc(chen.lognorm.glut$Engramcell,
+                     predictions, 
+                     plot=TRUE, legacy.axes=TRUE, percent=TRUE,
+                     xlab="False Positive Percentage", ylab="True Postive Percentage", 
+                     col="firebrick4", lwd=4, print.auc=TRUE)
+
+```
+
+
+```{r}
+predictions <- as.numeric(predict(classifier.Excitatory_mpfc, 
+                                  chen.lognorm.glut[,c(1:(dim(chen.lognorm.glut)[2]-1))],
+                                  type="response"))
+```
+
+
+
+### Regularizing the Classifier
+
+The previous classifer had disapointingly low importance scores for the genes and a suspisciously good AUC.  I am curious if regularization could help this.
+```{r}
+
+# resampled.regularizedRF.crossvalidated
+classifier.Excitatory_mpfc.reg <-  resampled.regularizedRF.crossvalidated( data= chen.lognorm.glut,
+                                                     under.represented.class = "Active",
+                                                     over.represented.class = "Inactive",
+                                                     trees.total = 1000,
+                                                     folds = 10,
+                                                     proportion.each.batch=0.8,
+                                                     batches.per.fold=20)
+
+```
+
+
+```{r}
+importance.df.mpfc_excitatory.reg <- data.frame(gene = as.character( rownames(classifier.Excitatory_mpfc.reg$importance) ),
+                                importance_score = as.numeric(classifier.Excitatory_mpfc.reg$importance) ) %>%
+  arrange(desc(importance_score))
+
+head(importance.df.mpfc_excitatory.reg , 100) # don't forget to run this before gettng  the regularized
+```
+
+```{r}
+predictions <- as.numeric(predict(classifier.Excitatory_mpfc.reg, 
+                                  chen.lognorm.glut[,c(1:(dim(chen.lognorm.glut)[2]-1))],
+                                  type="response"))
+
+names(predictions) <- names(chen.lognorm.glut$Engramcell)
+
+# the roc is quite good again, 
+roc.engramcell = roc(chen.lognorm.glut$Engramcell,
+                     predictions, 
+                     plot=TRUE, legacy.axes=TRUE, percent=TRUE,
+                     xlab="False Positive Percentage", ylab="True Postive Percentage", 
+                     col="firebrick4", lwd=4, print.auc=TRUE)
+```
+```{r}
+for (clust in c(0:3,6)){
+  marker_genes <- mpfc_neurons_markers$gene[mpfc_neurons_markers$cluster==clust]
+  marker_genes.idx <- importance.df.mpfc_excitatory.reg$gene %in% marker_genes
+  print( paste("Cluster ", as.character(clust), sep ='') )
+  print( mean(importance.df.mpfc_excitatory.reg$importance_score[marker_genes.idx]) )
+  print(" ")
+}
+
+```
+
+
+```{r}
+top10 <- mpfc_neurons_markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 10, order_by = avg_log2FC)
+
+
+for (clust in c(0:3,6)){
+  marker_genes <- top10$gene[top10$cluster==clust]
+  marker_genes.idx <- importance.df.mpfc_excitatory.reg$gene %in% marker_genes
+  print( paste("Cluster ", as.character(clust), sep ='') )
+  print( mean(importance.df.mpfc_excitatory.reg$importance_score[marker_genes.idx]) )
+  print(" ")
+}
+```
+
+Not seeing much difference here though there are some slight differences
+
+## Using td+ generally as a label
+
+I want to see if the same results are maintained by usign the td+ label on it's own
+as a marker.  
+
+```{r}
+# this normalizaition is across the whole dataset
+# here instead of looking at only those cells active in 
+# the fear recal task we use any positively labelled cell
+chen.lognorm.glut.anypos <- chen.lognorm.glut
+Activity_defintion <- chen2020_meta$engram_label == "tdT+"
+chen.lognorm.glut.anypos$Engramcell <- Activity_defintion[excitatory.chen.idx]
+chen.lognorm.glut.anypos$Engramcell <- as.factor(chen.lognorm.glut.anypos$Engramcell)
+levels(chen.lognorm.glut.anypos$Engramcell) <- c("Inactive", "Active")
+
+# For debugging the classifier
+# test_data <- c(sample(rownames(chen.lognorm.glut[chen.lognorm.glut$Engramcell=="Inactive",]), 7), sample(rownames(chen.lognorm.glut[chen.lognorm.glut$Engramcell=="Active",]), 3))
+# 
+# test_data <- chen.lognorm.glut[test_data,]
+
+
+# had to switch the under vs over represented class
+classifier.Excitatory_mpfc.anypos <-  resampled.randomForest.crossvalidated(
+                                                     data= chen.lognorm.glut.anypos,
+                                                     under.represented.class = "Inactive",
+                                                     over.represented.class = "Active",
+                                                     trees.total = 1000,
+                                                     folds = 10,
+                                                     proportion.each.batch=0.8,
+                                                     batches.per.fold=20)
+
+# Importance
+
+importance.df.mpfc_excitatory.anypos <- data.frame(gene = as.character( rownames(classifier.Excitatory_mpfc.anypos$importance) ),
+                                importance_score = as.numeric(classifier.Excitatory_mpfc.anypos$importance ) ) %>%
+  arrange(desc(importance_score))
+
+head(importance.df.mpfc_excitatory.anypos, 100)
+```
+
+```{r}
+predictions <- as.numeric(predict(classifier.Excitatory_mpfc.anypos, 
+                                  chen.lognorm.glut.anypos[,c(1:(dim(chen.lognorm.glut.anypos)[2]-1))],
+                                  type="response"))
+
+names(predictions) <- names(chen.lognorm.glut.anypos$Engramcell)
+
+# the roc is quite good again, 
+roc.engramcell = roc(chen.lognorm.glut.anypos$Engramcell,
+                     predictions, 
+                     plot=TRUE, legacy.axes=TRUE, percent=TRUE,
+                     xlab="False Positive Percentage", ylab="True Postive Percentage", 
+                     col="firebrick4", lwd=4, print.auc=TRUE)
+```
+
+
+# applying this to kwon
+
+We will need to retrain a classifier on the shared genes.
+
+```{r}
+# filter kow for the shared genes between kwon and chen
+chen.genes.idx <- rownames(kwon2021_counts) %in% colnames(chen.lognorm)
+kwon_mpfc.log <- log.norm(kwon2021_counts) # this is throwing an error now, no idea why
+# worked perfectly fine before
+kwon_mpfc.log <- kwon_mpfc.log[,chen.genes.idx]
+```
+
+
+```{r}
+shared.genes <- colnames(chen.lognorm.glut) %in% colnames(kwon_mpfc.log)
+# this keeps the engramcell labels without having to readd them
+shared.genes[length(shared.genes)] <- TRUE
+
+# remeber chen.lognormglut is log normlized WITH the glutametergic neurons
+classifier.Excitatory_mpfc.kwongenes <-  resampled.randomForest.crossvalidated( 
+                                   data= chen.lognorm.glut[,shared.genes],
+                                   under.represented.class = "Active",
+                                   over.represented.class = "Inactive",
+                                   trees.total = 1000,
+                                   folds = 10,
+                                   proportion.each.batch=0.8,
+                                   batches.per.fold=20)
+```
+
+
+
+```{r}
+# we now need the cell labels from our seurat integrated clustering
+# so we need to align the index we are using for cell types
+kwon.idx  <- (combined.meta$condition == 'Control') | (combined.meta$condition == 'CUS')
+
+
+kwon2021_meta$integrated_cluster <- mpfc_neurons.combined.sct@active.ident[kwon.idx]
+
+```
+
+```{r}
+classifier.Excitatory_mpfc
+```
+
+
+```{r}
+kwon.glut.idx <- kwon2021_meta$integrated_cluster %in% c("Rorb", "Fam19a1", "Cck", "Cdh18", "Tshz2")
+
+# for inhibitory neurons
+#("Sst", "Vip")
+
+kwon_mpfc.log.glut <- kwon_mpfc.log[kwon.glut.idx,]
+
+# making predictions
+on.kwon <- make.predictions.df(classifier.Excitatory_mpfc.kwongenes,
+                                 kwon_mpfc.log.glut,
+                                 meta.data.label.column = bogus.factor)
+
+predict.kwon <- predict(classifier.Excitatory_mpfc.kwongenes, kwon_mpfc.log.glut, type = 'prob')
+predict.kwon <- data.frame(predict.kwon)
+predict.kwon$celltype <- kwon2021_meta$integrated_cluster[kwon.glut.idx]
+predict.kwon$condition <- kwon2021_meta$condition[kwon.glut.idx]
+```
+
+There are more glutametergic cells predicted to be active in the chronic stress condition.
+How ever overall these cells are not as rare compared to recently active cells.
+
+```{r}
+# > sum(predict.kwon$Active[predict.kwon$condition=="Control"]>0.5)
+# [1] 2827
+# > sum(predict.kwon$Active[predict.kwon$condition=="CUS"]>0.5)
+# [1] 3556
+# > mean(predict.kwon$Active[predict.kwon$condition=="Control"]>0.5)
+# [1] 0.3040112
+# > mean(predict.kwon$Active[predict.kwon$condition=="CUS"]>0.5)
+# [1] 0.3484225
+```
+
+
+```{r}
+predict.kwon$RemoteMemoryCell <- predict.kwon$Active>=0.5
+predict.kwon$sample <- kwon2021_meta$mouse.replicate[kwon.glut.idx]
+```
+
+Making frequency table
+
+```{r}
+df <- predict.kwon[,c(3:6)]
+
+df <- data.frame(table(df))
+
+# we need to remove the gabanergic entries, preserved because they are factors
+df <- df[!((df$celltype == 'Sst') | (df$celltype == 'Vip')),]
+
+#we need to remove rows representing samples which were not in that condition
+# i.e. cell from mouse replicate 30 in the CUS condition, becuase those do not exist, rep30 was in control
+# these entries have zero cells so can be filtered that way
+df <- df[df$Freq>0,]
+
+#fialed first attempt
+#df <- df[!((df$condition == 'CUS') | (df$sample ==  c('Rep30','Rep31','Rep33','Rep34') )),]
+#df <- df[!((df$condition == 'Control') | (df$sample ==  c('Rep45','Rep46','Rep48','Rep49') )),]
+df$celltype <- as.factor(df$celltype)
+df$condition <- as.factor(df$condition)
+df$RemoteMemoryCell <- as.factor(df$RemoteMemoryCell)
+df$sample <- as.factor(df$sample)
+```
+
+
+## Training regression models on this to indentify if there is an effect on cell count
+
+First we will use some linerar regression though i feel the question is more suited to
+logistic regression.
+
+```{r}
+linmodel <- lm(formula=Freq~condition*celltype*RemoteMemoryCell,
+               data = df)
+summary(linmodel)
+```
+
+
+
+# mixed effects model
+```{r}
+mixedmodel <- lmer(formula =Freq ~ 1 + (1|sample) + celltype*condition*RemoteMemoryCell,
+              data = df)
+summary(mixedmodel)
+```
+
+Trying again with a different formulation, this will include a random effect intereaction with
+celltype to account for sample specific variations in it.
+
+```{r}
+mixedmodel2 <- lmer(formula =Freq ~ 1 + (1|sample:celltype) + celltype*condition*RemoteMemoryCell,
+              data = df)
+summary(mixedmodel2)
+```
+
+Attempting now with logistic regression
+based on this tutorial https://stats.oarc.ucla.edu/r/dae/logit-regression/
+```{r}
+logregmodel <- glm(RemoteMemoryCell ~ condition + celltype, 
+                   data = df, family = "binomial")
+summary(logregmodel)
+```
+
+
+
+Now including interactions
+```{r}
+logregmodel2 <- glm(RemoteMemoryCell ~ condition * celltype, 
+                   data = df, family = "binomial")
+summary(logregmodel2)
+```
+
+
+```{r}
+logregmodel3 <- glm(RemoteMemoryCell ~ sample*condition * celltype, 
+                   data = df, family = "binomial")
+summary(logregmodel3)
+```
+
+One last go with a rediculously simpl model
+```{r}
+logregmodel4 <- glm(RemoteMemoryCell ~ condition, 
+                   data = df, family = "binomial")
+summary(logregmodel4)
+```
+
+
+
+
+## With context only cells
+
+```{r}
+# this normalizaition is across the whole dataset
+# here instead of looking at only those cells active in 
+# the fear recal task we use any positively labelled cell
+chen.lognorm.glut.nofear <- chen.lognorm.glut
+Activity_defintion <- chen2020_meta$condition_label == "Context-Only" & chen2020_meta$engram_label == "tdT+"
+chen.lognorm.glut.nofear$Engramcell <- Activity_defintion[excitatory.chen.idx]
+chen.lognorm.glut.nofear$Engramcell <- as.factor(chen.lognorm.glut.nofear$Engramcell)
+levels(chen.lognorm.glut.nofear$Engramcell) <- c("Inactive", "Active")
+
+classifier.Excitatory_mpfc.nofear <-  resampled.randomForest.crossvalidated(
+                                                     data= chen.lognorm.glut.nofear,
+                                                     under.represented.class = "Active",
+                                                     over.represented.class = "Inactive",
+                                                     trees.total = 1000,
+                                                     folds = 10,
+                                                     proportion.each.batch=0.8,
+                                                     batches.per.fold=20)
+
+# Importance
+
+importance.df.mpfc_excitatory<- data.frame(gene = as.character( rownames(classifier.Excitatory_mpfc$importance) ),
+                                importance_score = as.numeric(classifier.Excitatory_mpfc$importance ) ) %>%
+  arrange(desc(importance_score))
+
+head(importance.df.mpfc_excitatory, 100)
+```
+
+
+
+## Trying a Logistic regression model instead
+
+```{r}
+# Smote https://www.statology.org/smote-in-r/
+# https://rdrr.io/cran/ROSE/man/ROSE-package.html
+# multiclass classification in randomForest
+
+# Loading package
+library(caTools)
+library(ROCR) 
+library(groupdata2)
+   
+# Splitting dataset with group data2
+# find idents of all chen cells
+chen.idents <- mpfc_neurons.combined.sct@active.ident[colnames(combined.counts) %in% colnames(chen2020_counts)]
+
+table(mpfc_neurons.combined.sct@active.ident[colnames(combined.counts) %in% rownames(chen.lognorm.glut)])
+
+excitatory.chen.idx <- chen.idents[chen.idents %in% c("Rorb","Fam19a1","Cck","Cdh18","Tshz2")]
+excitatory.chen.idx <- colnames(combined.counts) %in% rownames(chen.lognorm.glut)
+# get the index of glutametergic chen cells in seurat object with labels
+glut.seurat.idx <- rownames(mpfc_neurons.combined.sct@meta.data) %in% rownames(chen.lognorm.glut)
+# use th index to pull celltype, label, and the active (td+ in fear recal)
+cell_type_df <- data.frame( celltype = mpfc_neurons.combined.sct@active.ident[excitatory.chen.idx])
+cell_type_df$label_status <- mpfc_neurons.combined.sct@meta.data$label_status[excitatory.chen.idx]
+cell_type_df$Active <- chen.lognorm.glut$Engramcell
+cell_type_df$cell_id <- rownames(chen.lognorm.glut)
+# groupdata2 vinette
+# https://cran.r-project.org/web/packages/groupdata2/vignettes/cross-validation_with_groupdata2.html#:~:text=groupdata2%20functions%20in%20focus,-partition()%20creates&text=fold()%20creates%20(optionally)%20balanced,participant_id)%20in%20the%20same%20fold.
+
+# now we partition by td+fear recall cells, active, with balanced cell types
+# we don't need to worry about the conditions
+balanced_partitions <- partition( cell_type_df, p = 0.3, cat_col = 'Active')
+
+train_data <- chen.lognorm.glut[balanced_partitions[[1]]$cell_id,]
+test_data <- chen.lognorm.glut[balanced_partitions[[2]]$cell_id,]
+
+# Training model
+logistic_model <- glm(Engramcell ~ ., 
+                      data = train_data, 
+                      family = "binomial")
+logistic_model
+   
+# Summary
+summary(logistic_model)
+   
+# Predict test data based on model
+predict_reg <- predict(logistic_model, 
+                       test_reg, type = "response")
+predict_reg  
+   
+# Changing probabilities
+predict_reg <- ifelse(predict_reg >0.5, 1, 0)
+   
+# Evaluating model accuracy
+# using confusion matrix
+table(test_reg$vs, predict_reg)
+   
+missing_classerr <- mean(predict_reg != test_reg$vs)
+print(paste('Accuracy =', 1 - missing_classerr))
+   
+# ROC-AUC Curve
+ROCPred <- prediction(predict_reg, test_reg$vs) 
+ROCPer <- performance(ROCPred, measure = "tpr", 
+                             x.measure = "fpr")
+   
+auc <- performance(ROCPred, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+   
+# Plotting curve
+plot(ROCPer)
+plot(ROCPer, colorize = TRUE, 
+     print.cutoffs.at = seq(0.1, by = 0.1), 
+     main = "ROC CURVE")
+abline(a = 0, b = 1)
+   
+auc <- round(auc, 4)
+legend(.6, .4, auc, title = "AUC", cex = 1)
+```
+  Plan for multiclass classifier: 
+  1) input will be metadata containing engram label, cell type, and cell_id
+  2) partition() or other group data for cross validation
+  3) upsample in each fold to get matching number of cells types
+  4) upsample the active cell type
+  5) only keep the cell ids from the previous steps
+  6) generate the training and test data for each fold
+  from this list of cell ids normalized_data[cell_id_fold[i]]
+  7) train multiclass randomForest
+  8) calculate the predictions and performance, store the confusion matrix
+  9) merge model
+  10) repeat
+
+
+
+
+### Caret multi-class classifier to deal with cell types
+
+There is an uneven distribution of labelled neurons within these clusters.
+```{r}
+clustercellcount.table<-table(mpfc_neurons.combined.sct@active.ident,mpfc_neurons.combined.sct@meta.data$label_status)
+clustercellcount.table
+```
+
+
+```{r}
+percentcells.table <- clustercellcount.table
+
+for(i in c(1:3)){
+  percentcells.table[,i] <- (percentcells.table[,i]/sum(percentcells.table[,i]) )*100
+  percentcells.table[,i] <- round(percentcells.table[,i], 1)
+}
+percentcells.table
+
+```
+
+```{r}
+kwon.idx <- mpfc_neurons.combined.sct@meta.data$label_status=="discovery_data"
+
+clustercellcount.table.kwon <-table(mpfc_neurons.combined.sct@active.ident[kwon.idx],mpfc_neurons.combined.sct@meta.data$condition[kwon.idx])
+
+percentcells.table.kwon <- clustercellcount.table.kwon
+
+for(i in c(1:2)){
+  percentcells.table.kwon[,i] <- (percentcells.table.kwon[,i]/sum(percentcells.table.kwon[,i]) )*100
+  percentcells.table.kwon[,i] <- round(percentcells.table.kwon[,i], 1)
+}
+percentcells.table.kwon
+
+```
+So while in the chen data set the FACS processing seems to have screwed up the percentage of cells in the data, the Kwon dataset pretty much has the same abundances of these cell types.  
+
+
+```{r}
+table(mpfc_neurons.combined.sct@meta.data$condition,
+      mpfc_neurons.combined.sct@active.ident, 
+      mpfc_neurons.combined.sct@meta.data$label_status)
+```
+
+
+```{r}
+#Attempting to use caret
+
+Activity_defintion <- chen2020_meta$condition_label == "Fear-Recall" & chen2020_meta$engram_label == "tdT+"
+chen.lognorm$Engramcell <- Activity_defintion
+chen.lognorm$Engramcell <- as.factor(chen.lognorm$Engramcell)
+levels(chen.lognorm$Engramcell) <- c("Inactive", "Activated")
+
+
+Activity_defintion <- as.character(sapply(c(1:3530), 
+                             function(x) paste(as.character(chen.lognorm$Engramcell[x]), mpfc_neurons.combined.sct@active.ident[combined.meta$label_status!="discovery_data"][x],
+                                               sep="_")  ) )
+
+Activity_defintion <- as.character(lapply(Activity_defintion, function(x) if(grepl("Inactive", x, fixed=TRUE)) "Inactive" else x) )
+
+table(Activity_defintion)
+
+chen.lognorm$Engramcell <- as.factor(Activity_defintion)
+
+
+# caret
+ctrl <- trainControl(method = "repeatedcv", repeats = 5,
+                     classProbs = TRUE,
+                     summaryFunction = multiClassSummary,
+                     #classProbs = TRUE,
+                     ## new option here:
+                     sampling = "up")
+
+model_with_up_sample <- train(Engramcell ~ ., data = chen.lognorm,
+                                method = "ordinalRF",
+                                preProcess = c("range"),
+                                verbose = FALSE,
+                                trControl = ctrl)
+
+# I fyou get the error : Error: protect(): protection stack overflow
+# run...
+# options(expressions = 5e5)
+
+# caret tutorial using random forest:
+# https://www.machinelearningplus.com/machine-learning/caret-package/
+
+# multi class classfication in caret
+# https://stats.stackexchange.com/questions/453259/multi-class-probabilities-of-random-forest-inside-caret-model
+
+# cv and resampling
+# https://stackoverflow.com/questions/45250252/how-to-downsample-using-r-caret
+
+# cv stakc question in caret just for good measure
+# https://stackoverflow.com/questions/22909197/creating-folds-for-k-fold-cv-in-r-using-caret
+
+# how to do it in random forest
+# https://rpubs.com/jkylearmstrong/RF_Imputation_Multi_class
+
+
+```
+
+
+Saving and loading the model
+```{r}
+file_name <- "classifierExcitatory_mpfc.rds"
+saveRDS(classifier.Excitatory_mpfc, file_name)
+#readRDS("model_rf.RDS")
+```
+
+```{r}
+
+readRDS("classifierExcitatory_mpfc.rds")
+
+```
+
+

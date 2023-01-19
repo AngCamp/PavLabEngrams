@@ -53,14 +53,14 @@ change_colnames <- function(df.in, s, idx = c(1:dim(df.in)[2]) ){
   return(df.in)
 }
 cells <- c(2:5001)
-Ctrl_Rep30 <- change_colnames(Ctrl_Rep30, "Ctrl_Rep30", idx = cells)
-Ctrl_Rep31 <-change_colnames(Ctrl_Rep31, "Ctrl_Rep31",idx = cells) 
-Ctrl_Rep33 <- change_colnames(Ctrl_Rep33, "Ctrl_Rep33", idx = cells)
-Ctrl_Rep34 <- change_colnames(Ctrl_Rep34, "Ctrl_Rep34", idx = cells) 
-Stress_Rep45 <- change_colnames(Stress_Rep45, "Stress_Rep45", idx = cells)
-Stress_Rep46 <- change_colnames(Stress_Rep46, "Stress_Rep46", idx = cells)
-Stress_Rep48 <- change_colnames(Stress_Rep48, "Stress_Rep48", idx = cells)
-Stress_Rep49 <- change_colnames(Stress_Rep49, "Stress_Rep49", idx = cells)
+Ctrl_Rep30 <- change_colnames(Ctrl_Rep30, "_Ctrl_Rep30", idx = cells)
+Ctrl_Rep31 <-change_colnames(Ctrl_Rep31, "_Ctrl_Rep31",idx = cells) 
+Ctrl_Rep33 <- change_colnames(Ctrl_Rep33, "_Ctrl_Rep33", idx = cells)
+Ctrl_Rep34 <- change_colnames(Ctrl_Rep34, "_Ctrl_Rep34", idx = cells) 
+Stress_Rep45 <- change_colnames(Stress_Rep45, "_Stress_Rep45", idx = cells)
+Stress_Rep46 <- change_colnames(Stress_Rep46, "_Stress_Rep46", idx = cells)
+Stress_Rep48 <- change_colnames(Stress_Rep48, "_Stress_Rep48", idx = cells)
+Stress_Rep49 <- change_colnames(Stress_Rep49, "_Stress_Rep49", idx = cells)
 
 dflist <- list(Ctrl_Rep30, Ctrl_Rep31, Ctrl_Rep33, Ctrl_Rep34,
                Stress_Rep45, Stress_Rep46, Stress_Rep48, Stress_Rep49)
