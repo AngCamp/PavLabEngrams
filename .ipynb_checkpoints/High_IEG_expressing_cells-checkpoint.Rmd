@@ -39,11 +39,6 @@ library(smotefamily) # for making smote from data, smote is a common algoirhtm f
 library(scrime) # provides rowscale
 ```
 
-This dataset is sn prfiling with time course of stress data: https://www.biorxiv.org/content/10.1101/2021.03.26.436970v1.full
-
-snRNA-seq data here: https://github.com/ETHZ-INS/StressomeExplorer/tree/main/data/snRNAseq
-
-
 
 ```{r, include=FALSE}
 # paul prefers a log base that's easy to do headmath with so no eulers numebr

@@ -85,7 +85,7 @@ Negative:  Junb, Scg5, Faf2, Fos, Ier2, Btg2, C2cd4b, Zfp956, Lrp11, Tmem246
 	   Cttn, Jun, Fam214b, Zfp112, Tsc22d1, Tm2d1, Tmem240, Uchl3, Cited2, Ly6h 
 	   
 	   
-Environmental Enrichment effects on DG expression
+Environmental Enrichment effects on DG expression (bulk I think)
 https://www.frontiersin.org/articles/10.3389/fnmol.2018.00126/full
 	   
 From PC1:
