@@ -15,6 +15,10 @@ https://www.science.org/doi/full/10.1126/science.abm1741
 -spatial map of gene expression, could be useful for discerning if "reactivation" is really just
 differential spatial recruitment
 
+Carazo-Arias, E., Nguyen, P. T., Kass, M., Jee, H. J., Nautiyal, K. M., Magalong, V., ... & Hen, R. (2022). Contribution of the opioid system to the antidepressant effects of fluoxetine. Biological Psychiatry, 92(12), 952-963.
+-intorduction has good description of various low trhougput and knowck out studies demonstrating the importance of various opioid receptors in the dnetate gyrus and their suppression of anxiety and depressive behaviour
+- they used Habib for thier single cell
+
 These PC's are from the full gene list of the Hochgerner post natal day P35.
 
 PC_ 1 
@@ -239,3 +243,7 @@ Schmitz, M. T., Sandoval, K., Chen, C. P., Mostajo-Radji, M. A., Seeley, W. W., 
 Krienen, F., Goldman, M., Mullally, C., Reed, N., McCarroll, S., & Berretta, S. (2021). A Cell Atlas of the Human Amygdala. Biological Psychiatry, 89(9), S11-S12.
 
 -human cell types of the amygdala with comparisson to mouse and marmoset may be useful
+
+Wang, W., Wang, M., Yang, M., Zeng, B., Qiu, W., Ma, Q., ... & Wang, X. (2022). Transcriptome dynamics of hippocampal neurogenesis in macaques across the lifespan and aged humans. Cell Research, 32(8), 729-743.
+https://www.nature.com/articles/s41422-022-00678-y#Sec11
+-single nucleaus of macaque and human

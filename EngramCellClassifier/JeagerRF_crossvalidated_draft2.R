@@ -21,7 +21,8 @@ library(pheatmap)
 library(caret)
 library(data.table)
 library(dplyr)
-
+library(readr) # for cross validated logistic regression
+library(caret)
 #Ayhan 2018
 # Ayhan, F., Kulkarni, A., Berto, S., Sivaprakasam, K., Douglas, C., Lega, B. C., &
 # Konopka, G. (2021). Resolving cellular and molecular diversity along the 
@@ -35,16 +36,20 @@ library(dplyr)
 setwd("/home/acampbell/PavLabEngrams/EngramCellClassifier")
 lacar2016_meta <- read.csv('Lacar2016_GSE77067/SraRunTable.txt', header = TRUE)
 lacar2016_snHC_counts <- read.table('Lacar2016_GSE77067/GSE77067_sn_hc_counts.txt.gz')
+lacar2016_snHC_counts[is.na(lacar2016_snHC_counts)] <- 0
 lacar2016_snNE_counts <- read.table('Lacar2016_GSE77067/GSE77067_sn_ne_counts.txt.gz')
+lacar2016_snNE_counts[is.na(lacar2016_snNE_counts)] <- 0
 lacar2016_wc_counts <- read.table('Lacar2016_GSE77067/GSE77067_wc_counts.txt.gz')
+lacar2016_wc_counts[is.na(lacar2016_wc_counts)] <- 0
 
 #Loading Jeager data
 #Jeagers meta rows are a little out of order w.r.t. their count data, i.e. rows do no correspond to cells order we fix that in a bit
 jeager2018_counts <- bind_cols(read.table('Jeager2018_GSE98679/GSE98679_count.txt.gz', header = TRUE, check.names = FALSE),
                                read.table('Jeager2018_GSE98679/GSE98679_v2_GSM3308862-GSM3309413_count.txt.gz', header = TRUE, check.names = FALSE))
+jeager2018_counts[is.na(jeager2018_counts)] <- 0
 
 jeager2018_meta <- read.csv('Jeager2018_GSE98679/SraRunTable.txt', header = TRUE)
-
+jeager2018_meta$umi <- colSums(jeager2018_counts)
 
 jeager2018_meta <- jeager2018_meta[c(1:46,599:912,47:598),] #here we fix the order
 rownames(jeager2018_meta) <- c(1:912)
@@ -97,15 +102,18 @@ jeager2018_counts$gene <- as.character(rownames(jeager2018_counts))
 jeager2018_counts <- jeager2018_counts[rownames(jeager2018_counts) %in% shared.genes,]
 #jeager2018_counts <- lastcol.to.firstcol(jeager2018_counts)
 
+wc_umi <- colSums(lacar2016_wc_counts)
 lacar2016_wc_counts$gene <- as.character(rownames(lacar2016_wc_counts))
 lacar2016_wc_counts <- lacar2016_wc_counts[rownames(lacar2016_wc_counts) %in% shared.genes,]
 
 #lacar2016_wc_counts <- lastcol.to.firstcol(lacar2016_wc_counts)
 
+snHC_umi <- colSums(lacar2016_snHC_counts)
 lacar2016_snHC_counts$gene <- as.character(rownames(lacar2016_snHC_counts))
 lacar2016_snHC_counts <-lacar2016_snHC_counts[rownames(lacar2016_snHC_counts) %in% shared.genes,]
 #lacar2016_snHC_counts <- lastcol.to.firstcol(lacar2016_snHC_counts)
 
+snNE_umi <- colSums(lacar2016_snNE_counts)
 lacar2016_snNE_counts$gene <- as.character(rownames(lacar2016_snNE_counts))
 lacar2016_snNE_counts <-lacar2016_snNE_counts[rownames(lacar2016_snNE_counts) %in% shared.genes,]
 #lacar2016_snNE_counts <- lastcol.to.firstcol(lacar2016_snNE_counts)
@@ -118,12 +126,14 @@ not.ptz <- which(lacar2016_meta$treatment != "PTZ")
 DG.idx <- which(jeager2018_meta$predicted_cell_type=="DG")
 
 # we must add 1 to the values of DG.idx and not.ptz to deal with the generow shifting the index 1
-combined.counts <- jeager2018_counts[, c(DG.idx,862)] %>% 
-  left_join(lacar2016_wc_counts[, c(not.ptz[not.ptz <= 82],83)], by = 'gene' , all.y = TRUE) %>%
+combined.counts <- jeager2018_counts[, c(DG.idx,which(colnames(jeager2018_counts)=='gene'))] %>% 
+  left_join(lacar2016_wc_counts[, c(not.ptz[not.ptz <= 82],which(colnames(lacar2016_wc_counts)=='gene'))], by = 'gene' , all.y = TRUE) %>%
   left_join(lacar2016_snHC_counts, by = 'gene', all.y = TRUE) %>%
   left_join(lacar2016_snNE_counts, by = 'gene', all.y = TRUE) #%>% 
 
-
+# making the umi counts
+combined_umi <- c(jeager2018_meta$umi[DG.idx],wc_umi[not.ptz[not.ptz <= 82]],
+                  snHC_umi, snNE_umi  )
 #this join is possibly including the gene rows leading to mismatch number of cells later 
 
 #give the combined.counts genes for rownames and get rid of that column
@@ -171,7 +181,9 @@ combined.meta <- data.frame(experiment.label,
                             treatment,
                             facs_sort,
                             fos_status,
-                            ActivityStatus)
+                            ActivityStatus,
+                            combined_umi)
+
 #this throws an error mismatch number of rows and genes most likely
 rownames(combined.meta) <- colnames(combined.counts)
 combined.meta$CellID <- rownames(combined.meta)
@@ -234,6 +246,16 @@ hochgerner5k_2018_counts <- hochgerner5k_2018_counts %>%
   dplyr::slice(-c(1:3))
 hochgerner5k_2018_counts[is.na(hochgerner5k_2018_counts)] <- 0
 
+hochcells <- colnames(hochgerner5k_2018_counts)
+hochgenes <- rownames(hochgerner5k_2018_counts)
+hochgerner5k_2018_counts <- data.frame(lapply(hochgerner5k_2018_counts, as.numeric))
+colnames(hochgerner5k_2018_counts) <- hochcells
+rownames(hochgerner5k_2018_counts) <- hochgenes
+
+hochgerner5k_2018_counts[is.na(hochgerner5k_2018_counts)] <- 0
+# getting umi
+hochgerner5k_2018_meta$umi <- colSums(hochgerner5k_2018_counts)
+
 #get index locations of adult p35 DGCs
 hoch5k.GC_Adult.p35.idx <- (hochgerner5k_2018_meta$age.days.=="35") | (hochgerner5k_2018_meta$age.days.=="35*")
 hoch5k.GC_Adult.p35.idx <- (hoch5k.GC_Adult.p35.idx) & (hochgerner5k_2018_meta$cluster_name == "Granule-mature")
@@ -247,7 +269,8 @@ colnames(hochgernerDGC_counts) <- colnames(hochgerner5k_2018_counts)[hochgerner5
 #### Functions
 
 # paul prefers a log base that's easy to do headmath with so no eulers numebr
-pseudocount_log2p1_transform <- function(x, scale_factor = 10000, UMI.provided = NULL){
+# normalization functions
+pseudocount_log2p1_transform <- function(x, scale_factor = 10^6, UMI.provided = NULL){
   if(is.null(UMI.provided)){
     counts <- sum(x)}else{
       counts <- UMI.provided
@@ -263,13 +286,14 @@ pavlab.normalize <- function(df, UMI = NULL){
   if( is.null(UMI)){
     df <- data.frame(apply(df,  MARGIN = 2, pseudocount_log2p1_transform))
   }else{
-    df <- data.frame(apply(df,  MARGIN = 2, pseudocount_log2p1_transform(UMI.provided=UMI)))
+    #
+    df[] <- Map(pseudocount_log2p1_transform, df, UMI.provided = UMI)
+    
   }
   colnames(df) <- df.cols
   rownames(df)<- df.rows
   return(df)
 }
-
 
 
 #normalization functions, log.norm calls logplusone
@@ -289,7 +313,8 @@ seurat.normalize <- function(df, UMI = NULL){
   if( is.null(UMI)){
     df <- data.frame(apply(df,  MARGIN = 2, seurat_log1p_transform))
   }else{
-    df <- data.frame(apply(df,  MARGIN = 2, seurat_log1p_transform(UMI.provided=UMI)))
+    #
+    df[] <- Map(seurat_log1p_transform, df, UMI.provided = UMI)
   }
   colnames(df) <- df.cols
   rownames(df)<- df.rows
@@ -316,6 +341,84 @@ log.norm <- function(df.in){
   colnames(df.out) <- rownames(df.in)
   return(df.out)
 }
+
+#modified version of randomForest::combine() which can handle different sized forests
+# without this it throws and error when combining the votes
+my_combine <- function (...) 
+{
+  pad0 <- function(x, len) c(x, rep(0, len - length(x)))
+  padm0 <- function(x, len) rbind(x, matrix(0, nrow = len - 
+                                              nrow(x), ncol = ncol(x)))
+  rflist <- list(...)
+  areForest <- sapply(rflist, function(x) inherits(x, "randomForest"))
+  if (any(!areForest)) 
+    stop("Argument must be a list of randomForest objects")
+  rf <- rflist[[1]]
+  classRF <- rf$type == "classification"
+  trees <- sapply(rflist, function(x) x$ntree)
+  ntree <- sum(trees)
+  rf$ntree <- ntree
+  nforest <- length(rflist)
+  haveTest <- !any(sapply(rflist, function(x) is.null(x$test)))
+  vlist <- lapply(rflist, function(x) rownames(importance(x)))
+  numvars <- sapply(vlist, length)
+  if (!all(numvars[1] == numvars[-1])) 
+    stop("Unequal number of predictor variables in the randomForest objects.")
+  for (i in seq_along(vlist)) {
+    if (!all(vlist[[i]] == vlist[[1]])) 
+      stop("Predictor variables are different in the randomForest objects.")
+  }
+  haveForest <- sapply(rflist, function(x) !is.null(x$forest))
+  if (all(haveForest)) {
+    nrnodes <- max(sapply(rflist, function(x) x$forest$nrnodes))
+    rf$forest$nrnodes <- nrnodes
+    rf$forest$ndbigtree <- unlist(sapply(rflist, function(x) x$forest$ndbigtree))
+    rf$forest$nodestatus <- do.call("cbind", lapply(rflist, 
+                                                    function(x) padm0(x$forest$nodestatus, nrnodes)))
+    rf$forest$bestvar <- do.call("cbind", lapply(rflist, 
+                                                 function(x) padm0(x$forest$bestvar, nrnodes)))
+    rf$forest$xbestsplit <- do.call("cbind", lapply(rflist, 
+                                                    function(x) padm0(x$forest$xbestsplit, nrnodes)))
+    rf$forest$nodepred <- do.call("cbind", lapply(rflist, 
+                                                  function(x) padm0(x$forest$nodepred, nrnodes)))
+    tree.dim <- dim(rf$forest$treemap)
+    if (classRF) {
+      rf$forest$treemap <- array(unlist(lapply(rflist, 
+                                               function(x) apply(x$forest$treemap, 2:3, pad0, 
+                                                                 nrnodes))), c(nrnodes, 2, ntree))
+    }
+    else {
+      rf$forest$leftDaughter <- do.call("cbind", lapply(rflist, 
+                                                        function(x) padm0(x$forest$leftDaughter, nrnodes)))
+      rf$forest$rightDaughter <- do.call("cbind", lapply(rflist, 
+                                                         function(x) padm0(x$forest$rightDaughter, nrnodes)))
+    }
+    rf$forest$ntree <- ntree
+    if (classRF) 
+      rf$forest$cutoff <- rflist[[1]]$forest$cutoff
+  }
+  else {
+    rf$forest <- NULL
+  }
+  #
+  #Tons of stuff removed here...
+  #
+  if (classRF) {
+    rf$confusion <- NULL
+    rf$err.rate <- NULL
+    if (haveTest) {
+      rf$test$confusion <- NULL
+      rf$err.rate <- NULL
+    }
+  }
+  else {
+    rf$mse <- rf$rsq <- NULL
+    if (haveTest) 
+      rf$test$mse <- rf$test$rsq <- NULL
+  }
+  rf
+}
+
 
 
 resample.randomForest <-function( df.in,
@@ -447,7 +550,13 @@ resampled.randomForest.crossvalidated <-function(data,
                                       "FPR", "FNR", "True Positives", "False Negatives", 
                                       "True Negatives", "False Positives")
     }else{
-      rf.out <- randomForest::combine(rf.out, rf.this_fold)
+      print(dim(testing_set))
+      print('rf.this_fold votes length...')
+      print(length(rf.this_fold$votes))
+      print('rf.out votes length...')
+      print(length(rf.out$votes))
+      #rf.out <- randomForest::combine(rf.out, rf.this_fold) #old code can't handle the 
+      rf.out <- my_combine(rf.out, rf.this_fold)
       # we need votes for all cells to calculate
       pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
       assess <- assessment( pred ) 
@@ -464,6 +573,11 @@ resampled.randomForest.crossvalidated <-function(data,
   rf.out$votes <- predict(object = rf.out, newdata = data, type = 'vote', norm.votes = FALSE)
   return(rf.out)
 }
+
+
+
+
+
 
 resample.regularizedRF <- function( df.in,
                                     under_represented_class,
@@ -550,7 +664,6 @@ resampled.regularizedRF.crossvalidated <-function(data,
                                       "FPR", "FNR", "True Positives", "False Negatives", 
                                       "True Negatives", "False Positives")
     }else{
-      rf.out <- RRF::combine(rf.out, rf.this_fold)
       # we need votes for all cells to calculate
       pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
       assess <- assessment( pred ) 
@@ -559,8 +672,8 @@ resampled.regularizedRF.crossvalidated <-function(data,
     
   }# end of for loop
   colnames(fold.performance) <- names(folds.obj)
-  fold.performance$Mean <- apply(fold.performance,MARGIN=1,  FUN = mean)
-  fold.performance$SigDiff <- apply(fold.performance,MARGIN=1,  FUN = sd)
+  fold.performance$Mean <- apply(fold.performance, MARGIN=1,  FUN = mean)
+  fold.performance$SigDiff <- apply(fold.performance, MARGIN=1,  FUN = sd)
   rf.out$Assessment <- fold.performance
   
   #votes needs to be updated to make roc curve
@@ -594,13 +707,19 @@ gene.shuffle <-function(dat){
 
 # Actually running the code with cross validation
 
-labeled.data.hochgerner2018_genes <-  log.norm(combined.counts)
+# old data
+labeled.data.hochgerner2018_genes <-  pavlab.normalize(combined.counts,
+                                                       UMI= combined.meta$combined_umi)
+genes <- rownames(labeled.data.hochgerner2018_genes)
+labeled.data.hochgerner2018_genes <- transpose(labeled.data.hochgerner2018_genes)
+colnames(labeled.data.hochgerner2018_genes) <- genes 
 
-hoch5k.adultDGCs.lognorm <- apply(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx], 
-                                  MARGIN = 1, 
-                                  FUN = as.integer)
-
-hoch5k.adultDGCs.lognorm <- log.norm( t(hoch5k.adultDGCs.lognorm) )
+# discovery data
+hoch5k.adultDGCs.lognorm <- pavlab.normalize(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx],
+                                             UMI = hochgerner5k_2018_meta$umi[hoch5k.GC_Adult.p35.idx])
+genes <- rownames(hoch5k.adultDGCs.lognorm)
+hoch5k.adultDGCs.lognorm <- transpose(hoch5k.adultDGCs.lognorm)
+colnames(hoch5k.adultDGCs.lognorm) <- genes
 
 #gene matching, there were extra commas here, possibly the cause of the errors
 shared.genes <- intersect( colnames(hoch5k.adultDGCs.lognorm), colnames(labeled.data.hochgerner2018_genes) )
@@ -610,13 +729,23 @@ labeled.data.hochgerner2018_genes$Engramcell <- as.factor(combined.meta$Activity
 
 # RRFclassifier.hoch <- resampled.regularizedRF.crossvalidated
 # classifier.hoch.normal <- resampled.randomForest.crossvalidated 
-classifier.hochgerner2018_genes <- RRFclassifier.hoch <- resampled.regularizedRF.crossvalidated( data= labeled.data.hochgerner2018_genes,
+classifier.hochgerner2018_genes <- resampled.randomForest.crossvalidated(data= labeled.data.hochgerner2018_genes,
                                                      under.represented.class = "Inactive",
                                                      over.represented.class = "Active",
-                                                     trees.total = 1000,
+                                                     trees.total = 100,
                                                      folds = 10,
                                                      proportion.each.batch=0.8,
                                                      batches.per.fold=20)
+
+# testing resampling method
+test <- resampled.randomForest.crossvalidated(data=labeled.data.hochgerner2018_genes,
+                                              under.represented.class = "Inactive",
+                                              over.represented.class = "Active",
+                                              trees.total = 100,
+                                              folds = 10,
+                                              proportion.each.batch=0.8,
+                                              batches.per.fold=5)
+
 
 # Importance
 #classifier.hochgerner2018_genes <- classifier.hoch.normal
