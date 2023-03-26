@@ -1379,43 +1379,44 @@ dev.off()
 
 #full dataset
 #takes 20 minutes to load no need for this now that we've filtered for the DGCs
-ayhan2021_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/GSE160189_Hippo_Counts.csv.gz")
-ayhan2021_counts.og <- ayhan2021_counts
-rownames(ayhan2021_counts) <- ayhan2021_counts$gene
-ayhan2021_counts[is.na(ayhan2021_counts)] <- 0
-ayhan2021_counts <- ayhan2021_counts[, c(2:dim(ayhan2021_counts)[2])]
-#
 
-ayhan2021_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/meta.tsv",
-                            sep = '\t', header = TRUE)
-
-
-#note that genes are in the first column, might as well just leave it for when we
-# need to merge it with jeager anyway.
-# subject id's are in the cell_id i.e. "P57_AAAGTAGGTCCAGTAT" "P57_AACCATGGTAAACACA"
-
-
-# note as per Ayhan et al., 2021 we do not want Den.Gyr3 as it is mostly from a single subjectayhan2021_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/GSE160189_Hippo_Counts.csv.gz")
-
-
-# cell ids to ensure we get the same cells in counts data
-# the counts data has a mismatching number of cells and may be in a different order
-ayhanDGC.cellids <- ayhan2021_meta$Cell[(ayhan2021_meta$Cluster == "Den.Gyr2")|(ayhan2021_meta$Cluster == "Den.Gyr1")]
-# filter and order according to metadata
-cell.match <- match(ayhanDGC.cellids, colnames(ayhanDGC.cellids))
-
-ayhanDGC_counts.filtered <- ayhan2021_counts[,ayhanDGC.cellids]
-ayhanDGC_counts.filtered$gene <- rownames(ayhanDGC_counts.filtered)
-
-# write to file
-write_csv(ayhanDGC_counts.filtered, "~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_counts.csv")
-
-# get a filter for the meta data
-ayhanDGCmeta.idx <- ayhan2021_meta$Cell %in% colnames(ayhanDGC_counts.filtered)
-
-# filter and write to file in one line
-write_csv(ayhan2021_meta[ayhanDGCmeta.idx,],"~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_meta.csv")
-
+# ayhan2021_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/GSE160189_Hippo_Counts.csv.gz")
+# ayhan2021_counts.og <- ayhan2021_counts
+# rownames(ayhan2021_counts) <- ayhan2021_counts$gene
+# ayhan2021_counts[is.na(ayhan2021_counts)] <- 0
+# ayhan2021_counts <- ayhan2021_counts[, c(2:dim(ayhan2021_counts)[2])]
+# #
+# 
+# ayhan2021_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/meta.tsv",
+#                             sep = '\t', header = TRUE)
+# 
+# 
+# #note that genes are in the first column, might as well just leave it for when we
+# # need to merge it with jeager anyway.
+# # subject id's are in the cell_id i.e. "P57_AAAGTAGGTCCAGTAT" "P57_AACCATGGTAAACACA"
+# 
+# 
+# # note as per Ayhan et al., 2021 we do not want Den.Gyr3 as it is mostly from a single subjectayhan2021_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/GSE160189_Hippo_Counts.csv.gz")
+# 
+# 
+# # cell ids to ensure we get the same cells in counts data
+# # the counts data has a mismatching number of cells and may be in a different order
+# ayhanDGC.cellids <- ayhan2021_meta$Cell[(ayhan2021_meta$Cluster == "Den.Gyr2")|(ayhan2021_meta$Cluster == "Den.Gyr1")]
+# # filter and order according to metadata
+# cell.match <- match(ayhanDGC.cellids, colnames(ayhanDGC.cellids))
+# 
+# ayhanDGC_counts.filtered <- ayhan2021_counts[,ayhanDGC.cellids]
+# ayhanDGC_counts.filtered$gene <- rownames(ayhanDGC_counts.filtered)
+# 
+# # write to file
+# write_csv(ayhanDGC_counts.filtered, "~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_counts.csv")
+# 
+# # get a filter for the meta data
+# ayhanDGCmeta.idx <- ayhan2021_meta$Cell %in% colnames(ayhanDGC_counts.filtered)
+# 
+# # filter and write to file in one line
+# write_csv(ayhan2021_meta[ayhanDGCmeta.idx,],"~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_meta.csv")
+# 
 
 # this needs work for some reason it's not saving one of the cells
 # note that the third kind of DGCs they found were ignored
