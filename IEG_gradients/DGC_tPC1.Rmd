@@ -362,7 +362,7 @@ head(saunders2018_dgc_counts.filtered.normscaled)
 
 
 ```{r}
-#saunders.prcomp <- readRDS(file = '/space/scratch/PCArds_objects_DGCs/pca_sauders_filteredgenes.RDS')
+saunders.prcomp <- readRDS(file = '/space/scratch/PCArds_objects_DGCs/pca_sauders_filteredgenes.RDS')
 ```
 
 

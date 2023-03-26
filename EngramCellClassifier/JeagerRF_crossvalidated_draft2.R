@@ -18,10 +18,10 @@ library(ggplot2)
 library(stats)
 library(Dict)
 library(pheatmap)
-library(caret)
 library(data.table)
 library(dplyr)
 library(readr) # for cross validated logistic regression
+library(scrime)
 library(caret)
 #Ayhan 2018
 # Ayhan, F., Kulkarni, A., Berto, S., Sivaprakasam, K., Douglas, C., Lega, B. C., &
@@ -29,6 +29,14 @@ library(caret)
 # hippocampal anterior-to-posterior axis in humans. Neuron, 109(13), 2091-2105.
 # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8273123/
 # 
+
+#paths
+forcedswim_snRNAseq_obj_path <-  '/home/acampbell/test_datasets/Zeigler2021_biorvix_HpStressome/GSE169510_snRNAseq.SCE.final.rds'
+ortholog_table_path <- "/home/acampbell/PavLabEngrams/EngramCellClassifier/hg_mm_1to1_ortho_genes_DIOPT-v8.tsv"
+tf_table_path <- "/home/acampbell/PavLabEngrams/EngramCellClassifier/mouse_tfs.tsv"
+lacarpath <- '/home/acampbell/PavLabEngrams/EngramCellClassifier/Lacar2016_GSE77067/'
+jeagerpath <- '/home/acampbell/PavLabEngrams/EngramCellClassifier/Jeager2018_GSE98679/'
+
 
 # Loading data
 
@@ -261,6 +269,8 @@ hoch5k.GC_Adult.p35.idx <- (hochgerner5k_2018_meta$age.days.=="35") | (hochgerne
 hoch5k.GC_Adult.p35.idx <- (hoch5k.GC_Adult.p35.idx) & (hochgerner5k_2018_meta$cluster_name == "Granule-mature")
 hoch5k.GC_Adult.p35.idx <- which(hoch5k.GC_Adult.p35.idx)
 
+hoch5k.all.DGCs.idx <- hochgerner5k_2018_meta$cluster_name == "Granule-mature"
+
 # we use this later
 hochgernerDGC_counts <-hochgerner5k_2018_counts[, hochgerner5k_2018_meta$cluster_name == "Granule-mature"]
 hochgernerDGC_counts <- data.frame( lapply(hochgernerDGC_counts,as.numeric) ) # this data is for some reason all strings
@@ -270,24 +280,32 @@ colnames(hochgernerDGC_counts) <- colnames(hochgerner5k_2018_counts)[hochgerner5
 
 # paul prefers a log base that's easy to do headmath with so no eulers numebr
 # normalization functions
+# prehaps the scale factor should be median UMI 
+#https://kb.10xgenomics.com/hc/en-us/articles/115004583806-How-are-the-UMI-counts-normalized-before-PCA-and-differential-expression-
+
+
 pseudocount_log2p1_transform <- function(x, scale_factor = 10^6, UMI.provided = NULL){
+  # Almost as Seurat::NormalizeData but we use log2 rather than natural log
+  # from here https://satijalab.org/seurat/reference/normalizedata
   if(is.null(UMI.provided)){
     counts <- sum(x)}else{
       counts <- UMI.provided
     }
-  x <- (x+1)/counts
-  x <- x/scale_factor
-  return(log2(x))
+  x <- (x)/counts # Feature counts for each cell are divided by the total counts for that cell...
+  x <- x*scale_factor # and multiplied by the scale.factor. 
+  # the we log2 plus 1 rather than natural log plus 1 seurat uses
+  return(log2(x+1))
 }
 
-pavlab.normalize <- function(df, UMI = NULL){
+pavlab.normalize <- function(df, UMI = NULL, median.scale=FALSE, scaleby = 10000){
   df.cols <- colnames(df)
   df.rows <- rownames(df)
+  if(median.scale){ scaleby = median(UMI)}
   if( is.null(UMI)){
     df <- data.frame(apply(df,  MARGIN = 2, pseudocount_log2p1_transform))
   }else{
     #
-    df[] <- Map(pseudocount_log2p1_transform, df, UMI.provided = UMI)
+    df[] <- Map(pseudocount_log2p1_transform, df, scale_factor = scaleby, UMI.provided = UMI)
     
   }
   colnames(df) <- df.cols
@@ -298,35 +316,45 @@ pavlab.normalize <- function(df, UMI = NULL){
 
 #normalization functions, log.norm calls logplusone
 seurat_log1p_transform <- function(x, scale_factor = 10000, UMI.provided = NULL){
+  # as per the LogNormalize option in Seurat::NormalizeData
+  # from this URL: https://satijalab.org/seurat/reference/normalizedata
   if(is.null(UMI.provided)){
     counts <- sum(x)}else{
       counts <- UMI.provided
     }
-  x <- (x+1)/counts
-  x <- x/scale_factor
-  return(log(x))
+  x <- (x)/counts # Feature counts for each cell are divided by the total counts for that cell... 
+  x <- x*scale_factor # and multiplied by the scale.factor. 
+  # This is then natural-log transformed using log1p.
+  return(log(x+1))
 }
 
-seurat.normalize <- function(df, UMI = NULL){
+seurat.normalize <- function(df, UMI = NULL, median.scale=FALSE, scaleby = 10000){
   df.cols <- colnames(df)
   df.rows <- rownames(df)
+  if(median.scale){ scaleby = median(UMI)}
   if( is.null(UMI)){
     df <- data.frame(apply(df,  MARGIN = 2, seurat_log1p_transform))
   }else{
     #
-    df[] <- Map(seurat_log1p_transform, df, UMI.provided = UMI)
+    df[] <- Map(seurat_log1p_transform, df, UMI.provided = UMI, scale_factor = scaleby)
   }
   colnames(df) <- df.cols
   rownames(df)<- df.rows
   return(df)
 }
 
-
-# mean center scale then log(x+1) for normalizing
+#mean center scale then log(x+1) for normalizing
 logplusone <- function(x){
   return( log(x+1) )
 }
+# 
+# log.norm <- function(df.in){
+#   #performs the lognorm transform and scales the data, removes NA's first
+#   df.out <- data.frame(apply(df.in, MARGIN = 1, FUN = logplusone))
+#   return(df.out)
+# }
 
+# old version
 log.norm <- function(df.in){
   #performs the lognorm transform and scales the data, removes NA's first
   if( sum(is.na(df.in)) ){
@@ -341,6 +369,12 @@ log.norm <- function(df.in){
   colnames(df.out) <- rownames(df.in)
   return(df.out)
 }
+
+
+#test <- apply(combined.counts, MARGIN = 1,FUN = logplusone)
+#test <- scale( t(test) ) 
+
+
 
 #modified version of randomForest::combine() which can handle different sized forests
 # without this it throws and error when combining the votes
@@ -459,16 +493,17 @@ resample.randomForest <-function( df.in,
 }
 
 
+
 make.predictions.df <- function(classifier.object, 
                                 test_df,
                                 meta.data.label.column,
-                                label = c("Active","Inactive")
+                                label = c("Inactive","Active")
                                 ){
   #generate predictions for making classifier summary
   predictions <- as.data.frame(predict(classifier.object, test_df[,1:(length(test_df))], type = "prob"))
   predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
   predictions$observed <- meta.data.label.column #this should be changed if you want to make this functions more modular
-  colnames(predictions)[1:2] <- c("label_pos","label_neg")
+  colnames(predictions)[1:2] <- c("label_neg","label_pos")
   predictions$engramobserved <- ifelse(predictions$observed==label[1], 1, 0)
   predictions$inactiveobserved <- ifelse(predictions$observed==label[2], 1, 0)
   return(predictions)
@@ -573,9 +608,6 @@ resampled.randomForest.crossvalidated <-function(data,
   rf.out$votes <- predict(object = rf.out, newdata = data, type = 'vote', norm.votes = FALSE)
   return(rf.out)
 }
-
-
-
 
 
 
@@ -707,44 +739,53 @@ gene.shuffle <-function(dat){
 
 # Actually running the code with cross validation
 
-# old data
-labeled.data.hochgerner2018_genes <-  pavlab.normalize(combined.counts,
-                                                       UMI= combined.meta$combined_umi)
-genes <- rownames(labeled.data.hochgerner2018_genes)
-labeled.data.hochgerner2018_genes <- transpose(labeled.data.hochgerner2018_genes)
-colnames(labeled.data.hochgerner2018_genes) <- genes 
+# training data (Jeager)
+labeled.data <-  pavlab.normalize(combined.counts,
+                                  UMI = combined.meta$combined_umi, 
+                                  median.scale=TRUE)
+genes <- rownames(labeled.data)
+labeled.data <- as.data.frame(t(labeled.data))
+colnames(labeled.data) <- rownames(combined.counts)
+rownames(labeled.data) <- colnames(combined.counts)
 
-# discovery data
-hoch5k.adultDGCs.lognorm <- pavlab.normalize(hochgerner5k_2018_counts[, hoch5k.GC_Adult.p35.idx],
-                                             UMI = hochgerner5k_2018_meta$umi[hoch5k.GC_Adult.p35.idx])
-genes <- rownames(hoch5k.adultDGCs.lognorm)
-hoch5k.adultDGCs.lognorm <- transpose(hoch5k.adultDGCs.lognorm)
-colnames(hoch5k.adultDGCs.lognorm) <- genes
 
+
+# discovery data (Hochgerner)
+hoch5k.adultDGCs.lognorm <- pavlab.normalize(hochgerner5k_2018_counts[, hoch5k.all.DGCs.idx],
+                                             UMI = hochgerner5k_2018_meta$umi[hoch5k.all.DGCs.idx],
+                                             median.scale=TRUE)
+
+hoch5k.adultDGCs.lognorm <- as.data.frame(t(hoch5k.adultDGCs.lognorm))
+colnames(hoch5k.adultDGCs.lognorm) <- rownames(hochgerner5k_2018_counts[, hoch5k.all.DGCs.idx])
+rownames(hoch5k.adultDGCs.lognorm) <- colnames(hochgerner5k_2018_counts[, hoch5k.all.DGCs.idx])
+
+
+
+
+# MATCHING GENES
 #gene matching, there were extra commas here, possibly the cause of the errors
-shared.genes <- intersect( colnames(hoch5k.adultDGCs.lognorm), colnames(labeled.data.hochgerner2018_genes) )
-hoch5k.adultDGCs.lognorm  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs.lognorm) %in% shared.genes] # 
-labeled.data.hochgerner2018_genes <- labeled.data.hochgerner2018_genes[,colnames(labeled.data.hochgerner2018_genes) %in% shared.genes]
-labeled.data.hochgerner2018_genes$Engramcell <- as.factor(combined.meta$ActivityStatus)
+shared.genes.hochgerner2018_genes <- intersect( colnames(hoch5k.adultDGCs.lognorm), colnames(labeled.data) )
+hoch5k.adultDGCs.lognorm  <- hoch5k.adultDGCs.lognorm[,colnames(hoch5k.adultDGCs.lognorm) %in% shared.genes.hochgerner2018_genes] # 
+labeled.data.hochgerner2018_genes <- labeled.data[,colnames(labeled.data) %in% shared.genes.hochgerner2018_genes]
 
-# RRFclassifier.hoch <- resampled.regularizedRF.crossvalidated
-# classifier.hoch.normal <- resampled.randomForest.crossvalidated 
-classifier.hochgerner2018_genes <- resampled.randomForest.crossvalidated(data= labeled.data.hochgerner2018_genes,
+
+# adding training label
+labeled.data.hochgerner2018_genes$Engramcell <- as.factor(combined.meta$fos_status)
+#> levels(labeled.data.hochgerner2018_genes$Engramcell)
+#[1] "Fos-" "Fos+"
+levels(labeled.data.hochgerner2018_genes$Engramcell) <- c('Inactive', 'Active')
+
+
+#  TRAINING MODEL ON HOCHGERNER GENES
+classifier.hochgerner2018_genes <- resampled.randomForest.crossvalidated(data = labeled.data.hochgerner2018_genes,
                                                      under.represented.class = "Inactive",
                                                      over.represented.class = "Active",
-                                                     trees.total = 100,
+                                                     trees.total = 1000,
                                                      folds = 10,
                                                      proportion.each.batch=0.8,
                                                      batches.per.fold=20)
 
-# testing resampling method
-test <- resampled.randomForest.crossvalidated(data=labeled.data.hochgerner2018_genes,
-                                              under.represented.class = "Inactive",
-                                              over.represented.class = "Active",
-                                              trees.total = 100,
-                                              folds = 10,
-                                              proportion.each.batch=0.8,
-                                              batches.per.fold=5)
+
 
 
 # Importance
@@ -753,7 +794,7 @@ importance.df.hoch<- data.frame(gene = as.character( rownames(classifier.hochger
                                 importance_score = as.numeric(classifier.hochgerner2018_genes$importance ) ) %>%
   arrange(desc(importance_score))
 
-head(importance.df.hoch, 1000) # don't forget to run this before gettng  the regularized
+head(importance.df.hoch, 20) # don't forget to run this before getting the regularized one as well
 
 
 write_csv(importance.df.hoch, "JeagerNoReg_Importance_matchedtoHochgerner.csv")
@@ -831,14 +872,14 @@ write_csv(importance.df.hoch, "JeagerNoReg_Importance_matchedtoHochgerner.csv")
 # True Negatives  17.40000000 0.4898979486
 # False Positives  0.00000000 0.0000000000
 
-
-
 roc.engramcell = roc(labeled.data.hochgerner2018_genes$Engramcell,
                      classifier.hochgerner2018_genes$votes[,2], 
                      plot=TRUE, legacy.axes=TRUE, percent=TRUE,
                      xlab="False Positive Percentage", ylab="True Postive Percentage", 
                      col="firebrick4", lwd=4, print.auc=TRUE)
 
+
+plot(roc.engramcell, main = "ROC of RF Classifier")
 
 dev.off()
 jpeg("ROCBinarized.jpg", width = 700, height = 700)
@@ -861,27 +902,22 @@ dev.off()
 # Histogram of Engram Probability
 # http://www.sthda.com/english/wiki/ggplot2-histogram-plot-quick-start-guide-r-software-and-data-visualization
 
-# make predictions on hochgerner2018 DGCs
-bogus.factor <- labeled.data.hochgerner2018_genes$Engramcell
-bogus.factor[751:1014] <- labeled.data.hochgerner2018_genes$Engramcell[1:264]
-bogus.factor[1:1014] <- levels(bogus.factor)[1]
+# test <- predict(regular.resampRF.model, hoch5k.adultDGCs.lognorm, type = 'prob')
+test.hochgerner2018_genes <- as.data.frame(predict(classifier.hochgerner2018_genes,
+                                                   hoch5k.adultDGCs.lognorm, 
+                                                   type = 'prob'))
+ninetyfive= as.numeric( quantile(test.hochgerner2018_genes$Active,0.95) )
+ninetysevenpointfive = as.numeric( quantile(test.hochgerner2018_genes$Active,0.975))
 
-on.hoch5k <- make.predictions.df(classifier.hochgerner2018_genes,
-                                 hoch5k.adultDGCs.lognorm,
-                                 meta.data.label.column = bogus.factor)
 
-test <- predict(classifier.hochgerner2018_genes, hoch5k.adultDGCs.lognorm, type = 'prob')
-# getting quantile thresholds
-ninetyfive= as.numeric( quantile(on.hoch5k$label_pos,0.95) )
-ninetysevenpointfive = as.numeric( quantile(on.hoch5k$label_pos,0.975))
-
-df <- on.hoch5k[,c(1,3)] #counts of probability
-colnames(df) <- c("label_pos","Predicted")
-p <- ggplot(data = df, aes(x=label_pos) )
+# df <- on.hoch5k[,c(2,3)] #counts of probability
+# colnames(df) <- c("label_pos","Predicted")
+# p <- ggplot(data = df, aes(x=label_pos) )
+p <- ggplot(data = test.hochgerner2018_genes, aes(x=Active) )
 
 #giving some weird error on the server
 dev.off()
-jpeg("Penk_vs_EngramProbabilityCV.jpg", width = 700, height = 700)
+jpeg("ResampledRF_CV_pavnormed_HochgernerVotes.jpg", width = 700, height = 700)
 p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
   geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
              linetype="dashed") +
@@ -889,8 +925,253 @@ p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
              linetype="dashed") +
   xlab("Probability of being an Engram Cell")+
   ylab("Counts") +
+  ggtitle('Hochgerner Activation Distribution') +
+  theme(plot.title = element_text(hjust = 0.5))+
   scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
 dev.off()
+
+p + geom_density(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed") +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed") +
+  xlab("Probability of being an Engram Cell")+
+  ylab("Counts") +
+  ggtitle('Hochgerner Activation Distribution') +
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
+
+
+### Repeat this on Zeigler
+
+zeigler2022.obj <- readRDS(forcedswim_snRNAseq_obj_path)
+
+# extracting data
+zeigler2022_counts <- data.frame(as.matrix(zeigler2022.obj@assays@data$counts))
+
+#gettting UMI counts before removing duplicate genes, restrict to DGCs
+zeigler.libsize <- colSums(zeigler2022_counts)[zeigler2022.obj@colData@listData$cluster == 'DG Granule Neurons']
+
+# replacing ensemble id with gene symbol, filtering for duplicated genes
+zeigler.genesymbols.unique <- !duplicated(zeigler2022.obj@rowRanges@elementMetadata@listData$Symbol) # non-duplicate genes
+
+zeigler2022_counts <-zeigler2022_counts[zeigler.genesymbols.unique, zeigler2022.obj@colData@listData$cluster == 'DG Granule Neurons' ] #filtering for dgc
+zeigler2022_counts <- data.frame(sapply( zeigler2022_counts, as.integer ) ) # make them integers
+rownames(zeigler2022_counts) <- zeigler2022.obj@rowRanges@elementMetadata@listData$Symbol[zeigler.genesymbols.unique]
+dim(zeigler2022_counts)
+
+zeigler2022_meta <- data.frame(  condition = zeigler2022.obj@colData@listData$condition, 
+                                 sample = zeigler2022.obj@colData@listData$sample_id)
+
+zeigler2022_meta <- zeigler2022_meta[zeigler2022.obj@colData@listData$cluster == 'DG Granule Neurons',]
+rownames(zeigler2022_meta) <- colnames(zeigler2022_counts)
+
+# normalize
+zeigler2022_normed <- pavlab.normalize(zeigler2022_counts, UMI = zeigler.libsize, median.scale=TRUE)
+genes <- rownames(zeigler2022_normed )
+zeigler2022_normed <- transpose(zeigler2022_normed )
+colnames(zeigler2022_normed ) <- genes
+
+# MATCHING GENES
+#gene matching, there were extra commas here, possibly the cause of the errors
+shared.genes.zeigler <- intersect( colnames(zeigler2022_normed), colnames(labeled.data) )
+zeigler2022_normed  <- zeigler2022_normed[,colnames(zeigler2022_normed) %in% shared.genes.zeigler] # 
+labeled.data.zeigler2022_genes <- labeled.data[,colnames(labeled.data) %in% shared.genes.zeigler]
+
+# adding training label
+labeled.data.zeigler2022_genes$Engramcell <- as.factor(combined.meta$fos_status)
+#> levels(labeled.data.hochgerner2018_genes$Engramcell)
+#[1] "Fos-" "Fos+"
+levels(labeled.data.zeigler2022_genes$Engramcell) <- c('Inactive', 'Active')
+
+
+#  TRAINING MODEL ON zeigler GENES
+classifier.zeigler2022_genes <- resampled.randomForest.crossvalidated(data = labeled.data.zeigler2022_genes,
+                                                                         under.represented.class = "Inactive",
+                                                                         over.represented.class = "Active",
+                                                                         trees.total = 500,
+                                                                         folds = 5,
+                                                                         proportion.each.batch=0.8,
+                                                                         batches.per.fold=20)
+
+importance.df.zeigler <- data.frame(gene = as.character( rownames(classifier.zeigler2022_genes$importance) ),
+                                importance_score = as.numeric(classifier.zeigler2022_genes$importance ) ) %>%
+  arrange(desc(importance_score))
+
+head(importance.df.zeigler, 20)
+
+
+
+# test <- predict(regular.resampRF.model, hoch5k.adultDGCs.lognorm, type = 'prob')
+test.zeigler2022_genes <- as.data.frame(predict(classifier.zeigler2022_genes, zeigler2022_normed, type = 'prob'))
+ninetyfive= as.numeric( quantile(test.zeigler2022_genes$Active,0.95) )
+ninetysevenpointfive = as.numeric( quantile(test.zeigler2022_genes$Active,0.975))
+
+
+# df <- on.hoch5k[,c(2,3)] #counts of probability
+# colnames(df) <- c("label_pos","Predicted")
+# p <- ggplot(data = df, aes(x=label_pos) )
+p <- ggplot(data = test.zeigler2022_genes, aes(x=Active) )
+
+#giving some weird error on the server
+dev.off()
+jpeg("ResampledRF_CV_pavnormed_ZeiglerVotes.jpg", width = 700, height = 700)
+p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed") +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed") +
+  xlab("Probability of being an Engram Cell")+
+  ylab("Counts") +
+  ggtitle('Zeigler Activation Distribution') +
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
+dev.off()
+
+
+### Repeat this on Saunders et al., (2018)
+
+saunders2018_dgc_counts <- read.csv('/space/scratch/Saunders2018_Hp_GSE116470/saunders2018_dgc_counts_filt.csv')
+
+saundersdgs2018s.meta <- read.csv('/space/scratch/Saunders2018_Hp_GSE116470/saunders2018_dgc_meta_filtered_v2.csv')
+rownames(saundersdgs2018s.meta) <- saundersdgs2018s.meta$X
+saundersdgs2018s.meta <- select(saundersdgs2018s.meta, -X)
+
+#make cell names is X column rownames and drop X
+rownames(saunders2018_dgc_counts) <- saunders2018_dgc_counts$X
+saunders2018_dgc_counts <- saunders2018_dgc_counts %>% select(-X)
+
+# getting our UMI before we filter out undersired genes
+saundersdgs2018s.meta$umi <- colSums(saunders2018_dgc_counts)
+
+# normalize
+saunders2018_normed <- pavlab.normalize(saunders2018_dgc_counts, 
+                                        UMI = saundersdgs2018s.meta$umi,
+                                        median.scale=TRUE)
+genes <- rownames(saunders2018_normed )
+cells <- colnames(saunders2018_normed)
+#saunders2018_normed <- scale(t(saunders2018_normed ))
+saunders2018_normed <- t(saunders2018_normed )
+colnames(saunders2018_normed) <- genes
+rownames(saunders2018_normed) <- cells
+
+#gene matching, there were extra commas here, possibly the cause of the errors
+upper.case.hoch <- toupper(colnames(labeled.data)) 
+shared.genes.saunders2018 <- intersect( colnames(saunders2018_normed), upper.case.hoch)
+saunders2018.normedscaled.filtered  <- saunders2018_normed[,colnames(saunders2018_normed) %in% shared.genes.saunders2018] # 
+labeled.data.saunders2018_genes <- labeled.data[,toupper(colnames(labeled.data)) %in% shared.genes.saunders2018]
+colnames(labeled.data.saunders2018_genes) <- toupper(colnames(labeled.data.saunders2018_genes))
+
+# adding training label
+labeled.data.saunders2018_genes$Engramcell <- as.factor(combined.meta$fos_status)
+#> levels(labeled.data.hochgerner2018_genes$Engramcell)
+#[1] "Fos-" "Fos+"
+levels(labeled.data.saunders2018_genes$Engramcell) <- c('Inactive', 'Active')
+
+
+#  TRAINING MODEL ON Saunders GENES
+classifier.saunders2018_genes <- resampled.randomForest.crossvalidated(data = labeled.data.saunders2018_genes,
+                                                                      under.represented.class = "Inactive",
+                                                                      over.represented.class = "Active",
+                                                                      trees.total = 500,
+                                                                      folds = 5,
+                                                                      proportion.each.batch=0.8,
+                                                                      batches.per.fold=20)
+
+importance.df.saunders2018_genes <- data.frame(gene = as.character( rownames(classifier.saunders2018_genes$importance) ),
+                                    importance_score = as.numeric(classifier.saunders2018_genes$importance ) ) %>%
+  arrange(desc(importance_score))
+
+head(importance.df.saunders2018_genes, 20)
+
+
+
+# test <- predict(regular.resampRF.model, hoch5k.adultDGCs.lognorm, type = 'prob')
+test.saunders2018 <- as.data.frame(predict(classifier.saunders2018_genes,
+                                           saunders2018_normed, 
+                              type = 'prob'))
+ninetyfive= as.numeric( quantile(test.saunders2018$Active,0.95) )
+ninetysevenpointfive = as.numeric( quantile(test.saunders2018$Active,0.975))
+
+
+# df <- on.hoch5k[,c(2,3)] #counts of probability
+# colnames(df) <- c("label_pos","Predicted")
+# p <- ggplot(data = df, aes(x=label_pos) )
+p <- ggplot(data = test.saunders2018, aes(x=Active) )
+
+#giving some weird error on the server
+dev.off()
+jpeg("combineddiscoverysetsactivitydistribution.jpg", width = 700, height = 700)
+p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed") +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed") +
+  xlab("Probability of being an Engram Cell")+
+  ylab("Counts") +
+  ggtitle('Saunders Activation Distribution') +
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
+dev.off()
+
+
+#Lets plot combined prediction score distributions
+
+# test <- predict(regular.resampRF.model, hoch5k.adultDGCs.lognorm, type = 'prob')
+test.combined.discoverysets <- rbind(test.hochgerner2018_genes,
+                                     test.saunders2018)
+ninetyfive= as.numeric( quantile(test.combined.discoverysets$Active,0.95) )
+ninetysevenpointfive = as.numeric( quantile(test.combined.discoverysets$Active,0.975))
+
+
+# df <- on.hoch5k[,c(2,3)] #counts of probability
+# colnames(df) <- c("label_pos","Predicted")
+# p <- ggplot(data = df, aes(x=label_pos) )
+p <- ggplot(data = test.combined.discoverysets, aes(x=Active) )
+
+#giving some weird error on the server
+dev.off()
+jpeg("ResampledRF_CV_pavnormed_Combined_Datasets_votes.jpg", width = 700, height = 700)
+p + geom_histogram(color = "darkgreen", fill = "lightgreen", bins = 300) + 
+  theme_classic() +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 750)) +
+  scale_x_continuous(expand = c(0, 0), limits = c(0, 1)) +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed") +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed") +
+  xlab("Probability of being an Engram Cell")+
+  ylab("Counts") +
+  ggtitle('Activation Score Distribution') +
+  theme(plot.title = element_text(size=18, hjust = 0.5),
+        axis.line=element_line(size=1),
+        axis.title.x = element_text( size=14, face="bold"),
+        axis.title.y = element_text( size=14, face="bold"),
+        axis.text.x = element_text(color="black",
+                                   size=12, 
+                                   face="bold"),
+        axis.text.y = element_text(color="black",
+                                   size=12, 
+                                   face="bold",
+                                   angle=45),
+        legend.background = element_blank(),
+        legend.box.background = element_rect(colour = "black")
+        )+
+  scale_color_discrete(name = "Quantiles", labels= c("0.975", "0.95") )
+dev.off()
+
+p + geom_density(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed") +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed") +
+  xlab("Probability of being an Engram Cell")+
+  ylab("Counts") +
+  ggtitle('Hochgerner Activation Distribution') +
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
+
+
 
 
 
@@ -1074,7 +1355,12 @@ dev.off()
 ### APPLYING THIS TO HUMAN DATA
 ##################################################
 
-library(Seurat)
+
+# alternative feature selection method
+# Ibáñez-Solé, O., Inza, I., Izeta, A., & Araúzo-Bravo, M. J. (2022). Triku: a feature selection method based on nearest neighbors for single-cell data. Gigascience, 11.
+# https://academic.oup.com/gigascience/article/doi/10.1093/gigascience/giac017/6547682
+# uses K-NN genes and a wasserstein distance to determine which genes should be included
+
 
 # 
 # Ayhan, F., Kulkarni, A., Berto, S., Sivaprakasam, K., Douglas, C., Lega, B. C.,
@@ -1091,14 +1377,17 @@ library(Seurat)
 # GETTING DGCS OUT OF AYHAN, COMMENTED OUT SO SCRIPT CAN RUN FAST
 ##########
 
-# ayhan2021_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/GSE160189_Hippo_Counts.csv.gz")
-# rownames(ayhan2021_counts) <- ayhan2021_counts$gene
-# ayhan2021_counts[is.na(ayhan2021_counts)] <- 0
-# ayhan2021_counts <- ayhan2021_counts[, c(2:dim(ayhan2021_counts)[2])]
-# # 
+#full dataset
+#takes 20 minutes to load no need for this now that we've filtered for the DGCs
+ayhan2021_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/GSE160189_Hippo_Counts.csv.gz")
+ayhan2021_counts.og <- ayhan2021_counts
+rownames(ayhan2021_counts) <- ayhan2021_counts$gene
+ayhan2021_counts[is.na(ayhan2021_counts)] <- 0
+ayhan2021_counts <- ayhan2021_counts[, c(2:dim(ayhan2021_counts)[2])]
+#
 
-# ayhan2021_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/meta.tsv",
-#                            sep = '\t', header = TRUE)
+ayhan2021_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/meta.tsv",
+                            sep = '\t', header = TRUE)
 
 
 #note that genes are in the first column, might as well just leave it for when we
@@ -1106,23 +1395,46 @@ library(Seurat)
 # subject id's are in the cell_id i.e. "P57_AAAGTAGGTCCAGTAT" "P57_AACCATGGTAAACACA"
 
 
-# note as per Ayhan et al., 2021 we do not want Den.Gyr3 as it is mostly from a single subject
-# ayhanDGC.idx <- ayhan2021_meta$Cell[(ayhan2021_meta$Cluster == "Den.Gyr2")|(ayhan2021_meta$Cluster == "Den.Gyr1")]
-# ayhanDGC.idx <- colnames(ayhan2021_counts) %in% ayhanDGC.idx
-
-# ayhanDGC_counts <- ayhan2021_counts[,ayhanDGC.idx]
-# 
-# write_csv(ayhanDGC_counts, "~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_counts.csv")
-# 
-# write_csv(ayhan2021_meta[ayhanDGC.idx,],"~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_meta.csv")
+# note as per Ayhan et al., 2021 we do not want Den.Gyr3 as it is mostly from a single subjectayhan2021_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/GSE160189_Hippo_Counts.csv.gz")
 
 
+# cell ids to ensure we get the same cells in counts data
+# the counts data has a mismatching number of cells and may be in a different order
+ayhanDGC.cellids <- ayhan2021_meta$Cell[(ayhan2021_meta$Cluster == "Den.Gyr2")|(ayhan2021_meta$Cluster == "Den.Gyr1")]
+# filter and order according to metadata
+cell.match <- match(ayhanDGC.cellids, colnames(ayhanDGC.cellids))
+
+ayhanDGC_counts.filtered <- ayhan2021_counts[,ayhanDGC.cellids]
+ayhanDGC_counts.filtered$gene <- rownames(ayhanDGC_counts.filtered)
+
+# write to file
+write_csv(ayhanDGC_counts.filtered, "~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_counts.csv")
+
+# get a filter for the meta data
+ayhanDGCmeta.idx <- ayhan2021_meta$Cell %in% colnames(ayhanDGC_counts.filtered)
+
+# filter and write to file in one line
+write_csv(ayhan2021_meta[ayhanDGCmeta.idx,],"~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_meta.csv")
+
+
+# this needs work for some reason it's not saving one of the cells
 # note that the third kind of DGCs they found were ignored
 ayhanDGC_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_counts.csv", header = TRUE)
 rownames(ayhanDGC_counts) <- ayhanDGC_counts$gene
+rownames(ayhanDGC_counts)[1:3]
 # the OG data has na but we switched them to zeros
 ayhanDGC_counts <- ayhanDGC_counts[, c(1:dim(ayhanDGC_counts)[2]-1)]
+ayhanDGC_counts[is.na(ayhanDGC_counts)] <- 0
 ayhanDGC_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_meta.csv", header = TRUE)
+
+#ayhan2021_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/meta.tsv",
+#                            sep = '\t', header = TRUE)
+
+# checking the cell ids are in the same order and all present
+sum(colnames(ayhanDGC_counts) %in% ayhan2021_meta$Cell)
+ayhan2021_meta$Cell[1:10]
+sum(ayhanDGC_meta$Cell %in% colnames(ayhanDGC_counts))
+colnames(ayhanDGC_counts)[1:10]
 
 # Orthologue matching
 # from alex's ortholog mapping
@@ -1130,23 +1442,259 @@ ayhanDGC_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_meta.csv
 hg_to_mm <- read.table("hg_mm_1to1_ortho_genes_DIOPT-v8.tsv", sep = '\t', header = TRUE)
 # just run left join onto the appropriate column for each dataset
 
-
+ayhan.libsize <- colSums(ayhanDGC_counts )
 present.orthologs.idx <- (hg_to_mm$Symbol_hg %in% rownames(ayhanDGC_counts))&(hg_to_mm$Symbol_mm %in% rownames(combined.counts) )
 hg_to_mm <- hg_to_mm[present.orthologs.idx,] # filter for matches, ~ 14403 present between Ayhan and Jeager/Lacar
 
-# filter using left join and swithc out mm for hg in jeager/lacar data
-combined.counts.hg <- combined.counts
-combined.counts.hg$Symbol_mm <- rownames(combined.counts.hg)
-
-# filtering for orthologs present in both data sets
-combined.counts.hg <- left_join(x = hg_to_mm, y = combined.counts.hg, by = "Symbol_mm" )
-rownames(combined.counts.hg) <- combined.counts.hg$Symbol_hg
-combined.counts.hg <- combined.counts.hg[,c(4:(dim(combined.counts.hg)[2]) )]
+# # filter using left join and switch out mm for hg in jeager/lacar data
+# combined.counts.hg <- combined.counts
+# combined.counts.hg$Symbol_mm <- rownames(combined.counts.hg)
+# 
+# # filtering for orthologs present in both data sets
+# combined.counts.hg <- left_join(x = hg_to_mm, y = combined.counts.hg, by = "Symbol_mm" )
+# rownames(combined.counts.hg) <- combined.counts.hg$Symbol_hg
+# combined.counts.hg <- combined.counts.hg[,c(4:(dim(combined.counts.hg)[2]) )]
 
 ayhanDGC_counts$Symbol_hg <- rownames(ayhanDGC_counts)
 ayhanDGC_counts <- left_join(x = hg_to_mm, y = ayhanDGC_counts, by = "Symbol_hg" )
 rownames(ayhanDGC_counts) <- ayhanDGC_counts$Symbol_hg
 ayhanDGC_counts <- ayhanDGC_counts[,c(4:dim(ayhanDGC_counts)[2])]
+
+# normalize
+ayhanDGC_normed <- pavlab.normalize(ayhanDGC_counts, UMI = ayhan.libsize, median.scale=TRUE)
+ayhanDGC_normed <- data.frame(t(ayhanDGC_normed ))
+colnames(ayhanDGC_normed ) <- rownames(ayhanDGC_counts)
+rownames(ayhanDGC_normed ) <- colnames(ayhanDGC_counts)
+
+# MATCHING GENES
+#here we have the added problem of symbol conversion
+# first we filter for 1 to 1 orthologs in the hg list then we filter for the present in mm
+# turns out jeager has all of those present in ayhan no surprise its much deeper
+present.orthologs <- hg_to_mm[hg_to_mm$Symbol_hg %in% colnames(ayhanDGC_normed),]
+present.orthologs <- present.orthologs[present.orthologs$Symbol_mm %in% colnames(labeled.data),]
+
+# order and filter genes
+ayhanDGC_normed <- ayhanDGC_normed[,present.orthologs$Symbol_hg]
+labeled.data.ayhanDGCgenes <- labeled.data[,present.orthologs$Symbol_mm]
+# relabel the jeager data with gene names
+colnames(labeled.data.ayhanDGCgenes) <- present.orthologs$Symbol_hg
+
+# adding training label
+labeled.data.ayhanDGCgenes$Engramcell <- as.factor(combined.meta$fos_status)
+#> levels(labeled.data.hochgerner2018_genes$Engramcell)
+#[1] "Fos-" "Fos+"
+levels(labeled.data.ayhanDGCgenes$Engramcell) <- c('Inactive', 'Active')
+
+
+#  TRAINING MODEL ON AYHAN GENES
+classifier.ayhanDGCgenes <- resampled.randomForest.crossvalidated(data = labeled.data.ayhanDGCgenes,
+                                                                      under.represented.class = "Inactive",
+                                                                      over.represented.class = "Active",
+                                                                      trees.total = 1000,
+                                                                      folds = 10,
+                                                                      proportion.each.batch=0.8,
+                                                                      batches.per.fold=20)
+
+# quality check
+roc.engramcell = roc(labeled.data.ayhanDGCgenes$Engramcell,
+                     classifier.ayhanDGCgenes$votes[,2], 
+                     plot=TRUE, legacy.axes=TRUE, percent=TRUE,
+                     xlab="False Positive Percentage", ylab="True Postive Percentage", 
+                     col="firebrick4", lwd=4, print.auc=TRUE)
+
+
+plot(roc.engramcell, main = "ROC of RF Classifier")
+
+dev.off()
+jpeg("ROCBinarized.jpg", width = 700, height = 700)
+plot(roc.engramcell, main = "ROC of RF Classifier")
+dev.off()
+
+
+importance.df.ayhanDGCs <- data.frame(gene = as.character( rownames(classifier.ayhanDGCgenes$importance) ),
+                                   importance_score = as.numeric(classifier.ayhanDGCgenes$importance ) ) %>%
+  arrange(desc(importance_score))
+
+head(importance.df.ayhanDGCs, 20)
+
+
+
+# test <- predict(regular.resampRF.model, hoch5k.adultDGCs.lognorm, type = 'prob')
+test.ayhanDGCgenes <- data.frame(predict(classifier.ayhanDGCgenes, 
+                                            ayhanDGC_normed, 
+                                            type = 'prob'))
+ninetyfive= as.numeric( quantile(test.ayhanDGCgenes$Active,0.95) )
+ninetysevenpointfive = as.numeric( quantile(test.ayhanDGCgenes$Active,0.975))
+
+
+# df <- on.hoch5k[,c(2,3)] #counts of probability
+# colnames(df) <- c("label_pos","Predicted")
+# p <- ggplot(data = df, aes(x=label_pos) )
+p <- ggplot(data = test.ayhanDGCgenes, aes(x=Active) )
+
+#giving some weird error on the server
+dev.off()
+jpeg("ResampledRF_CV_pavnormed_AyhanVotes.jpg", width = 700, height = 700)
+p + geom_histogram(color = "darkgreen", fill = "lightgreen") + 
+  theme_classic() +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed") +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed") +
+  xlab("Probability of being an Engram Cell")+
+  ylab("Counts") +
+  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
+dev.off()
+
+dev.off()
+jpeg("Penk_vs_EngramProbability.jpg", width = 500, height = "500")
+pheatmap(t(vis.matrix), main = "Hochgerner Cells Activity State",
+         cluster_rows = F, cluster_cols=F, 
+         annotation_col = cell_df, annotation_col = cell_df,
+         show_colnames = F, annotation_names_col = F, annotation_names_row = F)
+dev.off()
+
+p + geom_histogram(color = "darkgreen", fill = "lightgreen", bins = 300) + 
+  theme_classic() +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 750)) +
+  scale_x_continuous(expand = c(0, 0), limits = c(0, 1)) +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed") +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed") +
+  xlab("Probability of being an Engram Cell")+
+  ylab("Counts") +
+  ggtitle('Activation Score Distribution') +
+  theme(plot.title = element_text(size=18, hjust = 0.5),
+        axis.line=element_line(size=1),
+        axis.title.x = element_text( size=14, face="bold"),
+        axis.title.y = element_text( size=14, face="bold"),
+        axis.text.x = element_text(color="black",
+                                   size=12, 
+                                   face="bold"),
+        axis.text.y = element_text(color="black",
+                                   size=12, 
+                                   face="bold",
+                                   angle=45),
+        legend.background = element_blank(),
+        legend.box.background = element_rect(colour = "black")
+  )+
+  scale_color_discrete(name = "Quantiles", labels= c("0.975", "0.95") )
+
+##USing TFs in humans
+
+
+# remake ayhan_normed normalize
+ayhanDGC_normed <- pavlab.normalize(ayhanDGC_counts, UMI = ayhanDGC_meta$nFeature_RNA, median.scale = TRUE)
+genes <- rownames(ayhanDGC_normed )
+ayhanDGC_normed <- transpose(ayhanDGC_normed )
+colnames(ayhanDGC_normed ) <- genes
+
+
+
+#mousetfs
+mouse_tfs <- read.table("/home/acampbell/PavLabEngrams/EngramCellClassifier/mouse_tfs.tsv",
+                        sep = "\t", header = TRUE)
+# filter our orthologs list for TFs specifically
+TFs.present.orthologs <- present.orthologs[present.orthologs$Symbol_mm %in% mouse_tfs$Symbol,]
+
+
+# order and filter genes
+ayhanDGC_normed.tfs <- ayhanDGC_normed[,TFs.present.orthologs$Symbol_hg]
+labeled.data.ayhanDGCgenes.tfs <- labeled.data[,TFs.present.orthologs$Symbol_mm]
+# relabel the jeager data with gene names
+colnames(labeled.data.ayhanDGCgenes.tfs) <- TFs.present.orthologs$Symbol_hg
+
+# adding training label
+labeled.data.ayhanDGCgenes.tfs$Engramcell <- as.factor(combined.meta$fos_status)
+#> levels(labeled.data.hochgerner2018_genes$Engramcell)
+#[1] "Fos-" "Fos+"
+levels(labeled.data.ayhanDGCgenes.tfs$Engramcell) <- c('Inactive', 'Active')
+
+#  TRAINING MODEL ON One to one human mouse TF orthologues
+TFs.classifier.ayhanDGCgenes <- resampled.randomForest.crossvalidated(data = labeled.data.ayhanDGCgenes.tfs,
+                                                                  under.represented.class = "Inactive",
+                                                                  over.represented.class = "Active",
+                                                                  trees.total = 1000,
+                                                                  folds = 10,
+                                                                  proportion.each.batch=0.8,
+                                                                  batches.per.fold=20)
+
+
+
+# quality check
+roc.engramcell = roc(labeled.data.ayhanDGCgenes.tfs$Engramcell,
+                     TFs.classifier.ayhanDGCgenes$votes[,2], 
+                     plot=TRUE, legacy.axes=TRUE, percent=TRUE,
+                     xlab="False Positive Percentage", ylab="True Postive Percentage", 
+                     col="firebrick4", lwd=4, print.auc=TRUE)
+
+
+plot(roc.engramcell, main = "ROC of RF Classifier")
+
+dev.off()
+jpeg("ROCBinarized.jpg", width = 700, height = 700)
+plot(roc.engramcell, main = "ROC of RF Classifier")
+dev.off()
+
+
+importance.df.ayhanDGC_TFs <- data.frame(gene = as.character( rownames(TFs.classifier.ayhanDGCgenes$importance) ),
+                                      importance_score = as.numeric(TFs.classifier.ayhanDGCgenes$importance ) ) %>%
+  arrange(desc(importance_score))
+
+head(importance.df.ayhanDGC_TFs, 20)
+
+> head(importance.df.ayhanDGC_TFs, 20)
+# gene importance_score
+# 1   DNAJC1        4.7308332
+# 2  BHLHE41        3.0512419
+# 3     ATF3        2.5373155
+# 4   BCL11A        2.0799819
+# 5      TEF        2.0164337
+# 6    PRDM5        2.0006748
+# 7    MYEF2        1.4669814
+# 8      TUB        1.4509755
+# 9    CENPA        1.3654229
+# 10  ZBTB18        1.1762690
+# 11  PRDM10        1.1102991
+# 12   MESP2        1.1063315
+# 13   CPEB1        1.0862081
+# 14   ZMIZ1        1.0443435
+# 15  ZNF277        0.9784577
+# 16    TCF4        0.9514804
+# 17    MYRF        0.9509041
+# 18    HES7        0.9404410
+# 19  ARID5B        0.9318977
+# 20   TULP1        0.8982414
+
+
+
+# test <- predict(regular.resampRF.model, hoch5k.adultDGCs.lognorm, type = 'prob')
+test <- as.data.frame(predict(TFs.classifier.ayhanDGCgenes, ayhanDGC_normed.tfs, type = 'prob'))
+ninetyfive= as.numeric( quantile(test$Active,0.95) )
+ninetysevenpointfive = as.numeric( quantile(test$Active,0.975))
+
+
+# df <- on.hoch5k[,c(2,3)] #counts of probability
+# colnames(df) <- c("label_pos","Predicted")
+# p <- ggplot(data = df, aes(x=label_pos) )
+p <- ggplot(data = test, aes(x=Active) )
+
+#giving some weird error on the server
+dev.off()
+jpeg("ResampledRF_CV_TF_AyhanVotes.jpg", width = 700, height = 700)
+p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed") +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed") +
+  xlab("Probability of being an Engram Cell")+
+  ylab("Counts") +
+  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
+dev.off()
+
+
+
 
 
 # Making IEGs plots for Ayhan
