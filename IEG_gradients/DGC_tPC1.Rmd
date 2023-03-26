@@ -1,0 +1,868 @@
+---
+title: "Dentate Gyrus tPC1"
+author: "Angus Campbell"
+date: "2023-03-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# libraries
+library(randomForest)
+library(rfUtilities)
+library(Seurat) # not really needed for this analysis and may interfere with Summarized experiment which we need 
+library(stringr)
+library(sampler) # provides ssamp
+library(caTools)
+library(pROC)
+library(ggplot2)
+library(stats)
+library(Dict)
+library(pheatmap)
+library(caret)
+library(data.table)
+library(dplyr)
+library(groupdata2) # gives us partition
+#library(SCnorm) # install this one from github
+#may require restarting session to run
+#library(devtools)
+#devtools::install_github("rhondabacher/SCnorm")
+library(janitor) # some fucntions for data cleaning
+#library(SummarizedExperiment) # may interfere with seurat
+library(tibble)
+library(amlpmpsupport) # installed via remotes from thier github 2021
+library(affy) # for making density plots : 
+#https://mkempenaar.github.io/gene_expression_analysis/chapter-3.html
+library(smotefamily) # for making smote from data, smote is a common algoirhtm for unbalanced data calssification preprocessing
+library(scrime) # provides rowscale
+library(stats)
+library(loadings)
+library(HGC)
+library(ggridges)
+
+
+```
+
+
+```{r}
+# hierachical clustering on the SNN graph
+# Tutorial here: https://github.com/XuegongLab/HGC/tree/HGC4oldRVersion
+# https://bioconductor.org/packages/release/bioc/html/HGC.html
+# Docs: https://bioconductor.org/packages/release/bioc/manuals/HGC/man/HGC.pdf
+```
+
+
+## PAths
+
+```{r}
+# set paths
+# from this pub: https://www.nature.com/articles/s41586-022-04915-7#Sec5
+# cell assingments were done with this: 
+bugeon.path <- '/space/scratch/Bugeon2022_merfish_ca2plus/'
+
+
+# Hrvatin, S., Hochbaum, D. R., Nagy, M. A., Cicconet, M., Robertson, K., Cheadle, L., ... & Greenberg, M. E. (2018). 
+# Single-cell analysis of experience-dependent transcriptomic states in the mouse visual cortex. Nature neuroscience, 21(1), 120-129.
+#From here: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5742025/
+hrvatin.path <- '/home/acampbell/test_datasets/Hrvatin2018/'
+
+bahl2022.path <- '/home/acampbell/PavLabEngrams/IEG_gradients/neurestimator_iegs_list.csv'
+
+tasic.path <- '/space/scratch/Tasic2018_GSE115746/'
+
+protcoding.genelist.path <- '/home/acampbell/PavLabEngrams/IEG_gradients/unique_stablestranscriptIDs_m39_gene_names.txt'
+
+hg_to_mm <- 'PavLabEngrams/EngramCellClassifier/hg_mm_1to1_ortho_genes_DIOPT-v8.tsv'
+
+mouse.tfs.path <- '/home/acampbell/PavLabEngrams/EngramCellClassifier/TranscriptionFactorStuff/mouse_tfs.tsv'
+
+jeager.DEGs.path <- '/home/acampbell/PavLabEngrams/EngramCellClassifier/Jeager2018_GSE98679/jeager_DEGs_grouped.csv'
+
+valence_degs.path <- '/home/acampbell/PavLabEngrams/IEG_gradients/DGC_images/shpokayte2022_vCA1_valence_engram_DEGs.csv'
+ 
+```
+
+## FUnctions
+
+```{r}
+# functions
+
+pseudocount_log2p1_transform <- function(x, scale_factor = 10^6, UMI.provided = NULL){
+  # Almost as Seurat::NormalizeData but we use log2 rather than natural log
+  # from here https://satijalab.org/seurat/reference/normalizedata
+  if(is.null(UMI.provided)){
+    counts <- sum(x)}else{
+      counts <- UMI.provided
+    }
+  x <- (x)/counts # Feature counts for each cell are divided by the total counts for that cell...
+  x <- x*scale_factor # and multiplied by the scale.factor. 
+  # the we log2 plus 1 rather than natural log plus 1 seurat uses
+  return(log2(x+1))
+}
+
+pavlab.normalize <- function(df, UMI = NULL, median.scale=FALSE, scaleby = 10000){
+  df.cols <- colnames(df)
+  df.rows <- rownames(df)
+  if(median.scale){ scaleby = median(UMI)}
+  if( is.null(UMI)){
+    df <- data.frame(apply(df,  MARGIN = 2, pseudocount_log2p1_transform))
+  }else{
+    #
+    df[] <- Map(pseudocount_log2p1_transform, df, scale_factor = scaleby, UMI.provided = UMI)
+    
+  }
+  colnames(df) <- df.cols
+  rownames(df)<- df.rows
+  return(df)
+}
+
+# for finding nth highest value, we use it for fincing geens of highest varience
+maxN <- function(x, N=2){
+    len <- length(x)
+    if(N>len){
+        warning('N greater than length(x).  Setting N=length(x)')
+        N <- length(x)
+    }
+    sort(x,partial=len-N+1)[len-N+1]
+}
+
+# to write pheatmap images to file as a .png
+save_pheatmap <- function(x, filename, width=480, height=960) {
+   stopifnot(!missing(x))
+   stopifnot(!missing(filename))
+   png(filename,width = width, height=height)
+   grid::grid.newpage()
+   grid::grid.draw(x$gtable)
+   dev.off()
+}
+```
+
+
+
+## Reading in the gene lists we will use
+
+```{r}
+# named meta for being required to exhibit a 0.5 foldchnage in 2 out of 3 studies from Bahl et al., 2022 in biorvx
+# neuroestimator studies are PMID: 31501571, PMID: 29681534, PMID: 24855953
+bahl.meta.iegs.df <- read.csv(bahl2022.path)
+meta.iegs <- toupper(bahl.meta.iegs.df$stimulus_responsive_gene)
+meta.iegs
+```
+
+
+```{r}
+# gene names of protien coding genes in mice
+prot.coding.genes.ensmlble.df <- read.csv(protcoding.genelist.path)
+mouse.prot.coding.genes <- unique(prot.coding.genes.ensmlble.df$Gene.name) # we don't need to map ensemble id's to gene names
+
+# because the asunderrs comes from a seurat object whchich converts all genes to uppercase
+# we have to do the same four our lists
+mouse.prot.coding.genes <- toupper(mouse.prot.coding.genes)
+print(paste("There are this many unique protien coding gene names in our list:", as.character(length((mouse.prot.coding.genes)), sep='')))
+head(prot.coding.genes.ensmlble.df)
+```
+
+```{r}
+mouse_tfs.df <- read.table(mouse.tfs.path,
+                           sep = '\t')
+colnames(mouse_tfs.df) <- mouse_tfs.df[1,]
+mouse_tfs.df <- mouse_tfs.df[-1,]
+# beacuase of saunders coming froma  seurat object all the genes are in caps
+mouse_tfs.df$Symbol.allcaps <- toupper(mouse_tfs.df$Symbol)
+```
+```{r}
+head(mouse_tfs.df)
+```
+
+
+
+```{r}
+jeager.DEGs.df <- read.csv(jeager.DEGs.path)
+rownames(jeager.DEGs.df) <- jeager.DEGs.df$gene
+jeager.DEGs.df$uppercaseSymbol <- toupper(rownames(jeager.DEGs.df)) # because of saunders making all the gene symbols in all caps
+head(jeager.DEGs.df)
+```
+
+
+```{r}
+valence_degs.df <- read.csv(valence_degs.path)
+head(valence_degs.df)
+```
+
+```{r}
+# there are some genes which are common to both positive and neutral 
+# valences engrams
+common <- valence_degs.df$shapoyte_gene[duplicated(valence_degs.df$shapoyte_gene)]
+valence_degs.df[valence_degs.df$shapoyte_gene %in% common,2] <- '32 common elements in Negative DMGs and Positive DMGs'
+
+valence_degs.df[valence_degs.df$shapoyte_gene %in% common,3] <- 'shared'
+```
+
+
+```{r}
+# now we drop the second entries
+valence_degs.df <- valence_degs.df[!duplicated(valence_degs.df$shapoyte_gene),]
+
+
+sum(duplicated(valence_degs.df$shapoyte_gene))
+
+```
+```{r}
+# lastly because of saunders we must add a row of all caps gene symbols
+valence_degs.df$uppercaseSymbol <- toupper(valence_degs.df$shapoyte_gene)
+head(valence_degs.df)
+```
+
+
+
+
+## Loading the data we are working with
+
+```{r}
+saunders2018_dgc_counts.normscaled <- read.csv('/home/acampbell/PavLabEngrams/saunders2018_dgc_counts_normscaled.csv')
+
+#make cell names is X column rownames and drop X
+rownames(saunders2018_dgc_counts.normscaled) <- saunders2018_dgc_counts.normscaled$X
+saunders2018_dgc_counts.normscaled <- saunders2018_dgc_counts.normscaled %>% select(-X)
+```
+
+
+
+
+```{r}
+saundersdgs2018s.meta <- read.csv('/space/scratch/Saunders2018_Hp_GSE116470/saunders2018_dgc_meta_filtered_v2.csv')
+rownames(saundersdgs2018s.meta) <- saundersdgs2018s.meta$X
+saundersdgs2018s.meta <- select(saundersdgs2018s.meta, -X)
+```
+
+
+```{r}
+print(dim(saundersdgs2018s.meta))
+```
+
+
+```{r}
+head(saundersdgs2018s.meta)
+```
+
+```{r}
+saunders2018_dgc_counts <- read.csv('/space/scratch/Saunders2018_Hp_GSE116470/saunders2018_dgc_counts_filt.csv')
+
+#make cell names is X column rownames and drop X
+rownames(saunders2018_dgc_counts) <- saunders2018_dgc_counts$X
+saunders2018_dgc_counts <- saunders2018_dgc_counts %>% select(-X)
+head(saunders2018_dgc_counts)
+```
+
+
+```{r}
+# getting our UMI before we filter out undersired genes
+saundersdgs2018s.meta$umi <- colSums(saunders2018_dgc_counts)
+```
+Now we have to filter out the genes
+
+## Filtering our genes
+
+The cell have already been filtered out from the ref dataset in Suerats spatial transcriptomics tutorial, the dataset Saunders et al., (2018) does not appears to have been filtered for mitochondiral genes properly.  I removed cells with excessively high ro low read counts and/or too many mitochondrial genes.
+
+
+
+```{r}
+# genes must have a miniumum of 10 reads total
+saunders2018_dgc_counts.filtered <- saunders2018_dgc_counts[rowSums(saunders2018_dgc_counts)>10,]
+
+# must be a protien coding gene
+matched.protcoding.genes <- mouse.prot.coding.genes[mouse.prot.coding.genes %in% rownames(saunders2018_dgc_counts.filtered)]
+saunders2018_dgc_counts.filtered <- saunders2018_dgc_counts.filtered[rownames(saunders2018_dgc_counts.filtered) %in% matched.protcoding.genes,]
+
+
+```
+
+
+```{r}
+# remove gene model genes, mitochondrial genes (Mt and Mrpl), and ribosomal protiens (Rpl)
+filt.genes.idx <- !startsWith( rownames(saunders2018_dgc_counts.filtered), 'GM')
+filt.genes.idx <- filt.genes.idx & !startsWith( rownames(saunders2018_dgc_counts.filtered), 'MT')
+filt.genes.idx <- filt.genes.idx & !startsWith( rownames(saunders2018_dgc_counts.filtered), 'MRPL')
+filt.genes.idx <- filt.genes.idx & !startsWith( rownames(saunders2018_dgc_counts.filtered), 'RPL') 
+
+# still need to go to biomart and remove sex genes (genes from Y or X chromosome)
+# remove genes expressed in more than 4 cells
+#matched.protcoding.genes
+expressed <- ( rowSums(saunders2018_dgc_counts.filtered>0) > 4 )
+expressed <- rownames(saunders2018_dgc_counts.filtered) %in% expressed
+filt.genes.idx <- filt.genes.idx & !expressed
+
+
+
+names(filt.genes.idx) <- rownames(saunders2018_dgc_counts.filtered)
+```
+
+
+```{r}
+# checks length of genes we can see ~3k are removed based on above criteria from Tasic
+length(filt.genes.idx)
+sum(filt.genes.idx)
+filt.genes.idx[1:10]
+names(filt.genes.idx)[filt.genes.idx==TRUE][1:10]
+```
+
+```{r}
+# checking to make sure some genes that should be there are
+print(filt.genes.idx[names(filt.genes.idx)=='SNAP25'])
+print(filt.genes.idx[names(filt.genes.idx)=='PENK'])
+```
+
+```{r}
+#sum(is.na(saunders2018_dgc_counts.filtered.normscaled))
+median(saundersdgs2018s.meta$umi)
+```
+
+```{r}
+saunders2018_dgc_counts.filtered <- saunders2018_dgc_counts.filtered[filt.genes.idx,]
+saunders2018_dgc_counts.filtered.normed <- pavlab.normalize(saunders2018_dgc_counts.filtered,
+                                                                UMI = saundersdgs2018s.meta$umi,
+                                                                median.scale = TRUE)
+
+
+saunders2018_dgc_counts.filtered.normscaled <-as.data.frame(scale(t(saunders2018_dgc_counts.filtered.normed)))
+# after t() the data becomes a matrix and loses its colnames an rownames we need to get them from the og df but row ->cols and vice versa
+genes <- rownames(saunders2018_dgc_counts.filtered)
+colnames(saunders2018_dgc_counts.filtered.normscaled) <- genes #genes
+rownames(saunders2018_dgc_counts.filtered.normscaled) <- colnames(saunders2018_dgc_counts.filtered) #cellids
+```
+
+```{r}
+head(saunders2018_dgc_counts.filtered.normscaled)
+```
+
+
+## Calculating the PCA
+
+```{r}
+# DO NOT UNCOMMENT AND RUN IT TAKES HOURS, JUST LOAD THE SAVED PCA
+# May want to recompute it without the cells that would have been filtered
+# maybe with the same protein coding gene restrictions as tasic
+
+# its already been scaled and normed so lets
+#tic()
+# center is false because it's already been centered
+#saunders.prcomp <- fast.prcomp(saunders2018_dgc_counts.filtered.normscaled, center = FALSE)
+#saunders.prcomp <- pca_loading(saunders.prcomp)
+#saveRDS(saunders.prcomp, file = '/space/scratch/PCArds_objects_DGCs/pca_sauders_filteredgenes.RDS')
+#toc()
+
+# on pavlab server it took...
+# 10010.937 sec elapsed
+# aprrox 3 hrs give or take
+```
+
+
+```{r}
+#saunders.prcomp <- readRDS(file = '/space/scratch/PCArds_objects_DGCs/pca_sauders_filteredgenes.RDS')
+```
+
+
+```{r}
+summ <- summary(saunders.prcomp)
+
+summ$importance[2,1:10]
+```
+
+
+```{r}
+# varience explained plot
+pcs.varexplained <-saunders.prcomp$sdev^2/sum(saunders.prcomp$sdev^2)
+
+pc.df <- data.frame( PC = colnames(saunders.prcomp$x)[1:10],
+    varience = pcs.varexplained[1:10]) %>% arrange(desc(varience))
+
+pc.df$varience <- round(pc.df$varience*100, digits = 2)
+pc.df$varience
+```
+
+Note that if we were to only use the genes we consider marker genes it is likely this gradients varience explained would dramatically increase.
+
+```{r}
+#plotting
+ggplot(data = pc.df, aes(x = reorder(PC, -varience), y = varience)) + 
+geom_bar(stat ="identity") +
+theme_classic() +
+xlab('Principal Componenets') +
+ylab('Varience Explained (%)' ) +
+scale_y_continuous(expand = c(0, 0),limits=c(0, 1)) +
+theme(axis.line=element_line(size=2)) + 
+theme(axis.line=element_line(size=2),
+     axis.title.x = element_text(size = 20),
+      axis.title.y = element_text(size = 20),
+     axis.text.x = element_text(size = 14, face = "bold"),
+     axis.text.y = element_text(size = 14, face = "bold" ))
+```
+
+
+```{r}
+saundersdgs2018s.meta$tPC1_score <- saunders.prcomp$x[,1]
+
+matched.iegs <- colnames(saunders2018_dgc_counts.filtered.normscaled)[colnames(saunders2018_dgc_counts.filtered.normscaled) %in% meta.iegs]
+```
+
+
+```{r}
+head(jeager.DEGs.df)
+```
+
+When we create matched DEG.df we don't need to worry about if the genes are correalted or in the otehr dataset.
+As we will use it to filter with in operator against the other list which only consists of genes from our list that met the criteria for begin significantly correlated with PC1 after multiple test correction.
+
+```{r}
+saundersdgs2018s.meta$tPC1_score <- saunders.prcomp$x[,1]
+
+
+## CHANGE THIS TO CHANGE WAHT GENES ARE IN THE LIST
+#matched.iegs <- colnames(saunders2018_dgc_counts.test)[colnames(saunders2018_dgc_counts.test) %in% meta.iegs]
+
+matched.DEGs.df <- colnames(saunders2018_dgc_counts.filtered.normscaled)[colnames(saunders2018_dgc_counts.filtered.normscaled) %in% jeager.DEGs.df$uppercaseSymbol]
+
+matched.DEGs.df <- jeager.DEGs.df[jeager.DEGs.df$uppercaseSymbol  %in% colnames(saunders2018_dgc_counts.filtered.normscaled),]
+
+#matched.DEGs.df <- data.frame(uppercaseSymbol = matched.DEGs)
+head(matched.DEGs.df)
+```
+
+
+```{r}
+table(jeager.DEGs.df$group)
+```
+
+Now we create some IEG lists to score the cells with.
+```{r}
+#saundersdgs2018s.meta$iegsum_activity <- colSums(saunders2018_dgc_counts.test[,matched.iegs])
+
+#sample_name, tPC1_score, iegsum_activity, cell_class, cell_subclass, cell_cluster
+#colSums(saunders2018_dgc_counts.test[matched.iegs,])[1:10]
+
+# here we should sum different time points
+
+saundersdgs2018s.meta$iegsum_alljeagerDEGS <- rowSums(saunders2018_dgc_counts.filtered.normscaled[,matched.DEGs.df$uppercaseSymbol])
+
+onehr.idx <- matched.DEGs.df$group=='1hr'
+late.idx <- matched.DEGs.df$group  %in% c('4hr','5hr','4hr_and_5hr')
+
+saundersdgs2018s.meta$iegsum_alljeagerDEGS <- rowSums(saunders2018_dgc_counts.filtered.normscaled[,matched.DEGs.df$uppercaseSymbol])
+saundersdgs2018s.meta$iegsum_1hrjeager <- rowSums(saunders2018_dgc_counts.filtered.normscaled[,matched.DEGs.df$uppercaseSymbol[onehr.idx]])
+saundersdgs2018s.meta$iegsum_4and5hrjeager <- rowSums(saunders2018_dgc_counts.filtered.normscaled[,matched.DEGs.df$uppercaseSymbol[late.idx]])
+```
+
+
+# we create meta data df for cells with only teh stuff we care about getting agglomerated and plotting later
+
+
+```{r}
+tPC1cell.idx.df <- saundersdgs2018s.meta %>% 
+                   select( tPC1_score, iegsum_alljeagerDEGS, iegsum_1hrjeager, iegsum_4and5hrjeager,
+                           subclass_hclust.k6.h1.75, subtype_hclust.k44.h0.35)  %>% 
+                   arrange(tPC1_score)
+```
+
+```{r}
+tPC1cell.idx.df$subclass_hclust.k6.h1.75 <- as.factor(tPC1cell.idx.df$subclass_hclust.k6.h1.75)
+tPC1cell.idx.df$subtype_hclust.k44.h0.35 <- as.factor(tPC1cell.idx.df$subtype_hclust.k44.h0.35)
+```
+
+
+Now we grab all the genes and create metadata about them around tPC1 we have their statistics so that we can use them to filter for genes significatly correlated to tPC1.  
+
+
+```{r}
+# getting the gene loadings out
+# finding out which are significant
+# could also check to see if they are a TF or not
+tPC1_fromsaunders2018.dgcs <- data.frame(gene = colnames(saunders2018_dgc_counts.filtered.normscaled),
+                                           tPC1 = saunders.prcomp$loading$R[,1],
+                                 p.value = saunders.prcomp$loading$p.value[,1],
+                                q.value_BH = p.adjust(saunders.prcomp$loading$p.value[,1], method='BH')) %>% arrange(tPC1)
+head(tPC1_fromsaunders2018.dgcs)
+```
+
+
+```{r}
+# filtering for the iegs correlated to 
+fdr.thresh <- 0.01
+#iegs.tPC1_ranking <- tPC1_fromsaunders2018.dgcs[(tPC1_fromsaunders2018.dgcs$q.value_BH<fdr.thresh)&(tPC1_fromsaunders2018.dgcs$gene %in% meta.iegs),]
+#iegs.tPC1_ranking <- tPC1_fromsaunders2018.dgcs[tPC1_fromsaunders2018.dgcs$gene %in% meta.iegs,]
+iegs.tPC1_ranking <- tPC1_fromsaunders2018.dgcs[(tPC1_fromsaunders2018.dgcs$q.value_BH<fdr.thresh)&(tPC1_fromsaunders2018.dgcs$gene %in% matched.DEGs.df$uppercaseSymbol),]
+
+head(iegs.tPC1_ranking )
+```
+
+```{r}
+dim(iegs.tPC1_ranking)
+```
+So most genes in jeager are significantly correlated with the tPC1, we now make a dataframe of cells organized by their correlation to tpC1 and the genes we want organized by thier loading on PC1.
+
+
+```{r}
+iegsbytpc1 <- saunders2018_dgc_counts.filtered.normscaled[rownames(tPC1cell.idx.df), iegs.tPC1_ranking$gene]
+```
+
+We give our cell metadata labels to aggregate over and other scores we want to plot at a later date.
+
+```{r}
+iegsbytpc1$Subclass <- tPC1cell.idx.df$subclass_hclust.k6.h1.75
+iegsbytpc1$Subtype <- tPC1cell.idx.df$subtype_hclust.k44.h0.35
+iegsbytpc1$tPC1_score <- tPC1cell.idx.df$tPC1_score
+iegsbytpc1$iegsum_activity <- tPC1cell.idx.df$iegsum_alljeagerDEGS
+iegsbytpc1$iegsum_1hrjeager <- tPC1cell.idx.df$iegsum_1hrjeager
+iegsbytpc1$iegsum_4and5hrjeager <- tPC1cell.idx.df$iegsum_4and5hrjeager
+```
+
+
+```{r}
+iegsbytpc1.subtype_means.df <- iegsbytpc1 %>%
+                               select(-Subtype) %>%
+                               select(-Subclass) %>%
+                               aggregate(list(iegsbytpc1$Subtype), mean) %>%
+                               arrange(tPC1_score) %>%
+                               column_to_rownames(var ='Group.1')
+```
+
+
+Just to confirm what I suspect we are going to see in the heatmaps....
+
+```{r}
+head(iegsbytpc1.subtype_means.df)
+```
+
+
+```{r}
+tail(iegsbytpc1.subtype_means.df)
+```
+
+
+Very nice!
+
+
+```{r}
+# creating meta data for the mean aggregated expression data
+tPC1_mean.df <- data.frame( tPC1_meanscore = iegsbytpc1.subtype_means.df$tPC1_score,
+                            iegsum_meanactivity = iegsbytpc1.subtype_means.df$iegsum_activity)
+rownames(tPC1_mean.df) <- rownames(iegsbytpc1.subtype_means.df)
+tPC1_mean.df$relative.scaled.means <- scale(tPC1_mean.df$tPC1_meanscore)
+tPC1_mean.df$relative.scaled.iegsum_meanactivity  <- scale(tPC1_mean.df$iegsum_meanactivity)
+```
+
+
+```{r}
+subtype_to_type_annotation <- function(subtype_string, list_of_subtypes, list_of_types){
+                                #checks the strings of subtypes to for begingin string
+                                #to map to a type, ends loop if one is detected returns 
+                                # what it was given, returns match if it finds something 
+                                # and en empty string if there is no match
+                                # includes a break stement to stop loop once match is found
+                                # assumes list_of_subtypes and list_of_types are same length
+                                # with corresponging entries
+                                output.string <- ""
+                                for(i in c(1:length(list_of_subtypes))){
+                                if(startsWith(subtype_string, list_of_subtypes[i])){
+                                   output.string <- list_of_types[i]
+                                   break
+                                    }# end of ifstatement
+                                  }# end of for loop
+                                return(output.string)
+                                }# end of function
+```
+
+
+
+```{r}
+subclass.names <- as.character(unique(iegsbytpc1$Subclass))
+subclass.names
+```
+
+```{r}
+tPC1_mean.df$Subclass <- sapply(rownames(iegsbytpc1.subtype_means.df), FUN = function(x) subtype_to_type_annotation(x, subclass.names, subclass.names) )
+```
+
+```{r}
+# create annotation
+subclass.df <- data.frame('Subclass'=as.factor(tPC1_mean.df$Subclass))
+rownames(subclass.df) <- rownames(iegsbytpc1.subtype_means.df)
+```
+
+
+```{r}
+alljeagerDEGs.idx <- colnames(iegsbytpc1.subtype_means.df)  %in% matched.DEGs.df$uppercaseSymbol
+df <- iegsbytpc1.subtype_means.df[,alljeagerDEGs.idx]
+
+temp_hm <-pheatmap(df,
+                   cluster_rows = FALSE, cluster_cols = FALSE,
+                   annotation_row = subclass.df,
+                   main = "All Jeager by tPC1 Saunders DGCs")
+```
+```{r}
+# saving this for picking genes to plot on ridgeplots
+jeagerDEG.loading_order <- colnames(df)
+```
+
+
+
+
+```{r}
+onehour.jeagerDEGs.idx <- colnames(iegsbytpc1.subtype_means.df)  %in% matched.DEGs.df$uppercaseSymbol[matched.DEGs.df$group=='1hr']
+df <- iegsbytpc1.subtype_means.df[,onehour.jeagerDEGs.idx]
+
+temp_hm <-pheatmap(df,
+                   cluster_rows = FALSE, cluster_cols = FALSE,
+                   annotation_row = subclass.df,
+                   main = "DGC-ARGs-1hr in tPC1 Saunders DGCs")
+```
+
+
+```{r}
+fourandfivehr.jeagerDEGs.idx <- colnames(iegsbytpc1.subtype_means.df)  %in% matched.DEGs.df$uppercaseSymbol[late.idx]
+df <- iegsbytpc1.subtype_means.df[,fourandfivehr.jeagerDEGs.idx]
+
+temp_hm <-pheatmap(df,
+                   cluster_rows = FALSE, cluster_cols = FALSE,
+                   annotation_row = subclass.df,
+                   main = "DGC-Secondary Response by tPC1 Saunders DGCs")
+```
+```{r}
+table(matched.DEGs.df$group)
+```
+
+
+
+```{r}
+earlypersistant.jeagerDEGs.idx <- colnames(iegsbytpc1.subtype_means.df)  %in% matched.DEGs.df$uppercaseSymbol[matched.DEGs.df$group=='1hr_4hr_and_5hr']
+df <- iegsbytpc1.subtype_means.df[,earlypersistant.jeagerDEGs.idx]
+
+temp_hm <-pheatmap(df,
+                   cluster_rows = FALSE, cluster_cols = FALSE,
+                   annotation_row = subclass.df,
+                   main = "DGC-EarlyPersistant Response by tPC1")
+```
+
+## Valence
+
+We have DEGs from bulk tissue from double labelled mice (same mice, different cells) exposed to two different contexts, one a scent from female mouse the other a shock collected at 3 or 4 days after (depending on which exposure came first, differed between replicates to control for day), cells were then bulked.  Note this is a mix of neurons generally from vCA1 so there is also regional bias here and not specific to DGCs.
+
+```{r}
+head(valence_degs.df)
+```
+
+
+```{r}
+# filtering for the iegs correlated to 
+fdr.thresh <- 0.01
+#iegs.tPC1_ranking <- tPC1_fromsaunders2018.dgcs[(tPC1_fromsaunders2018.dgcs$q.value_BH<fdr.thresh)&(tPC1_fromsaunders2018.dgcs$gene %in% meta.iegs),]
+#iegs.tPC1_ranking <- tPC1_fromsaunders2018.dgcs[tPC1_fromsaunders2018.dgcs$gene %in% meta.iegs,]
+valence.iegs.tPC1_ranking <- tPC1_fromsaunders2018.dgcs[(tPC1_fromsaunders2018.dgcs$q.value_BH<fdr.thresh)&(tPC1_fromsaunders2018.dgcs$gene %in% valence_degs.df$uppercaseSymbol),]
+
+head(valence.iegs.tPC1_ranking)
+```
+
+```{r}
+dim(valence.iegs.tPC1_ranking)
+```
+Now we include the valence information.
+
+```{r}
+val.match.idx <- valence_degs.df$uppercaseSymbol %in% valence.iegs.tPC1_ranking$gene
+valence.iegs.tPC1_ranking$valence <- valence_degs.df$context_abreviation[val.match.idx]
+table(valence.iegs.tPC1_ranking$valence)
+```
+
+
+So most genes in jeager are significantly correlated with the tPC1, we now make a dataframe of cells organized by their correlation to tPC1 and the genes we want organized by their loading on PC1.
+
+
+We make meta data only with the valence genes. We give our cell metadata labels to aggregate over and other scores we want to plot at a later date.
+
+```{r}
+valence.DEGs.bytpc1 <- saunders2018_dgc_counts.filtered.normscaled[rownames(tPC1cell.idx.df), valence.iegs.tPC1_ranking$gene]
+```
+
+
+```{r}
+valence.DEGs.bytpc1$Subclass <- tPC1cell.idx.df$subclass_hclust.k6.h1.75
+valence.DEGs.bytpc1$Subtype <- tPC1cell.idx.df$subtype_hclust.k44.h0.35
+valence.DEGs.bytpc1$tPC1_score <- tPC1cell.idx.df$tPC1_score
+
+neg.idx <-valence.iegs.tPC1_ranking$valence=='neg_valence'
+aversive.DEGs <- colnames(saunders2018_dgc_counts.filtered.normscaled)[colnames(saunders2018_dgc_counts.filtered.normscaled) %in%  valence.iegs.tPC1_ranking$gene[neg.idx]]
+pos.idx <-valence.iegs.tPC1_ranking$valence=='pos_valence'
+appetative.DEGs <- colnames(saunders2018_dgc_counts.filtered.normscaled)[colnames(saunders2018_dgc_counts.filtered.normscaled) %in%  valence.iegs.tPC1_ranking$gene[pos.idx]]
+
+# here we use the counts before scaling
+valence.DEGs.bytpc1$aversive_sum <- colSums(saunders2018_dgc_counts.filtered.normed[aversive.DEGs,])
+valence.DEGs.bytpc1$appetative_sum <- colSums(saunders2018_dgc_counts.filtered.normed[appetative.DEGs,])
+```
+
+```{r}
+aversive.DEGs
+```
+
+```{r}
+valence.iegs.tPC1_ranking
+```
+
+
+
+
+```{r}
+valence.DEGs.bytpc1.subtype_means.df <- valence.DEGs.bytpc1 %>%
+                               select(-Subtype) %>%
+                               select(-Subclass) %>%
+                               aggregate(list(iegsbytpc1$Subtype), mean) %>%
+                               arrange(tPC1_score) %>%
+                               column_to_rownames(var ='Group.1')
+```
+
+
+Make some activity scores and put it on the general metadata.
+ Will do later
+
+Just to confirm what I suspect we are going to see in the heatmaps....
+
+```{r}
+head(valence.DEGs.bytpc1.subtype_means.df)
+```
+
+
+```{r}
+tail(valence.DEGs.bytpc1.subtype_means.df)
+```
+
+
+Very nice!
+
+
+```{r}
+valence.DEGs.bytpc1.subtype_means.df
+```
+
+
+```{r}
+# creating meta data for the mean aggregated expression data
+tPC1.valence_mean.df <- data.frame( tPC1_meanscore = valence.DEGs.bytpc1.subtype_means.df$tPC1_score,
+                                    neg_sum = valence.DEGs.bytpc1.subtype_means.df$aversive_sum,
+                            pos_sum = valence.DEGs.bytpc1.subtype_means.df$appetative_sum)
+rownames(tPC1.valence_mean.df) <- rownames(valence.DEGs.bytpc1.subtype_means.df)
+tPC1.valence_mean.df$relative.scaled.means <- scale(tPC1.valence_mean.df$tPC1_meanscore)
+
+```
+
+
+```{r}
+subtype_to_type_annotation <- function(subtype_string, list_of_subtypes, list_of_types){
+                                #checks the strings of subtypes to for begingin string
+                                #to map to a type, ends loop if one is detected returns 
+                                # what it was given, returns match if it finds something 
+                                # and en empty string if there is no match
+                                # includes a break stement to stop loop once match is found
+                                # assumes list_of_subtypes and list_of_types are same length
+                                # with corresponging entries
+                                output.string <- ""
+                                for(i in c(1:length(list_of_subtypes))){
+                                if(startsWith(subtype_string, list_of_subtypes[i])){
+                                   output.string <- list_of_types[i]
+                                   break
+                                    }# end of ifstatement
+                                  }# end of for loop
+                                return(output.string)
+                                }# end of function
+```
+
+
+
+```{r}
+subclass.names <- as.character(unique(valence.DEGs.bytpc1$Subclass))
+subclass.names
+```
+
+```{r}
+tPC1.valence_mean.df$Subclass <- sapply(rownames(valence.DEGs.bytpc1.subtype_means.df), FUN = function(x) subtype_to_type_annotation(x, subclass.names, subclass.names) )
+```
+
+```{r}
+# create annotation data frames
+subclass.df <- data.frame('Subclass'=as.factor(tPC1.valence_mean.df$Subclass))
+rownames(subclass.df) <- rownames(iegsbytpc1.subtype_means.df)
+
+# to label genes with their valence
+valence.gene.df <- data.frame('Valence'=as.factor(valence.iegs.tPC1_ranking$valence))
+valence.gene.df <- data.frame(t(valence.gene.df))
+colnames(valence.gene.df) <- colnames(valence.iegs.tPC1_ranking$gene)
+  
+```
+
+
+```{r}
+df <- valence.DEGs.bytpc1.subtype_means.df  %>%
+  select(-tPC1_score) %>%
+  select(-aversive_sum) %>%
+  select(-appetative_sum)
+```
+
+
+```{r}
+#annotation_col = valence.gene.df,
+
+temp_hm <-pheatmap(df,
+                   cluster_rows = FALSE, cluster_cols = FALSE,
+                   annotation_row = subclass.df,
+                   main = "Valence Specific DEGs across tPC1")
+```
+
+
+
+```{r}
+colnames(valence.iegs.tPC1_ranking)
+```
+
+```{r}
+valence.iegs.tPC1_ranking$scaledloading <-scale(valence.iegs.tPC1_ranking$tPC1) 
+valence.iegs.tPC1_ranking$gene <- factor(valence.iegs.tPC1_ranking$gene, levels = valence.iegs.tPC1_ranking$gene)
+```
+
+
+```{r}
+valence.iegs.tPC1_ranking$valence <- as.factor(valence.iegs.tPC1_ranking$valence)
+
+levels(valence.iegs.tPC1_ranking$valence)
+valence.iegs.tPC1_ranking$valence
+```
+
+
+```{r}
+p <- valence.iegs.tPC1_ranking %>%  
+     ggplot(aes(x=gene, y= tPC1)) + 
+     geom_point(aes(colour = valence))+
+     xlab('Valence Specific Engram DEG')+
+     ylab('tPC1 Loading')+
+     theme_classic() +
+     theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+p
+```
+
+
+
+```{r}
+p <-ggplot(valence.DEGs.bytpc1, aes(x=appetative_sum, y= Subtype, fill=0.5 - abs(0.5 - stat(ecdf)))) +
+  stat_density_ridges(geom = "density_ridges_gradient", calc_ecdf = TRUE) +
+  scale_fill_viridis_c(name = "Tail probability", direction = -1, option = "C") +
+  ylab('Cell Subtype (Cluster)')+
+  xlab('Summed Normed Averssive Engram DEG')+
+  theme_ridges(center_axis_labels = TRUE)
+p
+```
+
+
+
+
+
+

@@ -3,7 +3,6 @@ title: "High IEG expressing cells in Human Datasets"
 author: "Angus Campbell"
 date: "2022-12-02"
 output: html_document
-self_contained: no
 ---
 
 ```{r setup, include=FALSE}
@@ -38,8 +37,6 @@ library(affy) # for making density plots :
 #https://mkempenaar.github.io/gene_expression_analysis/chapter-3.html
 library(smotefamily) # for making smote from data, smote is a common algoirhtm for unbalanced data calssification preprocessing
 library(scrime) # provides rowscale
-library(gridExtra)
-library(ggpubr)
 ```
 
 This dataset is sn prfiling with time course of stress data: https://www.biorxiv.org/content/10.1101/2021.03.26.436970v1.full
@@ -57,8 +54,6 @@ ayhanpath <- '/home/acampbell/test_datasets/Ayhan2021_GSE160189/'
 
 
 ```{r, include=FALSE}
-
-multi.intersect <- function(x) Reduce(intersect, x)
 
 pseudocount_log2p1_transform <- function(x, scale_factor = 10^6, UMI.provided = NULL){
   # Almost as Seurat::NormalizeData but we use log2 rather than natural log
@@ -918,15 +913,7 @@ From this tutrial [here](https://satijalab.org/seurat/articles/spatial_vignette.
 ```{r}
 # run once
 #InstallData("ssHippo")
-library(Seurat)
-library(SeuratData)
-library(ggplot2)
-library(patchwork)
-library(dplyr)
-```
 
-
-```{r}
 slide.seq <- LoadData("ssHippo")
 ```
 
@@ -970,9 +957,10 @@ table(ref$celltype)
 Might be best to just pull the DGC's out, we can calculate the prcomp while we're at it and save
 the PC1 data.
 
-```{r}
-saunders2018.dgc.idx <- ref$celltype=="Dentate Principal cells"
 
+
+
+```{r}
 saunders2018_dgc_meta <- data.frame(celltype = ref$celltype[saunders2018.dgc.idx],
                                     cluster = ref$cluster[saunders2018.dgc.idx],
                                     subcluster = ref$subcluster[saunders2018.dgc.idx]
@@ -983,17 +971,36 @@ saunders2018_dgc_meta$subcluster <- as.factor(as.character(saunders2018_dgc_meta
 
 ref@meta.data$subcluster[ref@meta.data$cluster=='4']
 
+
 saunders2018_dgc_umi <- data.frame(as.matrix(zeigler2022.obj@assays@data$counts))
 saunders2018_dgc_umi
 ```
 
-
-
-
-
 ```{r}
-ref <- SetIdent(ref, value = 'celltypes')
+library(plyr)
+library(dplyr)
+
+
+df <- data.frame('Penk' = as.numeric(saunders2018_dgc_counts['PENK',]),
+                  'Cck' = as.numeric(saunders2018_dgc_counts['CCK',]),
+                 'Malat1' = as.numeric(saunders2018_dgc_counts['MALAT1',]) )
+df <- pavlab.normalize(df)
+
+df$DGC_Subtype = as.factor(as.character(saunders2018_dgc_meta$subcluster))
+rownames(df) <- rownames(saunders2018_dgc_meta)
+
+mu <- ddply(df, "DGC_Subtype", summarise, grp.mean=mean(Cck))
+
+p<-ggplot(df, aes(x=Cck, color=DGC_Subtype)) +
+  geom_density()+
+  geom_vline(data=mu, aes(xintercept=grp.mean, color=DGC_Subtype),
+             linetype="dashed")
+p
+
 ```
+
+
+
 
 
 ```{r}
@@ -1001,10 +1008,11 @@ anchors <- FindTransferAnchors(reference = ref,
                                query = slide.seq, 
                                normalization.method = "SCT",
                                npcs = 50)
-```
 
 
-```{r}
+
+
+
 predictions.assay <- TransferData(anchorset = anchors, refdata = ref$celltype, prediction.assay = TRUE,
     weight.reduction = slide.seq[["pca"]], dims = 1:50)
 slide.seq[["predictions"]] <- predictions.assay
@@ -1018,7 +1026,7 @@ SpatialFeaturePlot(slide.seq, features = c("Dentate Principal cells", "CA3 Princ
 
 ```{r}
 
-SpatialFeaturePlot(slide.seq, features = c("Dentate Principal cells", "CA3 Principal cells", "Entorhinal cortex"), alpha = c(0.1, 1))
+SpatialFeaturePlot(slide.seq, features = c("Dentate Principal cells"), alpha = c(0.1, 1))
 ```
 
 
@@ -1042,22 +1050,6 @@ saunders2018_dgc_meta <- ref@meta.data[saunders2018.dgc.idx,]
 
 saunders2018dgcs <- CreateSeuratObject(counts = saunders2018_dgc_counts,
                                        meta.data = saunders2018_dgc_meta)
-
-saunders2018dgcs[["percent.mt"]] <- PercentageFeatureSet(saunders2018dgcs, pattern = "^MT-")
-```
-
-```{r}
-VlnPlot(saunders2018dgcs, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
-```
-
-```{r}
-plot1 <- FeatureScatter(saunders2018dgcs, feature1 = "nCount_RNA", feature2 = "percent.mt")
-plot2 <- FeatureScatter(saunders2018dgcs, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
-plot1 + plot2
-```
-
-```{r}
-saunders2018dgcs <- subset(saunders2018dgcs, subset = nFeature_RNA > 1000 & nFeature_RNA < 4500 & percent.mt < 5)
 ```
 
 
@@ -1090,459 +1082,8 @@ PC15 seems to be the final useful and around 10 there is an elbow.
 
 
 ```{r}
-saunders2018dgcs <- RunUMAP(saunders2018dgcs, dims = 1:7)
-saunders2018dgcs <- RunTSNE(saunders2018dgcs, dims = 1:7)
+saunders2018dgcs <- RunUMAP(saunders2018dgcs, dims = 1:10)
 saunders2018dgcs <- FindNeighbors(saunders2018dgcs, dims = 1:10)
-```
-
-
-```{r}
-saunders2018dgcs <- FindClusters(saunders2018dgcs, resolution = 0.1, verbose = FALSE)
-```
-
-```{r}
-DimPlot(saunders2018dgcs, reduction = "tsne")
-```
-
-```{r}
-saunders2018dgcs.markers <- FindAllMarkers(saunders2018dgcs, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-
-
-saunders2018dgcs.markers %>%
-    group_by(cluster) %>%
-    slice_max(n = 2, order_by = avg_log2FC)
-```
-Markers from Hochgerner et al., (2018) include plk5 whihc has weka but fairly unique expression and Calb1 which is strong and fairly unique.  See figure 3 a 
-
-
-```{r}
-FeaturePlot(saunders2018dgcs, features = c("PENK","CCK"), reduction = 'tsne')
-```
-
-
-```{r}
-saunders2018dgcs$pointone_res_cluster_nums <- saunders2018dgcs@active.ident
-new.cluster.ids <- c("DGC-CCK-ZBTB20","DGC-CCK-TMSB4X","DGC-PENK-RGS4")
-names(new.cluster.ids) <- levels(saunders2018dgcs)
-saunders2018dgcs <- RenameIdents(saunders2018dgcs, new.cluster.ids)
-saunders2018dgcs$pointone_res_cluster_mrkrs <- saunders2018dgcs@active.ident
-```
-
-
-```{r}
-DimPlot(saunders2018dgcs, reduction = "umap", repel = TRUE, label = TRUE, pt.size = 0.5) + NoLegend()
-```
-
-Now we do a deeper clustering to get the subtypes we want.
-
-```{r}
-saunders2018dgcs <- FindClusters(saunders2018dgcs, resolution = 0.3, verbose = FALSE)
-```
-
-```{r}
-DimPlot(saunders2018dgcs, reduction = "tsne")
-```
-```{r}
-saunders2018dgcs$testclust <- saunders2018dgcs@active.ident
-
-test.df <- data.frame(type = saunders2018dgcs$pointone_res_cluster_mrkrs,
-                      testclustering = saunders2018dgcs$testclust)
-
-table(test.df)
-```
-
-
-
-```{r}
-saunders2018dgcs.markers <- FindAllMarkers(saunders2018dgcs, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-
-
-saunders2018dgcs.markers %>%
-    group_by(cluster) %>%
-    slice_max(n = 3, order_by = avg_log2FC)
-
-
-```
-```{r}
-saunders2018dgcs$pointthree_res_cluster_nums <- saunders2018dgcs@active.ident
-new.cluster.ids <- c("TMSB4X-COX6A1","TMSB4X-FAIM","ADCY1", "PENK", "MALAT1", "APOE")
-names(new.cluster.ids) <- levels(saunders2018dgcs)
-saunders2018dgcs <- RenameIdents(saunders2018dgcs, new.cluster.ids)
-saunders2018dgcs$pointthree_res_cluster_mrkrs <- saunders2018dgcs@active.ident
-
-
-DimPlot(saunders2018dgcs, reduction = "tsne",
-        label=TRUE, repel = TRUE) + NoLegend()
-```
-
-# using hiearchical clustering on the top PCs 
-
-```{r}
-library(HGC)
-```
-
-```{r}
-# so k is the number of nearest enighbours to construct the cell out of
-# this k puts us nearly at the level of meta-cells
-# the threshold is the jaccard index threshold at which we remove edges
-
-# this variable is not needed but this is what we are pullin from the data
-# to put into SNN.Construction()
-#saunders2018dgcs.sueratPCs <- as.matrix(saunders2018dgcs@reductions$pca@cell.embeddings[,c(1:15)])
-
-saunders2018dgcs.SNN <- SNN.Construction(mat = as.matrix(saunders2018dgcs@reductions$pca@cell.embeddings[,c(1:5)]),
-                                         k = 25, threshold = 0.15)
-saunders2018dgcs.ClusteringTree <- HGC.dendrogram(G = saunders2018dgcs.SNN)
-
-```
-
-
-```{r}
-saunders2018dgcs.ClusteringTree$height = log(saunders2018dgcs.ClusteringTree$height + 1)
-
-HGC.PlotDendrogram(tree = saunders2018dgcs.ClusteringTree,
-                    k = 5, plot.label = FALSE)
-```
-```{r}
-cluster.k6.h1.75 <- cutree(saunders2018dgcs.ClusteringTree, k = 6, h=1.75)
-table(cluster.k6.h1.75)
-```
-
-
-
-```{r}
-cluster.k44.h0.35 <- cutree(saunders2018dgcs.ClusteringTree, k = 44, h=0.35)
-table(cluster.k44.h0.35)
-```
-
-```{r}
-saunders2018dgcs$type_cluster.k6.h1.75 <- cluster.k6.h1.75
-saunders2018dgcs$subtype_cluster.k44.h0.35 <- cluster.k44.h0.35
-```
-
-
-```{r}
-saunders2018dgcs@active.ident <- as.factor(saunders2018dgcs$type_cluster.k6.h1.75)
-```
-
-
-```{r}
-saunders2018dgcs.markers <- FindAllMarkers(saunders2018dgcs, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.2)
-
-
-saunders2018dgcs.markers %>%
-    group_by(cluster) %>%
-    slice_max(n = 3, order_by = avg_log2FC)
-```
-```{r}
-# renaming the idents
-new.cluster.ids <- c("DGC-CAPN3","DGC-PENK","DGC-USMG5", "DGC-MEG3", "DGC-CCK", "DGC-NEUROD2")
-names(new.cluster.ids) <- levels(saunders2018dgcs)
-saunders2018dgcs <- RenameIdents(saunders2018dgcs, new.cluster.ids)
-saunders2018dgcs$subclass_hclust.k6.h1.75 <- saunders2018dgcs@active.ident
-
-
-```
-
-
-```{r}
-table(saunders2018dgcs$subclass_hclust.k6.h1.75)
-```
-
-
-```{r}
-DimPlot(saunders2018dgcs, reduction = "tsne",
-        label=TRUE, repel = TRUE) + NoLegend()
-```
-Using table we can see what cell subtypes belong to what type
-
-```{r}
-# now at the level of clusters
-saunders2018dgcs@active.ident <- as.factor(saunders2018dgcs$subtype_cluster.k44.h0.35)
-```
-
-
-```{r}
-saunders2018dgcs.markers <- FindAllMarkers(saunders2018dgcs, only.pos = TRUE, 
-                                           min.pct = 0.25, logfc.threshold = 0.15)
-
-
-saunders2018dgcs.markers %>%
-    group_by(cluster) %>%
-    slice_max(n = 3, order_by = avg_log2FC)
-```
-```{r}
-# weird erro rrenames one of the idents
-# heres the fic if needed
-#saunders2018dgcs$subtypes_cluster.k6.h1.75[saunders2018dgcs$subtypes_cluster.k6.h1.75=='amy_normed'] <- 10
-
-
-table(saunders2018dgcs@meta.data$subtypes_cluster.k6.h1.75,
-        saunders2018dgcs$subtype_cluster.k44.h0.35)
-```
-
-
-
-```{r}
-# renaming the idents
-
-# cell tyeps were given the top marker in the seurat finda all markers unless it was the same
-# as the type marker, if two of the clusters from the same type had the same first two genes
-# the first and second were used to dsistinguish these
-
-new.cluster.ids <- c("DGC-CAPN3-RPL41","DGC-CAPN3-ARPC2","DGC-CAPN3-PRRC2C",
-                     "DGC-PENK-BDNF-ARPP21",
-                     "DGC-CAPN3-TMSB4X","DGC-CAPN3-GOLM1","DGC-CAPN3-	RPL41","DGC-CAPN3-KCNQ1OT1","DGC-CAPN3-CHCHD10","DGC-CAPN3-TENM1",
-                     "DGC-USMG5-CRYM",
-                     "DGC-CAPN3-TIMP2",
-                      "DGC-MEG3-TENM2",
-                     "DGC-CCK-ARPC2",
-                     "DGC-USMG5-RPL41",
-                     "DGC-CCK-ARL6IP1",
-                     "DGC-USMG5-TMSB4X",
-                     "DGC-CCK-HMGN5","DGC-CCK-CRYM-RASL10A",
-                     "DGC-PENK-ID2-ARPP21",
-                     "DGC-MEG3-MALAT1",
-                     "DGC-CCK-CRYM-PYGO1",
-                     "DGC-USMG5-RPL38",
-                     "DGC-NEUROD2-TMSB4X",
-                     "DGC-USMG5-HMGB1",
-                     "DGC-MEG3-HRK","DGC-MEG3-TIMP2","DGC-MEG3-SLC4A4",
-                     "DGC-NEUROD2-DSP-HEXIM1", "DGC-NEUROD2-TUBA1A",
-                     "DGC-PENK-BDNF-RGS4",
-                     "DGC-MEG3-KCNQ1OT1",
-                     "DGC-USMG5-UBB-LRRC58",
-                     "DGC-NEUROD2-DSP-HPCAL1",
-                     "DGC-PENK-MEG3",
-                     "DGC-NEUROD2-TIMP2", "DGC-NEUROD2-SH3BGRL3",
-                     "DGC-PENK-ID2-RGS4",
-                     "DGC-NEUROD2-ADCY1","DGC-NEUROD2-C77370","DGC-NEUROD2-HPCA","DGC-NEUROD2-KCNQ1OT1","DGC-NEUROD2-HMGB1",
-                     "DGC-USMG5-HSP90AA1")
-                     
-
-
-
-
-
-names(new.cluster.ids) <- levels(saunders2018dgcs)
-saunders2018dgcs <- RenameIdents(saunders2018dgcs, new.cluster.ids)
-saunders2018dgcs$subtype_hclust.k44.h0.35 <- saunders2018dgcs@active.ident
-
-
-```
-
-```{r}
-DimPlot(saunders2018dgcs, reduction = "tsne",
-        label=TRUE, label.size = 2.5, repel = TRUE) + NoLegend()
-```
-
-
-```{r}
-# use this based on the dendrogram to cluster stuff at aparticular hieght (h) and inot k clusters in cutree()
-# you will have to supply the names to the vector you produce
-```
-
-```{r}
-cluster.k5 <- cutree(Pollen.ClusteringTree, k = 25)
-```
-
-
-
-```{r}
-saunders2018dgcs <- FindClusters(saunders2018dgcs, resolution = 4, verbose = FALSE)
-```
-
-```{r}
-saunders2018dgcs.markers <- FindAllMarkers(saunders2018dgcs, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-
-
-df.to.save <- saunders2018dgcs.markers %>%
-    group_by(cluster) %>%
-    slice_max(n = 3, order_by = avg_log2FC)
-
-write.csv(df.to.save, '/home/acampbell/PavLabEngrams/IEG_gradients/DGC_images/saunders_highres_four_markers.csv')
-```
-
-```{r}
-saunders2018dgcs$HIGHRES_CLUSTERS_four_res_nums <- saunders2018dgcs@active.ident
-```
-
-
-
-```{r}
-saunders2018dgcs$pointthree_res_cluster_nums <- saunders2018dgcs@active.ident
-new.cluster.ids <- c("TMSB4X-COX6A1","TMSB4X-FAIM","ADCY1", "PENK", "MALAT1", "APOE")
-names(new.cluster.ids) <- levels(saunders2018dgcs)
-saunders2018dgcs <- RenameIdents(saunders2018dgcs, new.cluster.ids)
-saunders2018dgcs$pointthree_res_cluster_mrkrs <- saunders2018dgcs@active.ident
-
-
-DimPlot(saunders2018dgcs, reduction = "tsne",
-        label=TRUE, repel = TRUE) + NoLegend()
-```
-
-
-
-```{r}
-#remotes::install_github("mojaveazure/seurat-disk")
-#library(seurat-disk)
-#SaveH5Seurat(saunders2018dgcs, '/space/scratch/Saunders2018_Hp_GSE116470/saundersDGCs_reclustered.h5Seurat')
-```
-
-
-Now we need to reassign the cell type labels in ref.
-
-
-```{r}
-saunders2018dgcs$dgc.subtypes <- saunders2018dgcs$subcluster
-dgc.subtypes.df <- data.frame(cellid = names(saunders2018dgcs$dgc.subtypes),
-                              label = as.character(saunders2018dgcs$dgc.subtypes) )
-celltypes.parcelated_DGCs.df <- data.frame(cellid = names(ref$celltype),
-                              label = as.character(ref$celltype)) 
-
-for(i in c(1:dim(dgc.subtypes.df)[1]) ){
-  thiscell <- dgc.subtypes.df$cellid[i]
-  fullsauderscelllist.idx <- celltypes.parcelated_DGCs.df$cellid == thiscell
-  celltypes.parcelated_DGCs.df$label[fullsauderscelllist.idx] <- dgc.subtypes.df$label[i]
-}
-
-ref@meta.data$celltypes.refined_DGCs <- as.factor(celltypes.parcelated_DGCs.df$label)
-
-celltypes.parcelated_DGCs.df$label <- sapply(celltypes.parcelated_DGCs.df$label,
-                                             FUN = function(x) if(grepl('PENK', x, fixed=TRUE)){'DGC-PENK'} else{x})
-celltypes.parcelated_DGCs.df$label <- sapply(celltypes.parcelated_DGCs.df$label,
-                                             FUN = function(x) if(grepl('DGC-CCK', x, fixed=TRUE)){'DGC-CCK'} else{x})
-
-ref@meta.data$celltypes.gdcs_penk_cck <- as.factor(celltypes.parcelated_DGCs.df$label)
-
-# add it to sauders as well
-dgc3types <- as.character(saunders2018dgcs$dgc.subtypes)
-dgc3types <- sapply(dgc3types,
-                                             FUN = function(x) if(grepl('PENK', x, fixed=TRUE)){'DGC-PENK'} else{x})
-dgc3types <- sapply(dgc3types,
-                                             FUN = function(x) if(grepl('DGC-CCK', x, fixed=TRUE)){'DGC-CCK'} else{x})
-
-saunders2018dgcs$celltypes.gdcs_penk_cck <- as.factor(dgc3types)
-# 
-# dgc.naming.idx <- names(celltypes.parcelated_DGCs) %in% names(saunders2018dgcs$dgc.subtypes)
-# 
-# celltypes.parcelated_DGCs[dgc.naming.idx] <- as.character(saunders2018dgcs$dgc.subtypes)
-# names(celltypes.parcelated_DGCs) <- names(ref$celltype)
-# 
-# 
-# ref@meta.data$celltypes.refined_DGCs <- as.factor(celltypes.parcelated_DGCs)
-
-```
-
-```{r}
-ref <- SetIdent(ref, value = ref@meta.data$celltypes.gdcs_penk_cck)
-```
-
-
-```{r}
-anchors <- FindTransferAnchors(reference = ref, 
-                               query = slide.seq, 
-                               normalization.method = "SCT",
-                               npcs = 50)
-```
-
-
-```{r}
-predictions.assay <- TransferData(anchorset = anchors, refdata = ref$celltypes.gdcs_penk_cck, 
-    prediction.assay = TRUE, weight.reduction = slide.seq[["pca"]], dims = 1:50)
-slide.seq[["predictions"]] <- predictions.assay
-```
-
-
-```{r}
-DefaultAssay(slide.seq) <- "predictions"
-SpatialFeaturePlot(slide.seq, features = c("DGC-PENK","DGC-CCK"), alpha = c(0.1, 1))
-```
-```{r}
-table(saunders2018dgcs$pointthree_res_cluster_mrkrs)
-```
-
-
-
-```{r}
-# only keep cells that were used in clustering
-saunders.filt.idx <- colnames(saunders2018_dgc_counts) %in% names(saunders2018dgcs$pointthree_res_cluster_mrkrs)
-saunders2018_dgc_counts.filt <- saunders2018_dgc_counts[,saunders.filt.idx]
-saunders2018_dgc_meta.filt <- saunders2018_dgc_meta[saunders.filt.idx,]
-saunders2018_dgc_meta.filt$dgc_subtypes <- saunders2018dgcs$dgc.subtypes
-saunders2018_dgc_meta.filt$dgc_penk.vs.cck <- as.character(saunders2018_dgc_meta.filt$dgc_subtypes)
-
-saunders2018_dgc_meta.filt$dgc_penk.vs.cck <- sapply(saunders2018_dgc_meta.filt$dgc_penk.vs.cck,
-                                             FUN = function(x) if(grepl('PENK', x, fixed=TRUE)){'DGC-PENK'} else{x})
-saunders2018_dgc_meta.filt$dgc_penk.vs.cck <- sapply(saunders2018_dgc_meta.filt$dgc_penk.vs.cck,
-                                             FUN = function(x) if(grepl('DGC-CCK', x, fixed=TRUE)){'DGC-CCK'} else{x})
-
-saunders2018_dgc_meta.filt$dgc_penk.vs.cck <- as.factor(saunders2018_dgc_meta.filt$dgc_penk.vs.cck)
-```
-
-```{r}
-saunders2018_dgc_counts.filt <- as.data.frame(as.matrix(saunders2018dgcs@assays$RNA@counts))
-dim(saunders2018_dgc_counts.filt)
-
-```
-
-
-```{r}
-write.csv(saunders2018dgcs@meta.data,
-          '/space/scratch/Saunders2018_Hp_GSE116470/saunders2018_dgc_meta_filtered_v2.csv')
-
-write.csv(saunders2018_dgc_counts.allcells,
-          '/space/scratch/Saunders2018_Hp_GSE116470/saunders2018_dgc_counts_filt.csv')
-```
-
-
-
-```{r}
-df <- data.frame('Penk' = as.numeric(saunders2018_dgc_counts.filt['PENK',]),
-                  'Cck' = as.numeric(saunders2018_dgc_counts.filt['CCK',]),
-                 'Malat1' = as.numeric(saunders2018_dgc_counts.filt['MALAT1',]) )
-df <- pavlab.normalize(df, scaleby = 10000)
-df.cols <- colnames(df)
-df.rows <- rownames(df)
-df <- as.data.frame(scale(df))
-df.cols -> colnames(df)
-df.rows -> rownames(df)
-
-df$DGC_Subtype = as.factor(as.character(saunders2018_dgc_meta.filt$dgc_subtypes))
-rownames(df) <- rownames(saunders2018_dgc_meta.filt)
-
-mu.penk <- ddply(df, "DGC_Subtype", summarise, grp.mean=mean(Penk))
-mu.cck <- ddply(df, "DGC_Subtype", summarise, grp.mean=mean(Cck))
-
-p1<-ggplot(df, aes(x=Penk, color=DGC_Subtype)) +
-  geom_density()+
-  geom_vline(data=mu.penk, aes(xintercept=grp.mean, color=DGC_Subtype),
-             linetype="dashed")+
-  ggtitle("Penk Expression in DGC Subtypes")
-p2<-ggplot(df, aes(x=Cck, color=DGC_Subtype)) +
-  geom_density()+
-  geom_vline(data=mu.cck, aes(xintercept=grp.mean, color=DGC_Subtype),
-             linetype="dashed") +
-  ggtitle("Cck Expression in DGC Subtypes")
-
-ggarrange(p1, p2, ncol=2, common.legend = TRUE, legend="right")
-
-```
-
-
-## IEG gradient in Sauders
-
-
-First we refine our clustering further, slit our clusters further and then
-just drop the resolution parameter.  
-
-
-```{r}
-saunders2018dgcs.list <- SplitObject(saunders2018dgcs, split.by = "celltypes.gdcs_penk_cck")
-```
-
-
-```{r}
 saunders2018dgcs <- FindClusters(saunders2018dgcs, resolution = 0.3, verbose = FALSE)
 ```
 
@@ -1558,404 +1099,30 @@ saunders2018dgcs.markers %>%
     group_by(cluster) %>%
     slice_max(n = 2, order_by = avg_log2FC)
 ```
-Markers from Hochgerner et al., (2018) include plk5 whihc has weka but fairly unique expression and Calb1 which is strong and fairly unique.  See figure 3 a 
-
 
 ```{r}
-new.cluster.ids <- c("DGC-CCK-ZBTB20","DGC-CCK-TMSB4X","DGC-PENK-RGS4")
-names(new.cluster.ids) <- levels(saunders2018dgcs)
-saunders2018dgcs <- RenameIdents(saunders2018dgcs, new.cluster.ids)
-DimPlot(saunders2018dgcs, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+FeaturePlot(saunders2018dgcs, features = c("PENK","CCK"))
+```
+
+```{r}
+FeaturePlot(saunders2018dgcs, features = "CCK")
 ```
 
 
 
 ```{r}
-#install.packages('Rfast2')
-```
-
-
-## Integrating Sauders and Hochgerner for IEG gradient  --WORK IN PROGRESS
-
-Loading Hochgerner
-
-```{r}
-#HOCHGERNER DATA
-testsetpath <- "/home/acampbell/test_datasets" # needs to be changed for pavlab server
-
-hochgerner5k_2018_counts <- read.table(paste(testsetpath,"/Hochgerner2018/GSE95315_10X_expression_data_v2.tab.gz", sep=""))
-
-colnames(hochgerner5k_2018_counts) <- hochgerner5k_2018_counts[1,]
-rownames(hochgerner5k_2018_counts) <- hochgerner5k_2018_counts[,1]
-
-hochgerner5k_2018_meta <- hochgerner5k_2018_counts %>% 
-  dplyr::slice(c(1:3)) %>%
-  t() %>%
-  data.frame %>%
-  dplyr::slice(-1) %>% 
-  dplyr::select(-cellid)
-
-hochgerner5k_2018_counts <- hochgerner5k_2018_counts %>% 
-  dplyr::select(-cellid) %>% 
-  dplyr::slice(-c(1:3))
-hochgerner5k_2018_counts[is.na(hochgerner5k_2018_counts)] <- 0
-
-hochcells <- colnames(hochgerner5k_2018_counts)
-hochgenes <- rownames(hochgerner5k_2018_counts)
-hochgerner5k_2018_counts <- data.frame(lapply(hochgerner5k_2018_counts, as.numeric))
-colnames(hochgerner5k_2018_counts) <- hochcells
-rownames(hochgerner5k_2018_counts) <- hochgenes
-
-hochgerner5k_2018_counts[is.na(hochgerner5k_2018_counts)] <- 0
-# getting umi
-hochgerner5k_2018_meta$umi <- colSums(hochgerner5k_2018_counts)
-
-#get index locations of adult p35 DGCs
-hoch5k.GC_Adult.p35.idx <- (hochgerner5k_2018_meta$age.days.=="35") | (hochgerner5k_2018_meta$age.days.=="35*")
-hoch5k.GC_Adult.p35.idx <- (hoch5k.GC_Adult.p35.idx) & (hochgerner5k_2018_meta$cluster_name == "Granule-mature")
-hoch5k.GC_Adult.p35.idx <- which(hoch5k.GC_Adult.p35.idx)
-
-hoch5k.all.DGCs.idx <- hochgerner5k_2018_meta$cluster_name == "Granule-mature"
-
-# we use this later
-hochgernerDGC_counts <-hochgerner5k_2018_counts[, hochgerner5k_2018_meta$cluster_name == "Granule-mature"]
-#hochgernerDGC_counts <- data.frame( lapply(hochgernerDGC_counts,as.numeric) ) # this data is for some reason all strings
-colnames(hochgernerDGC_counts) <- colnames(hochgerner5k_2018_counts)[hochgerner5k_2018_meta$cluster_name == "Granule-mature"]
-rownames(hochgerner5k_2018_counts) <- hochgenes
+new.cluster.ids <- c("Naive CD4 T", "CD14+ Mono", "Memory CD4 T", "B", "CD8 T", "FCGR3A+ Mono",
+    "NK", "DC", "Platelet")
+names(new.cluster.ids) <- levels(pbmc)
+pbmc <- RenameIdents(pbmc, new.cluster.ids)
+DimPlot(pbmc, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
 ```
 
 
 
 ```{r}
-
-hochgerner.dgc <- CreateSeuratObject(counts = hochgernerDGC_counts,
-                                     meta.data = hochgerner5k_2018_meta[hochgerner5k_2018_meta$cluster_name == "Granule-mature",]) 
-
-sauders.dgcs.filt <- CreateSeuratObject(counts = saunders2018_dgc_counts.filt,
-                                        meta.data = saunders2018_dgc_meta.filt)
-
-
-dgc.list <- list(hochgerner.dgc,)
-
+install.packages('Rfast2')
 ```
-
-
-
-## Comparisson of PC1 Rank correlations between Humans and Mouse datasets
-
-
-```{r}
-library(stats)
-library(loadings)
-library(heatmaply)
-```
-
-```{r}
-# run the PCA's
-# library("org.Hs.eg.db")  # for converting te id's
-
-filt.genes.idx <- !startsWith(rownames(saunders2018_dgc_counts.filt), 'GM')
-filt.genes.idx <- filt.genes.idx & !startsWith( rownames(saunders2018_dgc_counts.filt), 'MT')
-filt.genes.idx <- filt.genes.idx & !startsWith( rownames(saunders2018_dgc_counts.filt), 'MRPL')
-filt.genes.idx <- filt.genes.idx & !startsWith( rownames(saunders2018_dgc_counts.filt), 'RPL') 
-
-# still need to go to biomart and remove sex genes (genes from Y or X chromosome)
-
-# remove genes expressed in less than 4 cells
-#filt.genes.idx <- filt.genes.idx & ( rowSums(tasic2018.v1_inhibitory.exon.counts[matched.protcoding.genes,]>0) > 4 )
-
-filt.genes.idx <- filt.genes.idx & ( rowSums(saunders2018_dgc_counts.filt[,]>0) > 4 )
-
-
-saunders2018_dgc_counts.normscaled <- pavlab.normalize(saunders2018_dgc_counts.filt[filt.genes.idx,], median.scale = TRUE)
-
-saunders2018_dgc_counts.normscaled <- as.data.frame(scale(t(saunders2018_dgc_counts.normscaled)))
-rownames(saunders2018_dgc_counts.normscaled) <- colnames(saunders2018_dgc_counts.filt)
-colnames(saunders2018_dgc_counts.normscaled) <- rownames(saunders2018_dgc_counts.filt)[filt.genes.idx]
-
-write.csv(saunders2018_dgc_counts.normscaled,"saunders2018_dgc_counts_normscaled.csv")
-```
-
-
-```{r}
-saunders2018_dgc_counts.normscaled <- read.csv('/home/acampbell/PavLabEngrams/saunders2018_dgc_counts_normscaled.csv')
-
-rownames(saunders2018_dgc_counts.normscaled) <- saunders2018_dgc_counts.normscaled$X 
-saunders2018_dgc_counts.normscaled <- saunders2018_dgc_counts.normscaled[,-1]
-```
-
-
-```{r}
-ayhan.dgc.idx <- sapply(ayhan_meta$Cluster, FUN = function(x) grepl('Den.Gyr', x, fixed =TRUE))
-ayhanDGC_counts <- ayhan_counts[,ayhan.dgc.idx]
-ayhanDGC_counts.to_save <- rownames_to_column(ayhanDGC_counts, "gene")
-
-write.csv(ayhanDGC_counts.to_save,"~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_counts.csv")
-# note that the third kind of DGCs they found were ignored
-ayhanDGC_counts <- read.csv("~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_counts.csv", header = TRUE)
-rownames(ayhanDGC_counts) <- ayhanDGC_counts$gene
-# the OG data has na but we switched them to zeros
-ayhanDGC_counts <- ayhanDGC_counts[, c(1:dim(ayhanDGC_counts)[2]-1)]
-ayhanDGC_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_meta.csv", header = TRUE)
-# may be worth checking this lines up with the counts cell ids
-
-# remove gene model genes, mitochondrial genes (Mt and Mrpl), and ribosomal protiens (Rpl)
-filt.genes.idx <- !startsWith(rownames(ayhanDGC_counts), 'GM')
-filt.genes.idx <- filt.genes.idx & !startsWith( rownames(ayhanDGC_counts), 'MT')
-filt.genes.idx <- filt.genes.idx & !startsWith( rownames(ayhanDGC_counts), 'MRPL')
-filt.genes.idx <- filt.genes.idx & !startsWith( rownames(ayhanDGC_counts), 'RPL') 
-
-# still need to go to biomart and remove sex genes (genes from Y or X chromosome)
-
-# remove genes expressed in less than 4 cells
-#filt.genes.idx <- filt.genes.idx & ( rowSums(tasic2018.v1_inhibitory.exon.counts[matched.protcoding.genes,]>0) > 4 )
-
-filt.genes.idx <- filt.genes.idx & ( rowSums(ayhanDGC_counts[,]>0) > 4 )
-
-ayhan_counts.filt <- ayhanDGC_counts[filt.genes.idx,]
-
-ayhanDGC_counts.normscaled <- pavlab.normalize(ayhan_counts.filt, median.scale = TRUE)
-
-# ayhanDGC_counts.normscaled <- pavlab.normalize(ayhanDGC_counts, 
-#                                     UMI = ayhan_neurons.meta$nCount_RNA[ayhan.dgc.idx],
-#                                     scaleby = median(ayhan_neurons.meta$nCount_RNA))
-
-ayhanDGC_counts.normscaled <- as.data.frame(scale(t(ayhanDGC_counts.normscaled)))
-rownames(ayhanDGC_counts.normscaled) <- colnames(ayhanDGC_counts) 
-colnames(ayhanDGC_counts.normscaled) <- rownames(ayhanDGC_counts)[filt.genes.idx]
-
-
-sum(is.na(ayhanDGC_counts.normscaled))
-
-```
-
-```{r}
-filt.genes.idx <- !startsWith(rownames(hochgernerDGC_counts), 'GM')
-filt.genes.idx <- filt.genes.idx & !startsWith( rownames(hochgernerDGC_counts), 'MT')
-filt.genes.idx <- filt.genes.idx & !startsWith( rownames(hochgernerDGC_counts), 'MRPL')
-filt.genes.idx <- filt.genes.idx & !startsWith( rownames(hochgernerDGC_counts), 'RPL') 
-filt.genes.idx <- filt.genes.idx & ( rowSums(hochgernerDGC_counts[,]>0) > 4 )
-
-hochgner.dgcs.normscaled <- pavlab.normalize(hochgernerDGC_counts[filt.genes.idx,], median.scale = TRUE)
-hochgner.dgcs.normscaled <- as.data.frame(scale(t(hochgner.dgcs.normscaled)))
-rownames(hochgner.dgcs.normscaled) <- colnames(hochgernerDGC_counts)
-colnames(hochgner.dgcs.normscaled) <- rownames(hochgernerDGC_counts)[filt.genes.idx]
-
-```
-
-
-```{r}
-# first we convert hochgerner
-mm_to_hg.hochmapping <- data.frame(Symbol_mm = colnames(hochgner.dgcs.normscaled)) %>%
-  left_join(hg_to_mm, by= 'Symbol_mm')
-
-no.mapping.idx <- !(is.na(mm_to_hg.hochmapping$Symbol_hg)) # index of which genes to drop
-
-hochgner.dgcs.normscaled.matching_orthologues <- hochgner.dgcs.normscaled[,no.mapping.idx]
-
-
-colnames(hochgner.dgcs.normscaled.matching_orthologues)<-mm_to_hg.hochmapping$Symbol_hg[no.mapping.idx]
-# matching genes and making sure they are 1 to one orthologues
-
-all.colnames.list <- list(colnames(hochgner.dgcs.normscaled.matching_orthologues),
-                                    colnames(ayhanDGC_counts.normscaled),
-                                    colnames(saunders2018_dgc_counts.normscaled))
-
-matching.genes <- multi.intersect(all.colnames.list) # only takes lists as input
-
-# filter to mathcing genes
-hochgner.dgcs.normscaled.matching_orthologues<- hochgner.dgcs.normscaled.matching_orthologues[,colnames(hochgner.dgcs.normscaled.matching_orthologues)  %in%matching.genes]
-
-ayhanDGC_counts.normscaled.matching_orthologues <- ayhanDGC_counts.normscaled[,colnames(ayhanDGC_counts.normscaled) %in% matching.genes]
-
-saunders2018_dgc_counts.normscaled.matching_orthologues <- saunders2018_dgc_counts.normscaled[,colnames(saunders2018_dgc_counts.normscaled) %in% matching.genes]
- 
-
-```
-
-```{r}
-tic()
-saunders.prcomp <- fast.prcomp(saunders2018_dgc_counts.normscaled.matching_orthologues,
-                               center = FALSE)
-saunders.prcomp <- pca_loading(saunders.prcomp)
-saveRDS(saunders.prcomp, file = '/space/scratch/PCArds_objects_DGCs/pca_sauders_hg_mm_orthologues.RDS')
-hochgerner.prcomp <- fast.prcomp(hochgner.dgcs.normscaled.matching_orthologues,
-                               center = FALSE)
-hochgerner.prcomp <- pca_loading(hochgerner.prcomp)
-saveRDS(hochgerner.prcomp, file = '/space/scratch/PCArds_objects_DGCs/pca_hochgerner_hg_mm_orthologues.RDS')
-ayhan.prcomp <- fast.prcomp(ayhanDGC_counts.normscaled.matching_orthologues,
-                               center = FALSE)
-ayhan.prcomp <- pca_loading(ayhan.prcomp)
-saveRDS(ayhan.prcomp, file = '/space/scratch/PCArds_objects_DGCs/pca_ayhan_hg_mm_orthologues.RDS')
-toc()
-```
-Now we do the spearmans test
-
-
-```{r}
-
-PC1.lambdas.gene <- saunders.prcomp$rotation[,1]
-df.saunders <- data.frame(gene = names(PC1.lambdas.gene), 
-                 saunders.score = as.numeric(PC1.lambdas.gene))
-
-PC1.lambdas.gene <- hochgerner.prcomp$rotation[,1]
-df.hochgerner <- data.frame(gene = names(PC1.lambdas.gene), 
-                 hochgerner.score = as.numeric(PC1.lambdas.gene))
-
-PC1.lambdas.gene <- ayhan.prcomp$rotation[,1]
-df.ayhan <- data.frame(gene = names(PC1.lambdas.gene), 
-                 ayhan.score = as.numeric(PC1.lambdas.gene))
-
-
-gene.eignevalue_rank.comparisson.df  <- data.frame(gene = matching.genes) %>%
-  left_join(df.saunders,by=c("gene")) %>%
-  left_join(df.hochgerner,by=c("gene")) %>%
-  left_join(df.ayhan,by=c("gene"))
-
-gene.eignevalue_rank.comparisson.df 
-```
-
-```{r}
-test <- gene.eignevalue_rank.comparisson.df %>% arrange(desc(saunders.score))
-
-
-test[1:20,]
-```
-
-
-
-
-
-```{r}
-cor.test(x=gene.eignevalue_rank.comparisson.df$saunders.score,
-         y=gene.eignevalue_rank.comparisson.df$hochgerner.score,
-         method = 'spearman')
-```
-
-```{r}
-cor.test(x=gene.eignevalue_rank.comparisson.df$saunders.score,
-         y=gene.eignevalue_rank.comparisson.df$ayhan.score,
-         method = 'spearman')
-```
-```{r}
-#rankcor.df <- data.frame(matrix(0.1, nrow=3, ncol=3))
-rankcor.mtrx <- matrix(0, nrow=3, ncol=3)
-
-for(i in c(1:3)){
-  for(j in c(1:3)){
-  
-  rho.res <- cor.test(x=gene.eignevalue_rank.comparisson.df[,1+i],
-         y=gene.eignevalue_rank.comparisson.df[,1+j],
-         method = 'spearman')
-  
-  rankcor.mtrx[i,j] <- as.numeric(rho.res$estimate)
-  
-  }
-}
-
-studies <- c('Saunders et al., (2018)', 'Hochgerner et al., (2018)', 'Ayhan et al., (2021)')
-
-rownames(rankcor.mtrx) <- studies
-colnames(rankcor.mtrx) <- studies
-rankcor.mtrx[upper.tri(rankcor.mtrx)] <- NA
-rankcor.mtrx
-```
-
-
-
-```{r}
-hmp <- heatmaply(
-  rankcor.mtrx,
-  main = 'Spearmans rho between gene rank on PC1',
-  Rowv =NULL,
-  Colv = NULL,
-  scale_fill_gradient_fun = ggplot2::scale_fill_gradient2(
-    low = "white", 
-    high = "red", 
-    midpoint = 0, 
-    limits = c(0, 1)
-  ),
-  hide_colorbar = TRUE,
-  dendrogram = 'none',
-  cellnote = rankcor.mtrx
-)
-
-hmp
-```
-```{r}
-#png(filename = '/home/acampbell/PavLabEngrams/IEG_gradients/DGC_images/DGC_pc1_rho.png')
-#hmp
-#dev.off()
-```
-
-
-
-```{r}
-df.hochgerner %>% arrange(desc(hochgerner.score))
-```
-
-```{r}
-saveRDS(saunders.prcomp, file = '/space/scratch/Saunders2018_Hp_GSE116470/pcasauders.RDS')
-#a <- readRDS("stuff.RDS")
-```
-
-
-
-```{r}
-tPC1.saunders <- data.frame(gene = rownames(saunders.prcomp$x),
-                            score = as.numeric(saunders.prcomp$x[,1])) %>%
-  arrange(score)
-
-
-tPC1.hochgerner <-  data.frame(gene = rownames(hochgerner.prcomp$x),
-                            score = as.numeric(hochgerner.prcomp$x[,1])) %>%
-  arrange(score)
-
-
-rankcor.setup<- function(pc1, pc2){}
-
-# needs to be reworked to accept the other data, 
-# possibly made into a function
-comparetwopcsgenerank <- function(pcA, pcB){
-  # compare the rank of genes in pcA and pcB they don't need to contain the same genes
-  # input: each PC should be the gene names and the correlation of that gene with 
-  # it's pc
-  
-  
-}
-
-rank.pc1 <- c(1:length(pc1$gene))
-rank.pc2 <- c()
-for(thisgene in tPC1.bugeon2022[tPC1.bugeon2022 %in% tPC1_fromTasic2018.bugeongenesonly$gene]){
-    position_in_rnaseqPC1 <- match(thisgene, tPC1_fromTasic2018.bugeongenesonly$gene)
-    rank.tPC1.from_coppaFISH <- c(rank.tPC1.from_coppaFISH, position_in_rnaseqPC1 ) # append position in other list
-}
-
-tPC1_fromTasic2018.bugeongenesonly$rank_in_tasic <- rank.tPC1.from_rnaseq
-tPC1_fromTasic2018.bugeongenesonly$rank_in_bugeon <- rank.tPC1.from_coppaFISH
-tPC1_fromTasic2018.bugeongenesonly$gene <- as.factor(tPC1_fromTasic2018.bugeongenesonly$gene)
-rownames(tPC1_fromTasic2018.bugeongenesonly)
-
-
-```
-
-
-```{r}
-saunders2018_dgc_counts.normscaled <- pavlab.normalize(saunders2018_dgc_counts.filt, median.scale = TRUE)
-
-saunders2018_dgc_counts.normscaled <- as.data.frame(scale(t(saunders2018_dgc_counts.normscaled)))
-rownames(saunders2018_dgc_counts.normscaled) <- colnames(saunders2018_dgc_counts.filt)
-colnames(saunders2018_dgc_counts.normscaled) <- rownames(saunders2018_dgc_counts.filt)
-
-
-```
-
-
-
-
-
-
-
 
 
 ## IEG expression summing
