@@ -1140,7 +1140,7 @@ p + geom_histogram(color = "darkgreen", fill = "lightgreen", bins = 300) +
              linetype="dashed") +
   geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
              linetype="dashed") +
-  xlab("Probability of being an Engram Cell")+
+  xlab("Probability of being an Active Cell")+
   ylab("Counts") +
   ggtitle('Activation Score Distribution') +
   theme(plot.title = element_text(size=18, hjust = 0.5),
@@ -1534,38 +1534,19 @@ ninetysevenpointfive = as.numeric( quantile(test.ayhanDGCgenes$Active,0.975))
 p <- ggplot(data = test.ayhanDGCgenes, aes(x=Active) )
 
 #giving some weird error on the server
-dev.off()
+
 jpeg("ResampledRF_CV_pavnormed_AyhanVotes.jpg", width = 700, height = 700)
-p + geom_histogram(color = "darkgreen", fill = "lightgreen") + 
-  theme_classic() +
-  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
-             linetype="dashed") +
-  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
-             linetype="dashed") +
-  xlab("Probability of being an Engram Cell")+
-  ylab("Counts") +
-  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
-dev.off()
-
-dev.off()
-jpeg("Penk_vs_EngramProbability.jpg", width = 500, height = "500")
-pheatmap(t(vis.matrix), main = "Hochgerner Cells Activity State",
-         cluster_rows = F, cluster_cols=F, 
-         annotation_col = cell_df, annotation_col = cell_df,
-         show_colnames = F, annotation_names_col = F, annotation_names_row = F)
-dev.off()
-
 p + geom_histogram(color = "darkgreen", fill = "lightgreen", bins = 300) + 
   theme_classic() +
-  scale_y_continuous(expand = c(0, 0), limits = c(0, 750)) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 600)) +
   scale_x_continuous(expand = c(0, 0), limits = c(0, 1)) +
   geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
              linetype="dashed") +
   geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
              linetype="dashed") +
-  xlab("Probability of being an Engram Cell")+
+  xlab("Probability of being an Active Cell")+
   ylab("Counts") +
-  ggtitle('Activation Score Distribution') +
+  ggtitle('Human DGCActivation Score Distribution') +
   theme(plot.title = element_text(size=18, hjust = 0.5),
         axis.line=element_line(size=1),
         axis.title.x = element_text( size=14, face="bold"),
@@ -1581,6 +1562,80 @@ p + geom_histogram(color = "darkgreen", fill = "lightgreen", bins = 300) +
         legend.box.background = element_rect(colour = "black")
   )+
   scale_color_discrete(name = "Quantiles", labels= c("0.975", "0.95") )
+dev.off()
+
+
+
+#picking cell indices for the heatmap
+#putative.engram.cells <- which(ayhan.integrated.predictions$predict=="Active")
+#putative.engram.cells <- sample( putative.engram.cells, 10, replace = FALSE)
+putative.engram.cells <- with(test.ayhanDGCgenes ,order(-Active))[1:20]
+rand.cells <- which(test.ayhanDGCgenes$Active<ninetyfive)
+rand.cells <- sample( rand.cells, 20, replace = FALSE)
+cells.idx <- c(putative.engram.cells, rand.cells)
+
+
+# picking gene's for the heatmap, important genes vs random ones, 10 important 10 random
+top.genes <- importance.df.ayhanDGCs$gene[1:20]
+iegs <- c("FOS",   "ARC",   "INHBA", "NPAS4", "JUN",   
+          "FOSB", "BDNF",  "MAPK4", "JUN","SORCS3")
+
+#convert our gene/cells to a matrix
+
+#convert to a matrix for pheatmap
+ayhanDGC_normed.scaled <- scale(ayhanDGC_normed)
+vis.matrix <- as.matrix(ayhanDGC_normed.scaled[cells.idx, top.genes])
+
+# alternate option use preselcted IEGs
+vis.matrix.iegs <- as.matrix(ayhanDGC_normed.scaled[cells.idx, iegs])
+#vis.matrix <- scale(vis.matrix)
+
+# label the cells
+cell_df <- data.frame ("Cells" = c(rep("Putative Engram Cell", 20), rep("Random Cell",20))
+)
+rownames(cell_df) <- rownames(vis.matrix)
+cell_df$Cells <- as.factor(cell_df$Cells)
+
+cell_df.iegs <- data.frame ("Cells" = c(rep("Putative Engram Cell", 20), rep("Random Cell",20))
+)
+rownames(cell_df.iegs) <- rownames(vis.matrix.iegs)
+cell_df.iegs$Cells <- as.factor(cell_df.iegs$Cells)
+
+# make the image file with the important genes
+jpeg("human_dgc_activity_importantgenes.jpg", width = 500, height = 500)
+pheatmap(t(vis.matrix), main = "Human DGC Activity State",
+         gaps_col = 20,
+         legend_breaks = c(0, 2, 4, 6, max(vis.matrix)), 
+         legend_labels = c("0", "2", "4", "6", "LogScaled"),
+         cluster_rows = F, cluster_cols=F, 
+         annotation_col = cell_df,
+         show_colnames = F, annotation_names_col = F, annotation_names_row = F)
+dev.off()
+
+
+# now with the IEGs
+jpeg("human_dgc_actiivty_IEGs.jpg", width = 500, height = 500)
+pheatmap(t(vis.matrix.iegs), main = "Human DGC Activity State",
+         gaps_col = 20,
+         legend_breaks = c(0, 2, 4, 6, max(vis.matrix)), 
+         legend_labels = c("0", "2", "4", "6", "LogScaled"),
+         cluster_rows = F, cluster_cols=F, 
+         annotation_col = cell_df.iegs,
+         show_colnames = F, annotation_names_col = F, annotation_names_row = F)
+dev.off()
+
+
+# make the image file
+dev.off()
+jpeg("Penk_vs_EngramProbability.jpg", width = 500, height = "500")
+pheatmap(t(vis.matrix), main = "Human DGC Activity State",,
+         cluster_rows = F, cluster_cols=F, annotation_names_col = F,
+         annotation_col = cell_df, show_colnames = F)
+dev.off()
+
+
+
+
 
 ##USing TFs in humans
 
