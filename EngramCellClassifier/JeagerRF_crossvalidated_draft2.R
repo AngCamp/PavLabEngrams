@@ -23,6 +23,7 @@ library(dplyr)
 library(readr) # for cross validated logistic regression
 library(scrime)
 library(caret)
+library(cowplot)
 #Ayhan 2018
 # Ayhan, F., Kulkarni, A., Berto, S., Sivaprakasam, K., Douglas, C., Lega, B. C., &
 # Konopka, G. (2021). Resolving cellular and molecular diversity along the 
@@ -468,6 +469,7 @@ resample.randomForest <-function( df.in,
   trees.per.batch <- as.integer(trees/batches)
   n.cells <- trunc( sum(df.in$Engramcell==under_represented_class)*proportion)
   batches <- c(1:batches)
+  
   for( batch in batches){
     resample.set <- rbind(sample(which(df.in$Engramcell==under_represented_class), size = n.cells),
                           sample(which(df.in$Engramcell==over_represented_class), size = n.cells)
@@ -479,12 +481,15 @@ resample.randomForest <-function( df.in,
       rf.model <- randomForest(x = resample.set[,1:(length(resample.set)-1)],
                                y = resample.set$Engramcell,
                                ntree = trees.per.batch)
+      
+                        
     }
     #trains new models in rf.fit and combines tham with rf.model
     if(batch>1){
       rf.fit = randomForest(x = resample.set[,1:(length(resample.set)-1)],
                             y = resample.set$Engramcell,
                             ntree = trees.per.batch)
+      
       rf.model <- randomForest::combine(rf.fit, rf.model)
     }
   }#end of for loop over batches
@@ -536,6 +541,21 @@ assessment <- function(predictions.df,
             TP, FN, TN, FP) )
 }
 
+roc.perfold <- function(classifier.thisfold,
+                        fold.test.data){
+  ypred <- predict(classifier.thisfold, 
+                              fold.test.data,
+                              type = "prob")
+  
+  yscore<- data.frame(ypred)
+  rdb <- cbind(fold.test.data$Engramcell, yscore)
+  colnames(rdb) = c('Engramcell','ActivityScore')
+  
+  roc.obj <- roc(rdb$Engramcell,
+                 rdb$ActivityScore)
+  
+  return(roc.obj)
+}
 
 
 resampled.randomForest.crossvalidated <-function(data,
@@ -551,18 +571,24 @@ resampled.randomForest.crossvalidated <-function(data,
   # metric
   #NOTE: ROC curve needs to be implemented
   
+  roc.list <- c()
+  index.list <- c() # list of idx.thisfold, indeces of test and training
   folds.obj <- createFolds(data$Engramcell, k = folds)
   loops <- c(1:folds)
   for( i in loops ){
-    #create indices
-    test.idx <- folds.obj[[i]]
-    # needs to be a list so it can act as an index
-    train.idx <- which(!(rownames(data) %in% test.idx) )
     
+    idx.thisfold <- c()
+    #create indices
+    test.idx <- rownames(data)[ folds.obj[[i]] ]
+    idx.thisfold$test <- test.idx
+    # needs to be a list so it can act as an index
+    train.idx <- rownames(data)[!(rownames(data) %in% test.idx)]
+    idx.thisfold$train <- train.idx
+    index.list <- c(index.list,idx.thisfold)
     #split data for this fold
     training_set <- data[train.idx,]
     testing_set <- data[test.idx,]
-    
+    #roc.list <- c() # roc lsit for ggroc for per fold roc curves
     # divvies up number of trees
     trees.in.the.fold = as.integer(trees.total/folds)
     if ( ( trees.total%%(batches.per.fold*folds) )>0  ){ 
@@ -584,18 +610,27 @@ resampled.randomForest.crossvalidated <-function(data,
       rownames(fold.performance) <- c("F1 Score", "AUC", "Precision", "Recall",
                                       "FPR", "FNR", "True Positives", "False Negatives", 
                                       "True Negatives", "False Positives")
+      # making roc list
+      pred.fold.votes <- predict(rf.out,
+                                 testing_set[1:(length(testing_set)-1)], 
+                                 type = 'prob')
+      head(pred.fold.votes)
+      roc.list <- list( roc(testing_set$Engramcell, pred.fold.votes[,2]) )
     }else{
       print(dim(testing_set))
-      print('rf.this_fold votes length...')
-      print(length(rf.this_fold$votes))
-      print('rf.out votes length...')
-      print(length(rf.out$votes))
+      # making roc list
+      pred.fold.votes <- predict(rf.this_fold,
+                           testing_set[1:(length(testing_set)-1)], 
+                           type = 'prob')
+      head(pred.fold.votes)
+      roc.list <- append(roc.list, list( roc(testing_set$Engramcell, pred.fold.votes[,2]) ) )
       #rf.out <- randomForest::combine(rf.out, rf.this_fold) #old code can't handle the 
       rf.out <- my_combine(rf.out, rf.this_fold)
       # we need votes for all cells to calculate
       pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
       assess <- assessment( pred ) 
       fold.performance[,ncol(fold.performance) + 1] <- assess
+      
     }
     
   }# end of for loop
@@ -606,6 +641,9 @@ resampled.randomForest.crossvalidated <-function(data,
   
   #votes needs to be updated to make roc curve
   rf.out$votes <- predict(object = rf.out, newdata = data, type = 'vote', norm.votes = FALSE)
+  rf.out$roc_perfold <- roc.list
+  rf.out$caretfolds.obj <- folds.obj
+  rf.out$testntrain.indexs <- index.list
   return(rf.out)
 }
 
@@ -886,6 +924,44 @@ jpeg("ROCBinarized.jpg", width = 700, height = 700)
 plot(roc.engramcell, main = "ROC of RF Classifier")
 dev.off()
 
+# new way to plot the ROC
+ypred.hochgerner <- predict(classifier.hochgerner2018_genes, 
+                            labeled.data.hochgerner2018_genes,
+                    type = "prob")
+
+yscore.hochgerner <- data.frame(ypred.hochgerner)
+rdb.hochgerner <- cbind(labeled.data.hochgerner2018_genes$Engramcell,yscore.hochgerner)
+colnames(rdb.hochgerner) = c('Engramcell','ActivityScore')
+
+#hochgerner.roc.obj <- roc(rdb.hochgerner$Engramcell,
+#                  rdb.hochgerner$ActivityScore)
+
+
+hochgerner.roc.obj <- classifier.hochgerner2018_genes$roc_perfold
+
+
+jpeg('hochgerner2018_earlysig_roc.jpeg', width = 600, height=600)
+ggroc(classifier.hochgerner2018_genes$roc_perfold,  alpha = 1,
+      colour = "red", aes = "group", linetype = 'solid',
+      size = 4, legacy.axes = TRUE) + 
+  theme_classic() + 
+  ggtitle("Hochgerner et al., (2018) ROC") + 
+  xlab("FPR") + ylab("TPR") + 
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), linewidth = 2,
+               color="darkgrey", linetype="dashed") +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        axis.text=element_text(size=20, face = "bold", colour="black"),
+        axis.title =element_text(size=20, face = "bold", colour="black"),
+        panel.border = element_rect(color = "black",
+                                    fill = NA,
+                                    linewidth = 2),
+        plot.margin = margin(t = 10, r = 10, b = 10, l = 10) ) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0)), breaks = c(0,0.25,0.5,0.75,1)) + 
+  scale_y_continuous(expand = expansion(mult = c(0, 0)),  breaks = c(0.25,0.5,0.75,1))
+dev.off()
+
+
+
 #heatmap of hochgerner cells gene expression
 
 # this plot needs the cell_df stuff done with the human data
@@ -915,31 +991,37 @@ ninetysevenpointfive = as.numeric( quantile(test.hochgerner2018_genes$Active,0.9
 # p <- ggplot(data = df, aes(x=label_pos) )
 p <- ggplot(data = test.hochgerner2018_genes, aes(x=Active) )
 
-#giving some weird error on the server
-dev.off()
-jpeg("ResampledRF_CV_pavnormed_HochgernerVotes.jpg", width = 700, height = 700)
-p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
-  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
-             linetype="dashed") +
-  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
-             linetype="dashed") +
-  xlab("Probability of being an Engram Cell")+
+
+jpeg("ResampledRF_CV_pavnormed_HochgernerVotes.jpg", width = 800, height = 800)
+p + geom_histogram(color = "darkgreen",
+                   fill = "lightgreen",
+                   binwidth=0.001) + 
+  theme_classic()  +
+  xlab("Probability of being an Active Cell")+
   ylab("Counts") +
-  ggtitle('Hochgerner Activation Distribution') +
-  theme(plot.title = element_text(hjust = 0.5))+
-  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
+  ggtitle('Hochgerner et al., (2018) Activation Score Distribution') +
+  theme(axis.text=element_text(size=25, face = "bold", colour="black"),
+        axis.title =element_text(size=25, face = "bold", colour="black"),
+        legend.key.size = unit(1.5, "cm"), #change legend box size
+        legend.title = element_text(size=20, 
+                                    face = "bold",
+                                    hjust = 0.5), #change legend title font size
+        legend.text = element_text(size=15, face = "bold"),
+        legend.background = element_rect(fill="grey"),
+        plot.title = element_text(size = 25, face = "bold", hjust = 0.5)) +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed", size=1) +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed", size=1) +
+  geom_vline(data=, aes( xintercept=0.50, color="black"),
+             linetype="dashed", size=1) +
+  scale_color_discrete(name = "Thresholds", labels= c("Active Cell (>0.5)", 
+                                                      "97.5th percentile",
+                                                      "90th Percentile") ) +
+  scale_x_continuous(limits = c(0.25,0.75), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0,40), breaks = c(10,20,30), expand = c(0, 0))
 dev.off()
 
-p + geom_density(color = "darkgreen", fill = "lightgreen") + theme_classic() +
-  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
-             linetype="dashed") +
-  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
-             linetype="dashed") +
-  xlab("Probability of being an Engram Cell")+
-  ylab("Counts") +
-  ggtitle('Hochgerner Activation Distribution') +
-  theme(plot.title = element_text(hjust = 0.5))+
-  scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
 
 
 ### Repeat this on Zeigler
@@ -1073,8 +1155,8 @@ levels(labeled.data.saunders2018_genes$Engramcell) <- c('Inactive', 'Active')
 classifier.saunders2018_genes <- resampled.randomForest.crossvalidated(data = labeled.data.saunders2018_genes,
                                                                       under.represented.class = "Inactive",
                                                                       over.represented.class = "Active",
-                                                                      trees.total = 500,
-                                                                      folds = 5,
+                                                                      trees.total = 1000,
+                                                                      folds = 10,
                                                                       proportion.each.batch=0.8,
                                                                       batches.per.fold=20)
 
@@ -1084,6 +1166,29 @@ importance.df.saunders2018_genes <- data.frame(gene = as.character( rownames(cla
 
 head(importance.df.saunders2018_genes, 20)
 
+write.csv(classifier.saunders2018_genes$Assessment,
+          file = 'saundersclassifier_metrics.csv')
+
+rocobj.list <- classifier.saunders2018_genes$roc_perfold
+
+p.roc <- ggroc(classifier.saunders2018_genes$roc_perfold,
+               aes="group",color="red",  linetype = 1, size = 0.8)
+jpeg("Roc_curve_saunders_10foldcv.jpeg", width = 500, height=500)
+p.roc + theme_classic() + ggtitle("R.F. 10-Fold C.V. ROC Early Signature") + 
+  geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1),
+               color="grey", linetype="dashed") +
+  xlab("Specificity") + ylab("Sensitivity") +
+  theme(plot.title = element_text(size=18, hjust = 0.5),
+        axis.line=element_line(size=1),
+        axis.title.x = element_text( size=12, face="bold"),
+        axis.title.y = element_text( size=12, face="bold"),
+        axis.text.x = element_text(color="black",
+                                   size=10, 
+                                   face="bold"),
+        axis.text.y = element_text(color="black",
+                                   size=10, 
+                                   face="bold"))
+dev.off()
 
 
 # test <- predict(regular.resampRF.model, hoch5k.adultDGCs.lognorm, type = 'prob')
@@ -1101,8 +1206,11 @@ p <- ggplot(data = test.saunders2018, aes(x=Active) )
 
 #giving some weird error on the server
 dev.off()
-jpeg("combineddiscoverysetsactivitydistribution.jpg", width = 700, height = 700)
-p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
+jpeg("ResampledRF_CV_pavnormed_Saunders2018_votes.jpg", width = 700, height = 700)
+p + geom_histogram(color = "darkgreen", fill = "lightgreen", bins = 300) + 
+  theme_classic() +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 750)) +
+  scale_x_continuous(expand = c(0, 0), limits = c(0, 1)) +
   geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
              linetype="dashed") +
   geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
@@ -1110,8 +1218,91 @@ p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
   xlab("Probability of being an Engram Cell")+
   ylab("Counts") +
   ggtitle('Saunders Activation Distribution') +
-  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=18, hjust = 0.5),
+        axis.line=element_line(size=1),
+        axis.title.x = element_text( size=14, face="bold"),
+        axis.title.y = element_text( size=14, face="bold"),
+        axis.text.x = element_text(color="black",
+                                   size=12, 
+                                   face="bold"),
+        axis.text.y = element_text(color="black",
+                                   size=12, 
+                                   face="bold",
+                                   angle=45),
+        legend.background = element_blank(),
+        legend.box.background = element_rect(colour = "black")
+  )+
   scale_color_discrete(name = "Thresholds", labels= c("0.975", "0.95") )
+dev.off()
+
+jpeg("Tail_Saunders2018_votes.jpg", width = 800, height = 800)
+p + geom_histogram(color = "darkgreen", fill = "lightgreen", bins = 300) + 
+  theme_classic() +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 750)) +
+  scale_x_continuous(expand = c(0, 0), limits = c(0, 1)) +
+  coord_cartesian(ylim=c(0, 50), xlim=c(0.3,1))+
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed", size=1) +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed", size=1) +
+  geom_vline(data=, aes( xintercept=0.50, color="black"),
+             linetype="dashed", size=1) +
+  scale_color_discrete(name = "Thresholds", labels= c("Active Cell (>0.5)", 
+                                                      "97.5th percentile",
+                                                      "90th Percentile") ) +
+  xlab("Probability of being an Engram Cell")+
+  ylab("Counts") +
+  ggtitle('Saunders Activation Distribution') +
+  theme(plot.title = element_text(size = 25, face = "bold", hjust = 0.5),
+        axis.line=element_line(size=1),
+        axis.title.x = element_text( size=25, face="bold"),
+        axis.title.y = element_text( size=25, face="bold"),
+        axis.text.x = element_text(color="black",
+                                   size=25, 
+                                   face="bold"),
+        axis.text.y = element_text(color="black",
+                                   size=25, 
+                                   face="bold"),
+        legend.title = element_text(size=20, 
+                                    face = "bold",
+                                    hjust = 0.5), #change legend title font size
+        legend.text = element_text(size=15, face = "bold"),
+        legend.background = element_rect(fill="grey") )
+dev.off()
+
+
+# alternative plot
+p <- ggplot(data = test.hochgerner2018_genes, aes(x=Active) )
+
+
+jpeg("ResampledRF_CV_pavnormed_HochgernerVotes.jpg", width = 800, height = 800)
+p + geom_histogram(color = "darkgreen",
+                   fill = "lightgreen",
+                   binwidth=0.001) + 
+  theme_classic()  +
+  xlab("Probability of being an Active Cell")+
+  ylab("Counts") +
+  ggtitle('Hochgerner et al., (2018) Activation Score Distribution') +
+  theme(axis.text=element_text(size=25, face = "bold", colour="black"),
+        axis.title =element_text(size=25, face = "bold", colour="black"),
+        legend.key.size = unit(1.5, "cm"), #change legend box size
+        legend.title = element_text(size=20, 
+                                    face = "bold",
+                                    hjust = 0.5), #change legend title font size
+        legend.text = element_text(size=15, face = "bold"),
+        legend.background = element_rect(fill="grey"),
+        plot.title = element_text(size = 25, face = "bold", hjust = 0.5)) +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed", size=1) +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed", size=1) +
+  geom_vline(data=, aes( xintercept=0.50, color="black"),
+             linetype="dashed", size=1) +
+  scale_color_discrete(name = "Thresholds", labels= c("Active Cell (>0.5)", 
+                                                      "97.5th percentile",
+                                                      "90th Percentile") ) +
+  scale_x_continuous(limits = c(0.25,0.75), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0,40), breaks = c(10,20,30), expand = c(0, 0))
 dev.off()
 
 
@@ -1185,10 +1376,14 @@ p + geom_density(color = "darkgreen", fill = "lightgreen") + theme_classic() +
 ## Shuffled Genes in training data
 
 
-combined.shuffledgenes <- gene.shuffle(  combined.counts ) 
-combined.shuffledgenes <- combined.shuffledgenes[rownames(combined.shuffledgenes) %in% shared.genes,]
-combined.shuffledgenes <- gene.shuffle(combined.shuffledgenes )
-combined.shuffledgenes <- log.norm(combined.shuffledgenes)
+combined.shuffledgenes <- combined.counts[rownames(combined.counts) %in% shared.genes,] 
+#combined.shuffledgenes <- combined.shuffledgenes[rownames(combined.shuffledgenes) %in% shared.genes,]
+combined.shuffledgenes <- pavlab.normalize(combined.shuffledgenes)
+combined.shuffledgenes <- gene.shuffle(combined.shuffledgenes) # important to shuffle after normalization
+combined.shuffledgenes <- data.frame(t(combined.shuffledgenes))
+#colnames(combined.shuffledgenes) <- shared.genes
+#rownames(combined.shuffledgenes) <- colnames(combined.counts)
+
 
 # creating our training and validation data, we will take 30% of the
 # baseline cells and and equivalent number of the engram cells to maintain balance in the
@@ -1197,14 +1392,14 @@ combined.shuffledgenes <- log.norm(combined.shuffledgenes)
 # we do not regenerate our training and test set but
 combined.shuffledgenes$Engramcell <- combined.meta$ActivityStatus
 combined.shuffledgenes$Engramcell <- as.factor(combined.shuffledgenes$Engramcell)
-training_set.shuffled <- combined.shuffledgenes[which( !(combined.meta$idx %in% df.temp$idx) ), ]
-validation_set.shuffled <- combined.shuffledgenes[which(combined.meta$idx %in% df.temp$idx), ]
+#training_set.shuffled <- combined.shuffledgenes[which( !(combined.meta$idx %in% df.temp$idx) ), ]
+#validation_set.shuffled <- combined.shuffledgenes[which(combined.meta$idx %in% df.temp$idx), ]
 
 
-training_set.shuffled$treatment <- combined.meta$treatment[which( !(combined.meta$idx %in% df.temp$idx) ) ]
+#training_set.shuffled$treatment <- combined.meta$treatment[which( !(combined.meta$idx %in% df.temp$idx) ) ]
 
 tic()
-shuffledgenes.classifier <- resample.randomForest.crossvalidated( df.in = training_set.shuffled,
+shuffledgenes.classifier <- resampled.randomForest.crossvalidated( combined.shuffledgenes,
                                                                   under.represented.class = "Inactive",
                                                                   over.represented.class = "Active",
                                                                   trees.total = 1000,
@@ -1242,9 +1437,23 @@ roc.engramcell <- roc(test.predictions.shuffled$engramobserved,
 
 #roc.inactive <- roc(predictions$inactiveobserved, as.numeric(predictions$Fos_neg) )
 
-dev.off()
-jpeg("ROC_lognorm.jpg", width = 350, height = "350")
-plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
+jpeg('earlysig_geneshuffle_roc.jpeg',width = 800, height=800)
+ggroc(shuffledgenes.classifier$roc_perfold,  alpha = 1,
+      colour = "red", aes='group', linetype = 'solid',
+      size = 3, legacy.axes = TRUE) + 
+  theme_classic() + 
+  ggtitle("Gene Shuffled") + 
+  xlab("FPR") + ylab("TPR") + 
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), linewidth = 2,
+               color="darkgrey", linetype="dashed") +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        axis.text=element_text(size=20, face = "bold", colour="black"),
+        axis.title =element_text(size=20, face = "bold", colour="black"),
+        panel.border = element_rect(color = "black",
+                                    fill = NA,
+                                    linewidth = 2)) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0)), breaks = c(0,0.25,0.5,0.75,1)) + 
+  scale_y_continuous(expand = expansion(mult = c(0, 0)),  breaks = c(0.25,0.5,0.75,1))
 dev.off()
 
 
@@ -1282,11 +1491,10 @@ dev.off()
 
 
 combined.shuffledcells <- combined.counts 
-combined.shuffledcells <- combined.shuffledcells[rownames(combined.shuffledcells) %in% shared.genes, ]
-combined.shuffledcells <- log.norm( combined.shuffledcells )
+combined.shuffledcells <- combined.shuffledcells[rownames(combined.shuffledcells) %in% shared.genes,]
+combined.shuffledcells <- pavlab.normalize(combined.shuffledcells)
+combined.shuffledcells <- data.frame(t(combined.shuffledcells))
 combined.shuffledcells <- combined.shuffledcells[ sample( c(1:nrow(combined.shuffledcells)) ), ]
-
-
 
 
 # creating our training and validation data, we will take 30% of the
@@ -1295,31 +1503,30 @@ combined.shuffledcells <- combined.shuffledcells[ sample( c(1:nrow(combined.shuf
 
 # we do not regenerate our training and test set but
 combined.shuffledcells$Engramcell <- combined.meta$ActivityStatus
+combined.shuffledcells$Engramcell <- sample(combined.shuffledcells$Engramcell)
 combined.shuffledcells$Engramcell <- as.factor(combined.shuffledcells$Engramcell)
-training_set.shuffledcells <- combined.shuffledcells[which( !(combined.meta$idx %in% df.temp$idx) ), ]
-validation_set.shuffledcells <- combined.shuffledcells[which(combined.meta$idx %in% df.temp$idx), ]
+# training_set.shuffledcells <- combined.shuffledcells[which( !(combined.meta$idx %in% df.temp$idx) ), ]
+# validation_set.shuffledcells <- combined.shuffledcells[which(combined.meta$idx %in% df.temp$idx), ]
 
 
-training_set.shuffledcells$treatment <- combined.meta$treatment[which( !(combined.meta$idx %in% df.temp$idx) ) ]
+#training_set.shuffledcells$treatment <- combined.meta$treatment[which( !(combined.meta$idx %in% df.temp$idx) ) ]
+
+
+
 
 tic()
-shuffledcells.classifier <- resample.randomForest( df.in = training_set.shuffledcells, 
-                                                   proportion = 0.8, 
-                                                   batches = 20, 
-                                                   trees = 1000)
+shuffledcells.classifier <- resampled.randomForest.crossvalidated( combined.shuffledcells,
+                                                                   under.represented.class = "Inactive",
+                                                                   over.represented.class = "Active",
+                                                                   trees.total = 1000,
+                                                                   folds = 10,
+                                                                   proportion.each.batch=0.8,
+                                                                   batches.per.fold=20)
 toc()
-
-
-
-test.predictions.shuffledcells <- make.predictions.df(shuffledcells.classifier , validation_set.shuffledcells)
-
-rf.performances$shuffled_cells <- assessment(test.predictions.shuffledcells) 
 
 importance.df.shuffledcells <- data.frame(gene = as.character( rownames(shuffledcells.classifier$importance) ),
                                           importance_score = as.numeric( shuffledcells.classifier$importance ) ) %>%
   arrange(desc(importance_score))
-
-head(importance.df.shuffledcells, 10) # few of these genes make any sense, and the performance is low
 
 # > head(importance.df.shuffledcells, 10) # few of these genes make any sense, and the performance is low
 # gene importance_score
@@ -1335,18 +1542,26 @@ head(importance.df.shuffledcells, 10) # few of these genes make any sense, and t
 # 10    Pax6       0.05715121
 
 
-#roc curve
-levels(test.predictions.shuffledcells$engramobserved) <- c(0,1)
-#Plotting ROC...
-roc.engramcell <- roc(test.predictions.shuffledcells$engramobserved, 
-                      as.numeric(test.predictions.shuffledcells$Fos_pos) )
-
-#roc.inactive <- roc(predictions$inactiveobserved, as.numeric(predictions$Fos_neg) )
-
+jpeg('earlysig_labelshuffle_roc.jpeg',width = 800, height=800)
+ggroc(shuffledcells.classifier$roc_perfold,  alpha = 1,
+      colour = "red",  aes="group", linetype = 'solid',
+      size = 3, legacy.axes = TRUE) + 
+  theme_classic() + 
+  ggtitle("Cell Shuffled") + 
+  xlab("FPR") + ylab("TPR") + 
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), linewidth = 2,
+               color="darkgrey", linetype="dashed") +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        axis.text=element_text(size=20, face = "bold", colour="black"),
+        axis.title =element_text(size=20, face = "bold", colour="black"),
+        panel.border = element_rect(color = "black",
+                                    fill = NA,
+                                    linewidth = 2)) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0)), breaks = c(0,0.25,0.5,0.75,1)) + 
+  scale_y_continuous(expand = expansion(mult = c(0, 0)),  breaks = c(0.25,0.5,0.75,1))
 dev.off()
-jpeg("ROC_lognorm.jpg", width = 350, height = "350")
-plot(roc.engramcell, col = "red", main = "ROC of RF Classifier")
-dev.off()
+
+
 
 
 
@@ -1428,8 +1643,8 @@ ayhanDGC_counts <- ayhanDGC_counts[, c(1:dim(ayhanDGC_counts)[2]-1)]
 ayhanDGC_counts[is.na(ayhanDGC_counts)] <- 0
 ayhanDGC_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/ayhanDGC_meta.csv", header = TRUE)
 
-#ayhan2021_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/meta.tsv",
-#                            sep = '\t', header = TRUE)
+ayhan2021_meta <- read.csv("~/test_datasets/Ayhan2021_GSE160189/meta.tsv",
+                            sep = '\t', header = TRUE)
 
 # checking the cell ids are in the same order and all present
 sum(colnames(ayhanDGC_counts) %in% ayhan2021_meta$Cell)
@@ -1481,7 +1696,7 @@ labeled.data.ayhanDGCgenes <- labeled.data[,present.orthologs$Symbol_mm]
 colnames(labeled.data.ayhanDGCgenes) <- present.orthologs$Symbol_hg
 
 # adding training label
-labeled.data.ayhanDGCgenes$Engramcell <- as.factor(combined.meta$fos_status)
+labeled.data.ayhanDGCgenes$Engramcell <- labeled.data.hochgerner2018_genes$Engramcell
 #> levels(labeled.data.hochgerner2018_genes$Engramcell)
 #[1] "Fos-" "Fos+"
 levels(labeled.data.ayhanDGCgenes$Engramcell) <- c('Inactive', 'Active')
@@ -1496,20 +1711,28 @@ classifier.ayhanDGCgenes <- resampled.randomForest.crossvalidated(data = labeled
                                                                       proportion.each.batch=0.8,
                                                                       batches.per.fold=20)
 
-# quality check
-roc.engramcell = roc(labeled.data.ayhanDGCgenes$Engramcell,
-                     classifier.ayhanDGCgenes$votes[,2], 
-                     plot=TRUE, legacy.axes=TRUE, percent=TRUE,
-                     xlab="False Positive Percentage", ylab="True Postive Percentage", 
-                     col="firebrick4", lwd=4, print.auc=TRUE)
-
-
-plot(roc.engramcell, main = "ROC of RF Classifier")
-
+# plot roc
+jpeg('HumanMouseOrthologue_classifier_earlysig_roc.jpeg',width = 600, height=600)
+ggroc(classifier.ayhanDGCgenes$roc_perfold,  alpha = 1,
+      colour = "red", linetype = 'solid',
+      size = 4, legacy.axes = TRUE) + 
+  theme_classic() + 
+  ggtitle("Human-Mouse Orthologue ROC") + 
+  xlab("FPR") + ylab("TPR") + 
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), linewidth = 2,
+               color="darkgrey", linetype="dashed") +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        axis.text=element_text(size=20, face = "bold", colour="black"),
+        axis.title =element_text(size=20, face = "bold", colour="black"),
+        panel.border = element_rect(color = "black",
+                                    fill = NA,
+                                    linewidth = 2),
+        plot.margin = margin(t = 10, r = 10, b = 10, l = 10) ) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0)), breaks = c(0,0.25,0.5,0.75,1)) + 
+  scale_y_continuous(expand = expansion(mult = c(0, 0)),  breaks = c(0.25,0.5,0.75,1))
 dev.off()
-jpeg("ROCBinarized.jpg", width = 700, height = 700)
-plot(roc.engramcell, main = "ROC of RF Classifier")
-dev.off()
+
+
 
 
 importance.df.ayhanDGCs <- data.frame(gene = as.character( rownames(classifier.ayhanDGCgenes$importance) ),
@@ -1519,6 +1742,19 @@ importance.df.ayhanDGCs <- data.frame(gene = as.character( rownames(classifier.a
 head(importance.df.ayhanDGCs, 20)
 
 
+# checking intersection of the various classifiers top 100 important genes
+length(intersect(importance.df.ayhanDGCs$gene[1:100],
+          importance.df.saunders2018_genes$gene[1:100]))
+
+length(intersect(importance.df.ayhanDGCs$gene[1:100],
+                 toupper(importance.df.hoch$gene[1:100])))
+
+length(intersect(importance.df.saunders2018_genes$gene[1:100],
+                 toupper(importance.df.hoch$gene[1:100])))
+
+length(multi.intersect(list(importance.df.saunders2018_genes$gene[1:100],
+                            toupper(importance.df.hoch$gene[1:100]),
+                            importance.df.ayhanDGCs$gene[1:100])))
 
 # test <- predict(regular.resampRF.model, hoch5k.adultDGCs.lognorm, type = 'prob')
 test.ayhanDGCgenes <- data.frame(predict(classifier.ayhanDGCgenes, 
@@ -1527,26 +1763,22 @@ test.ayhanDGCgenes <- data.frame(predict(classifier.ayhanDGCgenes,
 ninetyfive= as.numeric( quantile(test.ayhanDGCgenes$Active,0.95) )
 ninetysevenpointfive = as.numeric( quantile(test.ayhanDGCgenes$Active,0.975))
 
-
-# df <- on.hoch5k[,c(2,3)] #counts of probability
-# colnames(df) <- c("label_pos","Predicted")
-# p <- ggplot(data = df, aes(x=label_pos) )
 p <- ggplot(data = test.ayhanDGCgenes, aes(x=Active) )
 
 #giving some weird error on the server
 
-jpeg("ResampledRF_CV_pavnormed_AyhanVotes.jpg", width = 700, height = 700)
-p + geom_histogram(color = "darkgreen", fill = "lightgreen", bins = 300) + 
+jpeg("ResampledRF_CV_pavnormed_AyhanVotes.jpg", width = 750, height = 700)
+p + geom_histogram(color = "darkgreen", fill = "lightgreen", bins =300) + 
   theme_classic() +
-  scale_y_continuous(expand = c(0, 0), limits = c(0, 600)) +
-  scale_x_continuous(expand = c(0, 0), limits = c(0, 1)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_continuous(expand = c(0, 0), limits = c(0,1)) +
   geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
              linetype="dashed") +
   geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
              linetype="dashed") +
   xlab("Probability of being an Active Cell")+
   ylab("Counts") +
-  ggtitle('Human DGCActivation Score Distribution') +
+  ggtitle('Human DGC Activation Score Distribution') +
   theme(plot.title = element_text(size=18, hjust = 0.5),
         axis.line=element_line(size=1),
         axis.title.x = element_text( size=14, face="bold"),
@@ -1564,6 +1796,41 @@ p + geom_histogram(color = "darkgreen", fill = "lightgreen", bins = 300) +
   scale_color_discrete(name = "Quantiles", labels= c("0.975", "0.95") )
 dev.off()
 
+# newer better plot
+#giving some weird error on the server
+p <- ggplot(data = test.ayhanDGCgenes, aes(x=Active) )
+
+jpeg("AyhanDGCs_activityscore_dist.jpg", width = 800, height = 800)
+p + geom_histogram(color = "darkgreen",
+                   fill = "lightgreen",
+                   binwidth=0.001) + 
+  theme_classic()  +
+  xlab("Probability of being an Active Cell")+
+  ylab("Counts") +
+  ggtitle('Human DGC Activation Score Distribution') +
+  theme(axis.text=element_text(size=25, face = "bold", colour="black"),
+        axis.title =element_text(size=25, face = "bold", colour="black"),
+        legend.key.size = unit(1.5, "cm"), #change legend box size
+        legend.title = element_text(size=20, 
+                                    face = "bold",
+                                    hjust = 0.5), #change legend title font size
+        legend.text = element_text(size=15, face = "bold"),
+        legend.background = element_rect(fill="grey"),
+        plot.title = element_text(size = 25, face = "bold", hjust = 0.5)) +
+  geom_vline(data=, aes( xintercept=ninetyfive, color="red"),
+             linetype="dashed", size=1) +
+  geom_vline(data=, aes( xintercept=ninetysevenpointfive, color="orange"),
+             linetype="dashed", size=1) +
+  geom_vline(data=, aes( xintercept=0.50, color="black"),
+             linetype="dashed", size=1) +
+  scale_color_discrete(name = "Thresholds", labels= c("Active Cell (>0.5)", 
+                                                      "97.5th percentile",
+                                                      "90th Percentile") ) +
+  scale_x_continuous(limits = c(0.25,0.75), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0,150), breaks = c(25,75, 125), expand = c(0, 0))
+dev.off()
+
+
 
 
 #picking cell indices for the heatmap
@@ -1577,8 +1844,8 @@ cells.idx <- c(putative.engram.cells, rand.cells)
 
 # picking gene's for the heatmap, important genes vs random ones, 10 important 10 random
 top.genes <- importance.df.ayhanDGCs$gene[1:20]
-iegs <- c("FOS",   "ARC",   "INHBA", "NPAS4", "JUN",   
-          "FOSB", "BDNF",  "MAPK4", "JUN","SORCS3")
+iegs <- c("ARC","BDNF", "FOS", "FOSB","INHBA",
+          "JUN","JUNB", "MAPK4","NPAS4","SORCS3")
 
 #convert our gene/cells to a matrix
 
@@ -1591,18 +1858,18 @@ vis.matrix.iegs <- as.matrix(ayhanDGC_normed.scaled[cells.idx, iegs])
 #vis.matrix <- scale(vis.matrix)
 
 # label the cells
-cell_df <- data.frame ("Cells" = c(rep("Putative Engram Cell", 20), rep("Random Cell",20))
+cell_df <- data.frame ("Cells" = c(rep("Putative Active Cell", 20), rep("Random Cell",20))
 )
 rownames(cell_df) <- rownames(vis.matrix)
 cell_df$Cells <- as.factor(cell_df$Cells)
 
-cell_df.iegs <- data.frame ("Cells" = c(rep("Putative Engram Cell", 20), rep("Random Cell",20))
+cell_df.iegs <- data.frame ("Cells" = c(rep("Putative Active Cell", 20), rep("Random Cell",20))
 )
 rownames(cell_df.iegs) <- rownames(vis.matrix.iegs)
 cell_df.iegs$Cells <- as.factor(cell_df.iegs$Cells)
 
 # make the image file with the important genes
-jpeg("human_dgc_activity_importantgenes.jpg", width = 500, height = 500)
+jpeg("human_dgc_activity_importantgenes.jpg", width = 800, height = 400)
 pheatmap(t(vis.matrix), main = "Human DGC Activity State",
          gaps_col = 20,
          legend_breaks = c(0, 2, 4, 6, max(vis.matrix)), 
@@ -1614,7 +1881,7 @@ dev.off()
 
 
 # now with the IEGs
-jpeg("human_dgc_actiivty_IEGs.jpg", width = 500, height = 500)
+jpeg("human_dgc_actiivty_IEGs.jpg", width = 800, height = 400)
 pheatmap(t(vis.matrix.iegs), main = "Human DGC Activity State",
          gaps_col = 20,
          legend_breaks = c(0, 2, 4, 6, max(vis.matrix)), 
@@ -1700,7 +1967,7 @@ importance.df.ayhanDGC_TFs <- data.frame(gene = as.character( rownames(TFs.class
 
 head(importance.df.ayhanDGC_TFs, 20)
 
-> head(importance.df.ayhanDGC_TFs, 20)
+# > head(importance.df.ayhanDGC_TFs, 20)
 # gene importance_score
 # 1   DNAJC1        4.7308332
 # 2  BHLHE41        3.0512419
@@ -2425,3 +2692,34 @@ for (i in c(1:nfolds)){
 # is is a list where each element in the lsit is a 
 # vector of folds so we can downsample  in each fold to match 
 # the number of fos- and fos+ cells
+
+
+#for each gene get number of cells expressing the gene 
+cells_expressing <- rowSums(expresission_matrix>0)
+
+
+
+cells_expressing <- floor(runif(n = 20, min=0, max = 20))
+
+ngenes <- length(cells_expressing)
+both_genes_pass_thresh_mask <- matrix(replicate(ngenes,cells_expressing),nrow= ngenes)
+
+
+#both_genes_pass_thresh_mask <- map_lgl(x, functuon(y) )
+
+and_pass <- function(x,y, threshold){
+  out <- (y>threshold)&(x>threshold)
+  return(out)
+}
+
+or_pass <- function(x,y, threshold){
+  out <- (y<threshold)|(x<threshold)
+  return(out)
+}
+
+
+thresh <- 2
+both_genes_pass_thresh_mask[] <- Map(or_pass, both_genes_pass_thresh_mask,
+                                     y = cells_expressing, threshold = thresh)
+
+both_genes_pass_thresh_mask <- matrix(both_genes_pass_thresh_mask,nrow= ngenes)

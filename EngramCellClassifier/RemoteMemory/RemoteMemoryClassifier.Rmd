@@ -42,6 +42,7 @@ library(data.table)
 library(dplyr)
 library(aod) #for logistic regression
 #library(lme4) apparently lme4 cannot be loaded with seurat
+library(tidyverse)
 ```
 
 
@@ -49,10 +50,10 @@ library(aod) #for logistic regression
  
 Kwon should have "adult control (15911 nuclei) and CUS (15349 nuclei)"
 
-I tried matching the cell clusters just based on markers but to no avail so I feel it is best to do it across clusters.  There could be a veriety of reasons for this issue, they both used the Log normalized methods where I was using sct transform, also the chronic stress condition (CUS) may have been an issue.  As Chen has cases of just a few cells coming from one mouse I have opted instead to 
+I tried matching the cell clusters just based on markers but to no avail so I feel it is best to do it across clusters.  There could be a variety of reasons for this issue, they both used the Log normalized methods where I was using sct transform, also the chronic stress condition (CUS) may have been an issue.  As Chen has cases of just a few cells coming from one mouse I have opted instead to 
 
 Orginally I integrated over mouse replicates in
-Kwon as they noted severe batch effects in the text.  I wil
+Kwon as they noted severe batch effects in the text.  I will
 
 This articel could be useful for getting comperable cell classes (also has data we could use, huan and mouse) https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5623139/
 
@@ -63,7 +64,7 @@ This articel could be useful for getting comperable cell classes (also has data 
 The clustering will be done in seurat following standard integration, I will od it over conditions so homecage, CUS and then the Fear groups etc.
 ##Create and merge counts data
 ```{r}
-# sees like this fiel cannot open the connection
+# seems like this fiel cannot open the connection
 # we will have to make plots in a seperate R script
 # just add relevant figures here and reference the script
 
@@ -72,7 +73,7 @@ kwon2021_counts <- read.table("~/test_datasets/Kwon2021_GSE145970/kwon2021_mpfc_
                               header = TRUE, sep =",")
 rownames(kwon2021_counts) <- kwon2021_counts$GENE
 
-combined.meta <- read.csv("~/test_datasets/Kwon2021_GSE145970/kwon_mpfc_neurons_meta.csv",
+chenkwon.combined.meta <- read.csv("~/test_datasets/Kwon2021_GSE145970/kwon_mpfc_neurons_meta.csv",
                           header = TRUE)
 
 # there was a discrepancy between the names in kwon meta dat cell id and the counts
@@ -88,7 +89,7 @@ combined.meta <- read.csv("~/test_datasets/Kwon2021_GSE145970/kwon_mpfc_neurons_
 # kwon2021_meta$CellID <- lapply(kwon2021_meta$CellID, FUN = fun)
 
 # filter kwon2021_coutns to match cells in the metadata
-kwon2021_meta <- combined.meta[combined.meta$CellID %in% colnames(kwon2021_counts), ]
+kwon2021_meta <- chenkwon.combined.meta[chenkwon.combined.meta$CellID %in% colnames(kwon2021_counts), ]
 
 kwon2021_counts <- kwon2021_counts[,colnames(kwon2021_counts) %in% kwon2021_meta$CellID ]
 
@@ -136,13 +137,13 @@ Now we can actually cluster.
 kwon2021_counts$GENE <- rownames(kwon2021_counts) 
 chen2020_counts$GENE <- rownames(chen2020_counts)
 
-combined.counts <- left_join(chen2020_counts, kwon2021_counts, by = "GENE") %>%
+chenkwon.combined.counts <- left_join(chen2020_counts, kwon2021_counts, by = "GENE") %>%
   column_to_rownames( var = "GENE") 
 
-combined.counts <- full_join(chen2020_counts, kwon2021_counts, by = "GENE") %>%
+chenkwon.combined.counts <- full_join(chen2020_counts, kwon2021_counts, by = "GENE") %>%
   column_to_rownames( var = "GENE") 
 
-combined.counts[is.na(combined.counts)] <- 0
+chenkwon.combined.counts[is.na(chenkwon.combined.counts)] <- 0
 
 ```
 
@@ -151,217 +152,22 @@ combined.counts[is.na(combined.counts)] <- 0
 # this has already been generated we can probably remove it
 
 
-combined.meta <- data.frame(condition = c(chen2020_meta$condition_label, kwon2021_meta$condition))
+chenkwon.combined.meta <- data.frame(condition = c(chen2020_meta$condition_label, kwon2021_meta$condition))
 # old code
-#combined.meta$og_cluster <-  c(chen2020_meta$ChenLayerMarkers, kwon2021_meta$cluster_markers_res0.46)
-combined.meta$og_cluster <-  c(chen2020_meta$ChenLayerMarkers, kwon2021_meta$mpfc_integrated_marker)
+#chenkwon.combined.meta$og_cluster <-  c(chen2020_meta$ChenLayerMarkers, kwon2021_meta$cluster_markers_res0.46)
+chenkwon.combined.meta$og_cluster <-  c(chen2020_meta$ChenLayerMarkers, kwon2021_meta$mpfc_integrated_marker)
 
 # we're gonna consider the controls and home cage separate
-combined.meta$condition <- as.factor(combined.meta$condition)
+chenkwon.combined.meta$condition <- as.factor(chenkwon.combined.meta$condition)
 
-combined.meta$label_status <- as.factor(c(as.character(chen2020_meta$engram_label), rep("discovery_data", dim(kwon2021_counts)[2]-1))) # -1 because of the GENE column
+chenkwon.combined.meta$label_status <- as.factor(c(as.character(chen2020_meta$engram_label), rep("discovery_data", dim(kwon2021_counts)[2]-1))) # -1 because of the GENE column
 
 
-combined.meta$CellID <- colnames(combined.counts)
-rownames(combined.meta) <- colnames(combined.counts)
+chenkwon.combined.meta$CellID <- colnames(chenkwon.combined.counts)
+rownames(chenkwon.combined.meta) <- colnames(chenkwon.combined.counts)
 
-rownames(combined.meta) <- colnames(combined.counts)
+rownames(chenkwon.combined.meta) <- colnames(chenkwon.combined.counts)
 ```
-
-
-```{r}
-mpfc_neurons <- CreateSeuratObject(counts =  combined.counts,
-                   meta.data = combined.meta, min.cells = 10)
-
-# we have already filtered cells, all pass the thresholds for percent MT, number of cells
-# doublets have already been filtered
-
-```
-
-```{r}
-mpfc_neurons.list <- SplitObject(mpfc_neurons, split.by = "condition")
-
-mpfc_neurons.list <- lapply(X = mpfc_neurons.list, FUN = SCTransform)
-features <- SelectIntegrationFeatures(object.list = mpfc_neurons.list, nfeatures = 3000)
-mpfc_neurons.list <- PrepSCTIntegration(object.list = mpfc_neurons.list, 
-                                         anchor.features = features)
-
-mpfc_neurons.anchors <- FindIntegrationAnchors(object.list = mpfc_neurons.list,
-                                                normalization.method = "SCT",
-                                                anchor.features = features)
-mpfc_neurons.combined.sct <- IntegrateData(anchorset = mpfc_neurons.anchors, 
-                                            normalization.method = "SCT")
-
-mpfc_neurons.combined.sct <- RunPCA(mpfc_neurons.combined.sct, verbose = FALSE)
-# jackplots dont work on sct transformed data
-
-# tryingt o keep 
-mpfc_neurons.combined.sct <- RunTSNE(mpfc_neurons.combined.sct, 
-                                      dim.embed = 2)
-```
-
-
-```{r}
-# remove the previous clusterings
-# object[['column.to.remove']] <- NULL
-
-DefaultAssay(mpfc_neurons.combined.sct) <- "integrated" # make sure this is set for reclustering
-mpfc_neurons.combined.sct <- FindNeighbors(mpfc_neurons.combined.sct,
-                                            reduction = "tsne", dims = 1:2)
-
-mpfc_neurons.combined.sct <- FindClusters(mpfc_neurons.combined.sct,
-                                           resolution = 0.008)
-# at 0.08 we get 7 clusters
-```
-
-```{r}
-# finding markers the old way using Sct transformed data
-DefaultAssay(mpfc_neurons.combined.sct) <- "SCT"
-mpfc_neurons.combined.sct <- PrepSCTFindMarkers(mpfc_neurons.combined.sct)
-mpfc_neurons_markers <- FindAllMarkers(mpfc_neurons.combined.sct, test.use = "negbinom", only.pos = TRUE)
-
-
-```
-```{r}
-top.mpfc_neurons.markers <- mpfc_neurons_markers %>%
-  group_by(cluster) %>%
-  slice_max(n = 1, order_by = avg_log2FC)
-
-new.cluster.ids <- top.mpfc_neurons.markers$gene
-names(new.cluster.ids) <- levels(mpfc_neurons.combined.sct)
-mpfc_neurons.combined.sct <- RenameIdents(mpfc_neurons.combined.sct, new.cluster.ids)
-
-DimPlot(mpfc_neurons.combined.sct, reduction = "tsne",shape.by = "label_status", label = TRUE, pt.size = 1)
-```
-```{r}
-# with labels
-DimPlot(mpfc_neurons.combined.sct, reduction = "tsne", split.by = "label_status", label = TRUE, pt.size = 1)
-```
-
-
-
-
-Cortical inhibiroty neruons meta-anlysis of markers: Martini, L., Bardini, R., & Di Carlo, S. (2021, December). Meta-Analysis of cortical inhibitory interneurons markers landscape and their performances in scRNA-seq studies. In 2021 IEEE International Conference on Bioinformatics and Biomedicine (BIBM) (pp. 253-258). IEEE.
-
-Good references for me to look for sub clusters with.
-
-
-
-```{r}
-DimPlot(mpfc_neurons.combined.sct, group.by = "seurat_clusters",
-        shape.by = "condition", label = TRUE, pt.size = 1.2)
-```
-Inhibitory cortical neuron markers : https://www.biorxiv.org/content/10.1101/2021.11.03.467049v1.full
-```{r}
-DefaultAssay(mpfc_neurons.combined.sct) <- "SCT"
-FeaturePlot(mpfc_neurons.combined.sct, features = "Dkkl1", label = TRUE)
-```
-
-```{r}
-FeaturePlot(mpfc_neurons.combined.sct, features = "Nrgn",  label = TRUE)
-```
-
-```{r}
-FeaturePlot(mpfc_neurons.combined.sct, features = "Serinc3", split.by = "label_status", label = TRUE)
-```
-
-
-All mice are Kwon mice are C57Bl/6J, CUS were  where Chen had C57BL/6. Yy1^{_fl/fl_} floxed mice were also used for Chip-seq experiments in Kwon, these are not included in the scRNA-seq data.  Only the fear recall group is useful to us, the others are labeling with homecage and the other, fear only, labeling is occurring without exposure to the original environment.
-
-
-```{r}
-gaba_or_glut <- c("Excitatory", "Excitatory","Excitatory","Excitatory","Inhibitory","Inhibitory","Excitatory")
-mpfc_neurons.combined.sct@meta.data$broad_cell_type <- as.character(lapply(as.numeric(mpfc_neurons.combined.sct@meta.data$integrated_snn_res.0.017), function(x) gaba_or_glut[x]))
-mpfc_neurons.combined.sct@meta.data$CellID
-
-combined.meta.thisrun <- mpfc_neurons.combined.sct@meta.data
-write_csv(combined.meta.thisrun,"~/PavLabEngrams/EngramCellClassifier/RemoteMemory/chen_kwon_combined_meta.csv")
-```
-
-
-```{r}
-DimPlot(mpfc_neurons.combined.sct, group.by = "seurat_clusters",
-        shape.by = "condition", label = TRUE, pt.size = 1)
-```
-```{r}
-DimPlot(mpfc_neurons.combined.sct, group.by = "og_cluster",
-        shape.by = "condition", label = TRUE, pt.size = 1)
-```
-
-
-
-```{r}
-
-DefaultAssay(mpfc_neurons.combined.sct) <- "SCT"
-mpfc_neurons.combined.sct <- PrepSCTFindMarkers(object = mpfc_neurons.combined.sct )
-
-mpfc_neurons_res0.017_.markers <- FindAllMarkers(mpfc_neurons.combined.sct, 
-                               features = features,
-                               test.use = "negbinom",
-                               only.pos = TRUE)
-```
-
-
-
-
-```{r}
-top2.mpfc_markers.sct <- mpfc_neurons_res0.017_.markers %>%
-  group_by(cluster) %>%
-  slice_max(n = 2, order_by = avg_log2FC)
-top2.mpfc_markers.sct
-```
-```{r}
-top.mpfc_markers <- mpfc_neurons_res0.017_.markers %>%
-  group_by(cluster) %>%
-  slice_max(n = 2, order_by = avg_log2FC)
-top2.mpfc_markers.sct
-```
-
-
-
-
-
-```{r include=FALSE}
-
-get_conserved <- function(cluster){
-  FindConservedMarkers(mpfc_neurons.combined.sct,
-                       ident.1 = cluster,
-                       grouping.var = "condition",
-                       only.pos = TRUE) %>%
-    rownames_to_column(var = "gene") %>%
-    cbind(cluster_id = cluster, .)
-}
-
-```
-
-
-
-```{r}
-#for finding markers we want to be using SCT as the two datasets have different sequencing depths
-DefaultAssay(mpfc_neurons.combined.sct) <- "SCT"
-
-get_conserved <- function(cluster){
-  FindConservedMarkers(mpfc_neurons.combined.sct,
-                       ident.1 = cluster,
-                       grouping.var = "condition",
-                       only.pos = TRUE) %>%
-    rownames_to_column(var = "gene") %>%
-    cbind(cluster_id = cluster, .)
-}
-
-clusters.res0.017 <- unique(mpfc_neurons.combined.sct@meta.data$integrated_snn_res.0.017 )
-conserved_markers_res0.017 <- map_dfr(clusters.res0.017 , get_conserved)
-
-```
-
-```{r}
-df = data.frame(cell_id = colnames(mpfc_neurons.combined.sct),
-           cluster = mpfc_neurons.combined.sct@active.ident,
-           cluster_num = mpfc_neurons.combined.sct@meta.data$seurat_clusters)
-
-write.csv(df, "integrated_sct_clusters.csv")
-```
-
 
 
 
@@ -378,26 +184,30 @@ write.csv(df, "integrated_sct_clusters.csv")
 ```{r include=FALSE}
 # FUNCTIONS
 
-# paul prefers a log base that's easy to do headmath with so no eulers numebr
-pseudocount_log2p1_transform <- function(x, scale_factor = 10000, UMI.provided = NULL){
+
+pseudocount_log2p1_transform <- function(x, scale_factor = 10^6, UMI.provided = NULL){
+  # Almost as Seurat::NormalizeData but we use log2 rather than natural log
+  # from here https://satijalab.org/seurat/reference/normalizedata
   if(is.null(UMI.provided)){
     counts <- sum(x)}else{
       counts <- UMI.provided
     }
-  x <- (x+1)/counts
-  x <- x/scale_factor
-  return(log2(x))
+  x <- (x)/counts # Feature counts for each cell are divided by the total counts for that cell...
+  x <- x*scale_factor # and multiplied by the scale.factor. 
+  # the we log2 plus 1 rather than natural log plus 1 seurat uses
+  return(log2(x+1))
 }
 
-pavlab.normalize <- function(df, UMI = NULL){
+pavlab.normalize <- function(df, UMI = NULL, median.scale=FALSE, scaleby = 10000){
   df.cols <- colnames(df)
   df.rows <- rownames(df)
+  if(median.scale){ scaleby = median(UMI)}
   if( is.null(UMI)){
     df <- data.frame(apply(df,  MARGIN = 2, pseudocount_log2p1_transform))
   }else{
-#
-   df[] <- Map(pseudocount_log2p1_transform, df, UMI.provided = UMI)
-  
+    #
+    df[] <- Map(pseudocount_log2p1_transform, df, scale_factor = scaleby, UMI.provided = UMI)
+    
   }
   colnames(df) <- df.cols
   rownames(df)<- df.rows
@@ -407,22 +217,27 @@ pavlab.normalize <- function(df, UMI = NULL){
 
 #normalization functions, log.norm calls logplusone
 seurat_log1p_transform <- function(x, scale_factor = 10000, UMI.provided = NULL){
+  # as per the LogNormalize option in Seurat::NormalizeData
+  # from this URL: https://satijalab.org/seurat/reference/normalizedata
   if(is.null(UMI.provided)){
     counts <- sum(x)}else{
       counts <- UMI.provided
     }
-  x <- (x+1)/counts
-  x <- x/scale_factor
-  return(log(x))
+  x <- (x)/counts # Feature counts for each cell are divided by the total counts for that cell... 
+  x <- x*scale_factor # and multiplied by the scale.factor. 
+  # This is then natural-log transformed using log1p.
+  return(log(x+1))
 }
 
-seurat.normalize <- function(df, UMI = NULL){
+seurat.normalize <- function(df, UMI = NULL, median.scale=FALSE, scaleby = 10000){
   df.cols <- colnames(df)
   df.rows <- rownames(df)
+  if(median.scale){ scaleby = median(UMI)}
   if( is.null(UMI)){
     df <- data.frame(apply(df,  MARGIN = 2, seurat_log1p_transform))
   }else{
-    df[] <- Map(seurat_log1p_transform, df, UMI.provided = UMI)
+    #
+    df[] <- Map(seurat_log1p_transform, df, UMI.provided = UMI, scale_factor = scaleby)
   }
   colnames(df) <- df.cols
   rownames(df)<- df.rows
@@ -492,6 +307,83 @@ celltype.lognorm <-function(countsdata, celltype.labels){
   return( data.frame(df.out) ) 
 }
 
+#modified version of randomForest::combine() which can handle different sized forests
+# without this it throws and error when combining the votes
+my_combine <- function (...) 
+{
+  pad0 <- function(x, len) c(x, rep(0, len - length(x)))
+  padm0 <- function(x, len) rbind(x, matrix(0, nrow = len - 
+                                              nrow(x), ncol = ncol(x)))
+  rflist <- list(...)
+  areForest <- sapply(rflist, function(x) inherits(x, "randomForest"))
+  if (any(!areForest)) 
+    stop("Argument must be a list of randomForest objects")
+  rf <- rflist[[1]]
+  classRF <- rf$type == "classification"
+  trees <- sapply(rflist, function(x) x$ntree)
+  ntree <- sum(trees)
+  rf$ntree <- ntree
+  nforest <- length(rflist)
+  haveTest <- !any(sapply(rflist, function(x) is.null(x$test)))
+  vlist <- lapply(rflist, function(x) rownames(importance(x)))
+  numvars <- sapply(vlist, length)
+  if (!all(numvars[1] == numvars[-1])) 
+    stop("Unequal number of predictor variables in the randomForest objects.")
+  for (i in seq_along(vlist)) {
+    if (!all(vlist[[i]] == vlist[[1]])) 
+      stop("Predictor variables are different in the randomForest objects.")
+  }
+  haveForest <- sapply(rflist, function(x) !is.null(x$forest))
+  if (all(haveForest)) {
+    nrnodes <- max(sapply(rflist, function(x) x$forest$nrnodes))
+    rf$forest$nrnodes <- nrnodes
+    rf$forest$ndbigtree <- unlist(sapply(rflist, function(x) x$forest$ndbigtree))
+    rf$forest$nodestatus <- do.call("cbind", lapply(rflist, 
+                                                    function(x) padm0(x$forest$nodestatus, nrnodes)))
+    rf$forest$bestvar <- do.call("cbind", lapply(rflist, 
+                                                 function(x) padm0(x$forest$bestvar, nrnodes)))
+    rf$forest$xbestsplit <- do.call("cbind", lapply(rflist, 
+                                                    function(x) padm0(x$forest$xbestsplit, nrnodes)))
+    rf$forest$nodepred <- do.call("cbind", lapply(rflist, 
+                                                  function(x) padm0(x$forest$nodepred, nrnodes)))
+    tree.dim <- dim(rf$forest$treemap)
+    if (classRF) {
+      rf$forest$treemap <- array(unlist(lapply(rflist, 
+                                               function(x) apply(x$forest$treemap, 2:3, pad0, 
+                                                                 nrnodes))), c(nrnodes, 2, ntree))
+    }
+    else {
+      rf$forest$leftDaughter <- do.call("cbind", lapply(rflist, 
+                                                        function(x) padm0(x$forest$leftDaughter, nrnodes)))
+      rf$forest$rightDaughter <- do.call("cbind", lapply(rflist, 
+                                                         function(x) padm0(x$forest$rightDaughter, nrnodes)))
+    }
+    rf$forest$ntree <- ntree
+    if (classRF) 
+      rf$forest$cutoff <- rflist[[1]]$forest$cutoff
+  }
+  else {
+    rf$forest <- NULL
+  }
+  #
+  #Tons of stuff removed here...
+  #
+  if (classRF) {
+    rf$confusion <- NULL
+    rf$err.rate <- NULL
+    if (haveTest) {
+      rf$test$confusion <- NULL
+      rf$err.rate <- NULL
+    }
+  }
+  else {
+    rf$mse <- rf$rsq <- NULL
+    if (haveTest) 
+      rf$test$mse <- rf$test$rsq <- NULL
+  }
+  rf
+}
+
 
 
 resample.randomForest <-function( df.in,
@@ -501,16 +393,17 @@ resample.randomForest <-function( df.in,
                                   batches, 
                                   trees){
   #NOTE: df.in should have a column called engram cell with the class labels i.e. postive or negative
-  
+
   #this function resamples from our samples and retrains new models then combines them
   # this is too prevent over fitting on cells
   trees.per.batch <- as.integer(trees/batches)
   n.cells <- trunc( sum(df.in$Engramcell==under_represented_class)*proportion)
   batches <- c(1:batches)
+  
   for( batch in batches){
     resample.set <- rbind(sample(which(df.in$Engramcell==under_represented_class), size = n.cells),
                           sample(which(df.in$Engramcell==over_represented_class), size = n.cells)
-    )
+                          )
     resample.set <- df.in[resample.set,]
     
     # creates rf.model
@@ -518,13 +411,16 @@ resample.randomForest <-function( df.in,
       rf.model <- randomForest(x = resample.set[,1:(length(resample.set)-1)],
                                y = resample.set$Engramcell,
                                ntree = trees.per.batch)
+      
+                        
     }
     #trains new models in rf.fit and combines tham with rf.model
     if(batch>1){
       rf.fit = randomForest(x = resample.set[,1:(length(resample.set)-1)],
                             y = resample.set$Engramcell,
                             ntree = trees.per.batch)
-      rf.model <- randomForest::combine(rf.fit, rf.model)
+      
+      rf.model <- randomForest::my_combine(rf.fit, rf.model)
     }
   }#end of for loop over batches
   
@@ -532,16 +428,17 @@ resample.randomForest <-function( df.in,
 }
 
 
+
 make.predictions.df <- function(classifier.object, 
                                 test_df,
                                 meta.data.label.column,
-                                label = c("Active","Inactive")
-){
+                                label = c("Inactive","Active")
+                                ){
   #generate predictions for making classifier summary
   predictions <- as.data.frame(predict(classifier.object, test_df[,1:(length(test_df))], type = "prob"))
   predictions$predict <- names(predictions)[1:2][apply(predictions[,1:2], 1, which.max)] #1:2 for the number of classes
   predictions$observed <- meta.data.label.column #this should be changed if you want to make this functions more modular
-  colnames(predictions)[1:2] <- c("label_pos","label_neg")
+  colnames(predictions)[1:2] <- c("label_neg","label_pos")
   predictions$engramobserved <- ifelse(predictions$observed==label[1], 1, 0)
   predictions$inactiveobserved <- ifelse(predictions$observed==label[2], 1, 0)
   return(predictions)
@@ -551,9 +448,9 @@ make.predictions.df <- function(classifier.object,
 # assess a single run of resampled.randomforest
 assessment <- function(predictions.df, 
                        label = c("Active","Inactive") 
-){
+                       ){
   # returns a vector of assessments to be used to make dataframe summarizing classifiers performance
-  # can be used to make df of all calssifiers trained in a single run
+  # can be used to make df of all classifiers trained in a single run
   TP <- sum((predictions.df$predict == label[1])&(predictions.df$observed == label[1]))
   TN <- sum((predictions.df$predict == label[2])&(predictions.df$observed == label[2]))
   FN <- sum((predictions.df$predict == label[2])&(predictions.df$observed == label[1]))
@@ -576,6 +473,7 @@ assessment <- function(predictions.df,
 
 
 
+
 resampled.randomForest.crossvalidated <-function(data,
                                                  under.represented.class,
                                                  over.represented.class,
@@ -589,18 +487,24 @@ resampled.randomForest.crossvalidated <-function(data,
   # metric
   #NOTE: ROC curve needs to be implemented
   
+  roc.list <- c()
+  index.list <- c() # list of idx.thisfold, indeces of test and training
   folds.obj <- createFolds(data$Engramcell, k = folds)
   loops <- c(1:folds)
   for( i in loops ){
-    #create indices
-    test.idx <- folds.obj[[i]]
-    # needs to be a list so it can act as an index
-    train.idx <- which(!(rownames(data) %in% test.idx) )
     
+    idx.thisfold <- c()
+    #create indices
+    test.idx <- rownames(data)[ folds.obj[[i]] ]
+    idx.thisfold$test <- test.idx
+    # needs to be a list so it can act as an index
+    train.idx <- rownames(data)[!(rownames(data) %in% test.idx)]
+    idx.thisfold$train <- train.idx
+    index.list <- c(index.list,idx.thisfold)
     #split data for this fold
     training_set <- data[train.idx,]
     testing_set <- data[test.idx,]
-    
+    #roc.list <- c() # roc lsit for ggroc for per fold roc curves
     # divvies up number of trees
     trees.in.the.fold = as.integer(trees.total/folds)
     if ( ( trees.total%%(batches.per.fold*folds) )>0  ){ 
@@ -622,12 +526,27 @@ resampled.randomForest.crossvalidated <-function(data,
       rownames(fold.performance) <- c("F1 Score", "AUC", "Precision", "Recall",
                                       "FPR", "FNR", "True Positives", "False Negatives", 
                                       "True Negatives", "False Positives")
+      # making roc list
+      pred.fold.votes <- predict(rf.out,
+                                 testing_set[1:(length(testing_set)-1)], 
+                                 type = 'prob')
+      head(pred.fold.votes)
+      roc.list <- list( roc(testing_set$Engramcell, pred.fold.votes[,2]) )
     }else{
-      rf.out <- randomForest::combine(rf.out, rf.this_fold)
+      print(dim(testing_set))
+      # making roc list
+      pred.fold.votes <- predict(rf.this_fold,
+                           testing_set[1:(length(testing_set)-1)], 
+                           type = 'prob')
+      head(pred.fold.votes)
+      roc.list <- append(roc.list, list( roc(testing_set$Engramcell, pred.fold.votes[,2]) ) )
+      #rf.out <- randomForest::combine(rf.out, rf.this_fold) #old code can't handle the 
+      rf.out <- my_combine(rf.out, rf.this_fold)
       # we need votes for all cells to calculate
       pred <- make.predictions.df(rf.this_fold, testing_set[1:(length(testing_set)-1)], testing_set$Engramcell)
       assess <- assessment( pred ) 
       fold.performance[,ncol(fold.performance) + 1] <- assess
+      
     }
     
   }# end of for loop
@@ -638,8 +557,13 @@ resampled.randomForest.crossvalidated <-function(data,
   
   #votes needs to be updated to make roc curve
   rf.out$votes <- predict(object = rf.out, newdata = data, type = 'vote', norm.votes = FALSE)
+  rf.out$roc_perfold <- roc.list
+  rf.out$caretfolds.obj <- folds.obj
+  rf.out$testntrain.indexs <- index.list
   return(rf.out)
 }
+
+
 
 
 resample.regularizedRF <- function( df.in,
@@ -767,7 +691,7 @@ gene.shuffle <-function(dat){
 chen2020_meta$umi <- as.numeric(colSums(chen2020_counts[,c(1:(dim(chen2020_counts)[2]-1) )])) # -1 because of the gene column
 
 #keeps the cells we want, gets rid of the genes we dont want
-chen2020_counts <- combined.counts[,colnames(combined.counts) %in% colnames(chen2020_counts)]
+chen2020_counts_kwongenes <- chenkwon.combined.counts[,colnames(chenkwon.combined.counts) %in% colnames(chen2020_counts)]
 
 
 ```
@@ -780,17 +704,25 @@ gabanergic cells.  I am going to normalize before selecting cells for the first 
 
 ```{r}
 # doing it with the pavlab log2p1
-chen_normed <- pavlab.normalize(chen2020_counts, UMI = chen2020_meta$umi)
+chen_normed <- pavlab.normalize(chen2020_counts_kwongenes, 
+                                median.scale = TRUE,
+                                UMI = chen2020_meta$umi)
 
-chen_normed <- scale.and.rotate(chen_normed)
-chen_normed <- chen_normed[,!(names(chen_normed) %in% "TdTom-transgene")] # remove engram label expression
+chen_normed <- data.frame(t(chen_normed))
+colnames(chen_normed) <- rownames(chen2020_counts_kwongenes)
+rownames(chen_normed) <- colnames(chen2020_counts_kwongenes)
+
+# drop the labeling transcript to prevent teh classifier having an advantage it shouldn't have
+chen_normed <- chen_normed[,!(names(chen_normed) %in% "TdTom-transgene")]
+
+# remove engram label expression
 chen_normed$Engramcell <- chen2020_meta$condition_label == "Fear-Recall" & chen2020_meta$engram_label == "tdT+"
 
 glut_chen_normed <- chen_normed[chen2020_meta$BroadCellTypes =='Excitatory',]
 glut_chen_normed$Engramcell <- as.factor(glut_chen_normed$Engramcell)
 levels(glut_chen_normed$Engramcell) <- c("Inactive", "Active")
 
-# chen.idents <- mpfc_neurons.combined.sct$seurat_clusters[colnames(combined.counts) %in% colnames(chen2020_counts)]
+# chen.idents <- mpfc_neurons.combined.sct$seurat_clusters[colnames(chenkwon.combined.counts) %in% colnames(chen2020_counts)]
 
 excitatory.chen.idx <- chen2020_meta$BroadCellTypes =='Excitatory'
 # alternatively use this: chen.idents %in% c(0,1,2,3,6)
@@ -805,7 +737,8 @@ excitatory.chen.idx <- chen2020_meta$BroadCellTypes =='Excitatory'
 
 ```{r}
 # resampled.regularizedRF.crossvalidated
-classifier.Excitatory_mpfc <-  resampled.randomForest.crossvalidated( data= glut_chen_normed,
+classifier.Excitatory_mpfc <-  resampled.randomForest.crossvalidated( 
+                                                     data=glut_chen_normed,
                                                      under.represented.class = "Active",
                                                      over.represented.class = "Inactive",
                                                      trees.total = 1000,
@@ -813,7 +746,7 @@ classifier.Excitatory_mpfc <-  resampled.randomForest.crossvalidated( data= glut
                                                      proportion.each.batch=0.8,
                                                      batches.per.fold=20)
 
-saveRDS(classifier.Excitatory_mpfc, "~/EngramCellModels/Excitatory_mpfc_remotememory_rf.RDS")
+saveRDS(classifier.Excitatory_mpfc, "~/EngramCellModels/Excitatory_mpfc_remotememory_rfv1.RDS")
 ```
 
 
@@ -821,15 +754,14 @@ saveRDS(classifier.Excitatory_mpfc, "~/EngramCellModels/Excitatory_mpfc_remoteme
 
 
 #load model
-classifier.Excitatory_mpfc <- readRDS("~/EngramCellModels/Excitatory_mpfc_remotememory_rf.RDS")
+classifier.Excitatory_mpfc <- readRDS("~/EngramCellModels/Excitatory_mpfc_remotememory_rfv1.RDS")
 
-# Importance
-
+#Importance
 importance.df.mpfc_excitatory<- data.frame(gene = as.character( rownames(classifier.Excitatory_mpfc$importance) ),
                                 importance_score = as.numeric(classifier.Excitatory_mpfc$importance ) ) %>%
   arrange(desc(importance_score))
 
-head(importance.df.mpfc_excitatory, 10) # don't forget to run this before gettng  the regularized
+head(importance.df.mpfc_excitatory, 20) # don't forget to run this before gettng  the regularized
 ```
 
 write_csv(importance.df.mpfc_excitatory,"mpfc_excitatory_remote_memory_gene_importance.csv")
@@ -877,7 +809,7 @@ Focusing on the top expressed genes does not change much.
 
 
 predictions <- as.numeric(predict(classifier.Excitatory_mpfc, 
-                                  glut_chen_normed[,c(1:(dim(glut_chen_normed)[2]-1))],
+                                  glut_chen_normed[,dim(glut_chen_normed)[2]],
                                   type="response"))
 
 names(predictions) <- names(chen.lognorm.glut$Engramcell)
@@ -889,6 +821,12 @@ roc.engramcell = roc(chen.lognorm.glut$Engramcell,
                      xlab="False Positive Percentage", ylab="True Postive Percentage", 
                      col="firebrick4", lwd=4, print.auc=TRUE)
 
+
+roc.engramcell = roc(glut_chen_normed$Engramcell,
+                     classifier.Excitatory_mpfc$votes[,2], 
+                     plot=TRUE, legacy.axes=TRUE, percent=TRUE,
+                     xlab="False Positive Percentage", ylab="True Postive Percentage", 
+                     col="firebrick4", lwd=4, print.auc=TRUE)
 ```
 
 
@@ -909,7 +847,7 @@ as a marker.
 # this normalization is across the whole dataset
 # here instead of looking at only those cells active in 
 # the fear recal task we use any positively labelled cell
-chen.lognorm.glut.anypos <- chen.lognorm.glut
+chen.lognorm.glut.anypos <- glut_chen_normed
 Activity_defintion <- chen2020_meta$engram_label == "tdT+"
 chen.lognorm.glut.anypos$Engramcell <- Activity_defintion[excitatory.chen.idx]
 chen.lognorm.glut.anypos$Engramcell <- as.factor(chen.lognorm.glut.anypos$Engramcell)
@@ -972,7 +910,7 @@ roc.engramcell = roc(glut_chen_normed_anypos$Engramcell,
 ```{r}
 # we now need the cell labels from our seurat integrated clustering
 # so we need to align the index we are using for cell types
-kwon.idx  <- (combined.meta$condition == 'Control') | (combined.meta$condition == 'CUS')
+kwon.idx  <- (chenkwon.combined.meta$condition == 'Control') | (chenkwon.combined.meta$condition == 'CUS')
 
 
 # if running teh clsutering script we do this alternatively we can laod the saved one
@@ -990,20 +928,30 @@ chen_integratedclusterids<- integratedclustering.meta[integratedclustering.meta$
 ```
 
 ```{r}
-classifier.Excitatory_mpfc
+classifier.Excitatory_mpfc <- readRDS("~/EngramCellModels/Excitatory_mpfc_remotememory_rf.RDS")
 ```
 
 
 ```{r}
 
-kwon2021_meta$umi <- as.numeric(colSums(kwon2021_counts[,c(1:(dim(kwon2021_counts)[2]) )])) # no minus one because there's no gene column
-kwon2021_counts <- combined.counts[,colnames(combined.counts) %in% colnames(kwon2021_counts)] 
+kwon2021_meta$umi <- colSums(kwon2021_counts[,c(1:18354)]) # minues 1 because the alst column contains gene games
+
+kwon2021_counts <- chenkwon.combined.counts[,colnames(chenkwon.combined.counts) %in% colnames(kwon2021_counts)] 
 kwon2021_counts[is.na(kwon2021_counts)] <- 0
 
-kwon_normed <- pavlab.normalize(kwon2021_counts, UMI = kwon2021_meta$umi)
-kwon_normed <- scale.and.rotate(kwon_normed)
+kwon_normed <- pavlab.normalize(kwon2021_counts, 
+                                UMI = kwon2021_meta$umi,
+                                median.scale = TRUE)
 
+kwon_normed <- data.frame(t(kwon_normed))
+colnames(kwon_normed) <- rownames(kwon2021_counts)
+rownames(kwon_normed) <- colnames(kwon2021_counts)
+
+# from the file...
+# integratedclustering.meta <- read.csv('~/PavLabEngrams/EngramCellClassifier/RemoteMemory/integrated_sct_clusters.csv', header = TRUE)
 kwon.glut.idx <- kwon_integratedclusterids$cluster %in% c("Rorb", "Fam19a1", "Cck", "Cdh18", "Tshz2")
+
+
 
 # for inhibitory neurons
 #("Sst", "Vip")
@@ -1023,7 +971,7 @@ Visaulize the distribution of engram probablility
 p <- ggplot(data = predict.kwon, aes(x=Active) )
 
 
-#jpeg("Histograme_RemoteActivatyScore.jpg", width = 350, height = 350)
+jpeg("Histogram_RemoteActivatyScore.jpg", width = 350, height = 350)
 p + geom_histogram(color = "darkgreen", fill = "lightgreen") + theme_classic() +
   xlab("Probability of being an Engram Cell") +
   ylab("Counts") 
@@ -1226,12 +1174,12 @@ library(groupdata2)
    
 # Splitting dataset with group data2
 # find idents of all chen cells
-chen.idents <- mpfc_neurons.combined.sct@active.ident[colnames(combined.counts) %in% colnames(chen2020_counts)]
+chen.idents <- mpfc_neurons.combined.sct@active.ident[colnames(chenkwon.combined.counts) %in% colnames(chen2020_counts)]
 
-table(mpfc_neurons.combined.sct@active.ident[colnames(combined.counts) %in% rownames(chen.lognorm.glut)])
+table(mpfc_neurons.combined.sct@active.ident[colnames(chenkwon.combined.counts) %in% rownames(chen.lognorm.glut)])
 
 excitatory.chen.idx <- chen.idents[chen.idents %in% c("Rorb","Fam19a1","Cck","Cdh18","Tshz2")]
-excitatory.chen.idx <- colnames(combined.counts) %in% rownames(chen.lognorm.glut)
+excitatory.chen.idx <- colnames(chenkwon.combined.counts) %in% rownames(chen.lognorm.glut)
 # get the index of glutametergic chen cells in seurat object with labels
 glut.seurat.idx <- rownames(mpfc_neurons.combined.sct@meta.data) %in% rownames(chen.lognorm.glut)
 # use th index to pull celltype, label, and the active (td+ in fear recal)
@@ -1362,7 +1310,7 @@ levels(chen.lognorm$Engramcell) <- c("Inactive", "Activated")
 
 
 Activity_defintion <- as.character(sapply(c(1:3530), 
-                             function(x) paste(as.character(chen.lognorm$Engramcell[x]), mpfc_neurons.combined.sct@active.ident[combined.meta$label_status!="discovery_data"][x],
+                             function(x) paste(as.character(chen.lognorm$Engramcell[x]), mpfc_neurons.combined.sct@active.ident[chenkwon.combined.meta$label_status!="discovery_data"][x],
                                                sep="_")  ) )
 
 Activity_defintion <- as.character(lapply(Activity_defintion, function(x) if(grepl("Inactive", x, fixed=TRUE)) "Inactive" else x) )
